@@ -2,12 +2,12 @@
 
 #include "hal.hh"
 
-int main() {
+static void init_clocks() {
     // Enable HSE (8 MHz crystal) and wait for readiness.
     RCC->CR |= RCC_CR_HSEON;
     hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
 
-    // Configure PLL to HSE*4 = 32 MHz.
+    // Configure PLL to HSE * 4 = 32 MHz.
     uint32_t rcc_cfgr = RCC->CFGR;
     rcc_cfgr &= ~RCC_CFGR_PLLMULL;
     rcc_cfgr |= RCC_CFGR_PLLMULL4;
@@ -28,11 +28,9 @@ int main() {
 
     // Set a 2x divider on APB1 clock (has CAN peripheral).
     RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+}
 
-    // Enable CAN, GPIOA, GPIOB, and AFIO clocks.
-    RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
-    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_AFIOEN;
-
+static void init_can() {
     // Remap CAN1 to PB8 and PB9.
     AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
 
@@ -44,7 +42,7 @@ int main() {
     GPIOB->CRH &= ~0xf0;
     GPIOB->CRH |= 0xb0;
 
-    // Request CAN initialisation and wait for completeness.
+    // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;
     hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK);
 
@@ -59,6 +57,16 @@ int main() {
     // Leave initialisation mode.
     CAN1->MCR &= ~CAN_MCR_INRQ;
     hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u);
+}
+
+int main() {
+    init_clocks();
+
+    // Enable CAN, GPIOA, GPIOB, and AFIO peripheral clocks.
+    RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_AFIOEN;
+
+    init_can();
 
 #if 1
     // TIM2 channel 2.
