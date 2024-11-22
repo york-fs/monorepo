@@ -1,10 +1,11 @@
 #include <stm32f103xb.h>
 
+#include "hal.hh"
+
 int main() {
     // Enable HSE (8 MHz crystal) and wait for readiness.
     RCC->CR |= RCC_CR_HSEON;
-    while ((RCC->CR & RCC_CR_HSERDY) == 0u) {
-    }
+    hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
 
     // Configure PLL to HSE*4 = 32 MHz.
     uint32_t rcc_cfgr = RCC->CFGR;
@@ -15,18 +16,15 @@ int main() {
 
     // Enable PLL and wait for readiness.
     RCC->CR |= RCC_CR_PLLON;
-    while ((RCC->CR & RCC_CR_PLLRDY) == 0u) {
-    }
+    hal::wait_equal(RCC->CR, RCC_CR_PLLRDY, RCC_CR_PLLRDY);
 
     // Switch system clock to PLL. HSI is default, so no need to mask.
     RCC->CFGR |= RCC_CFGR_SW_PLL;
-    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) {
-    }
+    hal::wait_equal(RCC->CFGR, RCC_CFGR_SWS, RCC_CFGR_SWS_PLL);
 
     // Done with the HSI, disable it.
     RCC->CR &= ~RCC_CR_HSION;
-    while ((RCC->CR & RCC_CR_HSIRDY) == RCC_CR_HSIRDY) {
-    }
+    hal::wait_equal(RCC->CR, RCC_CR_HSIRDY, 0u);
 
     // Set a 2x divider on APB1 clock (has CAN peripheral).
     RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
@@ -48,13 +46,11 @@ int main() {
 
     // Request CAN initialisation and wait for completeness.
     CAN1->MCR |= CAN_MCR_INRQ;
-    while ((CAN1->MSR & CAN_MSR_INAK) == 0u) {
-    }
+    hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK);
 
     // Exit sleep mode.
     CAN1->MCR &= ~CAN_MCR_SLEEP;
-    while ((CAN1->MSR & CAN_MSR_SLAK) != 0u) {
-    }
+    hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u);
 
     // Set the bit timing register. Peripheral clocked at 16 MHz and 500 kbits/s.
     // The value below sets 13+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 2.
@@ -62,8 +58,7 @@ int main() {
 
     // Leave initialisation mode.
     CAN1->MCR &= ~CAN_MCR_INRQ;
-    while ((CAN1->MSR & CAN_MSR_INAK) != 0u) {
-    }
+    hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u);
 
 #if 1
     // TIM2 channel 2.
@@ -122,9 +117,8 @@ int main() {
             GPIOA->ODR |= 0b10u;
         }
 
-        // Wait TX ready.
-        while ((CAN1->TSR & CAN_TSR_TME0) == 0u) {
-        }
+        // Wait TX ready on mailbox 0.
+        hal::wait_equal(CAN1->TSR, CAN_TSR_TME0, CAN_TSR_TME0);
 
         duty += 100;
         duty %= 1000;
