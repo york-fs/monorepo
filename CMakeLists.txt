@@ -21,6 +21,6 @@ endif()
 
 find_program(STFLASH_PROGRAM NAMES st-flash)
 if(CMAKE_OBJCOPY AND STFLASH_PROGRAM)
-    add_custom_target(flash ${STFLASH_PROGRAM} write stm_can.bin 0x8000000)
+    add_custom_target(flash ${STFLASH_PROGRAM} --reset --connect-under-reset write stm_can.bin 0x8000000)
     add_dependencies(flash stm_can)
 endif()
