@@ -26,6 +26,9 @@ static void init_clocks() {
 
     // Set a 2x divider on APB1 clock (has CAN peripheral).
     RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+
+    // Initialise SysTick at 1 ms.
+    SysTick_Config(32000);
 }
 
 static void init_can() {
@@ -132,9 +135,7 @@ int main() {
         // Request transmission.
         CAN1->sTxMailBox[0].TIR |= CAN_TI0R_TXRQ;
 
-        for (uint32_t i = 0; i < 2000000; i++) {
-            asm volatile("" ::: "memory");
-        }
+        hal::delay_ms(250);
     }
 #endif
 }
