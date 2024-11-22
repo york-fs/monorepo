@@ -1,5 +1,3 @@
-#include <stm32f103xb.h>
-
 #include "hal.hh"
 
 static void init_clocks() {
@@ -34,13 +32,9 @@ static void init_can() {
     // Remap CAN1 to PB8 and PB9.
     AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
 
-    // Configure PB8 as CAN_RX (floating input).
-    GPIOB->CRH &= ~0xf;
-    GPIOB->CRH |= 0x4;
-
-    // Configure PB9 as CAN_TX (push-pull alternate function 50 MHz).
-    GPIOB->CRH &= ~0xf0;
-    GPIOB->CRH |= 0xb0;
+    // Configure PB8 suitable to be CAN_RX and PB9 suitable to be CAN_TX.
+    hal::configure_gpio(GPIOB, 8, hal::GpioInputMode::Floating);
+    hal::configure_gpio(GPIOB, 9, hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
 
     // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;
@@ -73,8 +67,7 @@ int main() {
     RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
     // Configure PA1 to be a push-pull alternate function.
-    GPIOA->CRL &= ~0xf0;
-    GPIOA->CRL |= 0x90;
+    hal::configure_gpio(GPIOA, 1, hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
 
     // Configure CAN receive filter.
     CAN1->FMR |= CAN_FMR_FINIT;
@@ -113,8 +106,7 @@ int main() {
     }
 #else
     // Configure PA1 to be a push-pull low-speed output.
-    GPIOA->CRL &= ~0xf0;
-    GPIOA->CRL |= 0x10;
+    hal::configure_gpio(GPIOA, 1, hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max10);
 
     uint32_t duty = 0;
     while (true) {

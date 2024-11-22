@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(stm-can ASM C CXX)
 
 add_executable(stm_can
+    src/hal.cc
     src/main.cc
     system/startup_stm32f103c8tx.s)
 target_compile_features(stm_can PRIVATE cxx_std_20)
