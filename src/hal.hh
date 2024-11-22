@@ -27,6 +27,7 @@ enum class GpioOutputSpeed : std::uint32_t {
 
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioInputMode mode);
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, GpioOutputSpeed speed);
+void delay_ms(std::uint32_t ms);
 
 inline void wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired) {
     while ((reg & mask) != desired) {
