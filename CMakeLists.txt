@@ -25,3 +25,8 @@ if(CMAKE_OBJCOPY AND STFLASH_PROGRAM)
     add_custom_target(flash ${STFLASH_PROGRAM} --reset --connect-under-reset write stm_can.bin 0x8000000)
     add_dependencies(flash stm_can)
 endif()
+
+find_program(STTRACE_PROGRAM NAMES st-trace)
+if(STTRACE_PROGRAM)
+    add_custom_target(trace ${STTRACE_PROGRAM} -c32)
+endif()
