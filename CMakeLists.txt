@@ -1,32 +1,66 @@
 cmake_minimum_required(VERSION 3.25)
 project(stm-can ASM C CXX)
 
-add_executable(stm_can
-    src/hal.cc
-    src/main.cc
-    system/startup_stm32f103c8tx.s)
-target_compile_features(stm_can PRIVATE cxx_std_20)
-target_include_directories(stm_can SYSTEM PRIVATE system)
-target_link_options(stm_can PRIVATE -T "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
-set_target_properties(stm_can PROPERTIES LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
-
-if(CMAKE_SIZE)
-    add_custom_command(TARGET stm_can
-        POST_BUILD COMMAND "${CMAKE_SIZE}" stm_can)
-endif()
-
-if(CMAKE_OBJCOPY)
-    add_custom_command(TARGET stm_can
-        POST_BUILD COMMAND "${CMAKE_OBJCOPY}" -O binary stm_can stm_can.bin)
-endif()
+option(BUILD_TARGET "Build target" "")
 
 find_program(STFLASH_PROGRAM NAMES st-flash)
-if(CMAKE_OBJCOPY AND STFLASH_PROGRAM)
-    add_custom_target(flash ${STFLASH_PROGRAM} --reset --connect-under-reset write stm_can.bin 0x8000000)
-    add_dependencies(flash stm_can)
-endif()
-
 find_program(STTRACE_PROGRAM NAMES st-trace)
-if(STTRACE_PROGRAM)
-    add_custom_target(trace ${STTRACE_PROGRAM} -c32)
+
+set(STM_LD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
+
+function(add_stm_executable name)
+    add_executable(${name} ${ARGN})
+    target_link_libraries(${name} PRIVATE shared-stm)
+
+    # Rebuild on any linker script changes.
+    set_target_properties(${name} PROPERTIES LINK_DEPENDS "${STM_LD_SCRIPT}")
+
+    if(CMAKE_SIZE)
+        add_custom_command(TARGET ${name}
+            POST_BUILD COMMAND "${CMAKE_SIZE}" ${name})
+    endif()
+
+    if(CMAKE_OBJCOPY)
+        add_custom_command(TARGET ${name}
+            POST_BUILD COMMAND "${CMAKE_OBJCOPY}" -O binary ${name} ${name}.bin)
+    endif()
+
+    if(CMAKE_OBJCOPY AND STFLASH_PROGRAM)
+        add_custom_target(flash-${name} ${STFLASH_PROGRAM} --reset --connect-under-reset write ${name}.bin 0x8000000)
+        add_dependencies(flash-${name} ${name})
+    endif()
+endfunction()
+
+# Create an OBJECT library for platform-independent code.
+add_library(shared OBJECT
+    src/dti.cc)
+target_compile_features(shared PUBLIC cxx_std_20)
+target_include_directories(shared PUBLIC src)
+
+if(BUILD_TARGET STREQUAL "host")
+    find_package(GTest REQUIRED)
+    include(GoogleTest)
+    enable_testing()
+
+    add_executable(tests
+        test/dti_test.cc)
+    target_link_libraries(tests PRIVATE GTest::Main shared)
+    gtest_discover_tests(tests)
+elseif(BUILD_TARGET STREQUAL "stm32")
+    # Create a library for shared STM code.
+    add_library(shared-stm STATIC
+        src/hal.cc
+        system/startup_stm32f103c8tx.s)
+    target_include_directories(shared-stm SYSTEM PUBLIC system)
+    target_link_libraries(shared-stm PUBLIC shared)
+    target_link_options(shared-stm PUBLIC -T "${STM_LD_SCRIPT}")
+
+    add_stm_executable(etc src/main.cc)
+
+    # Add a generic trace target for SWD output.
+    if(STTRACE_PROGRAM)
+        add_custom_target(trace ${STTRACE_PROGRAM} -c32)
+    endif()
+else()
+    message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()

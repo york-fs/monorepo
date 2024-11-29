@@ -25,6 +25,7 @@
             "displayName": "Debug",
             "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
             "cacheVariables": {
+                "BUILD_TARGET": "stm32",
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         },
@@ -34,7 +35,17 @@
             "displayName": "Release",
             "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
             "cacheVariables": {
+                "BUILD_TARGET": "stm32",
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "host",
+            "inherits": "base",
+            "displayName": "Host (unit tests)",
+            "cacheVariables": {
+                "BUILD_TARGET": "host",
+                "CMAKE_BUILD_TYPE": "Debug"
             }
         }
     ],
@@ -46,6 +57,10 @@
         {
             "name": "release",
             "configurePreset": "release"
+        },
+        {
+            "name": "host",
+            "configurePreset": "host"
         }
     ]
 }
