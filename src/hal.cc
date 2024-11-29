@@ -6,7 +6,7 @@ namespace hal {
 static volatile uint32_t s_ticks = 0;
 
 extern "C" void SysTick_Handler() {
-    s_ticks++;
+    s_ticks = s_ticks + 1;
 }
 
 static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
