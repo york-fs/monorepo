@@ -50,6 +50,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     # Create a library for shared STM code.
     add_library(shared-stm STATIC
         src/hal.cc
+        src/miniprintf.c
         system/startup_stm32f103c8tx.s)
     target_include_directories(shared-stm SYSTEM PUBLIC system)
     target_link_libraries(shared-stm PUBLIC shared)
