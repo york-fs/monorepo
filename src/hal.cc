@@ -1,4 +1,5 @@
-#include "hal.hh"
+#include <hal.hh>
+#include <stm32f103xb.h>
 
 namespace hal {
 
