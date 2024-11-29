@@ -29,6 +29,14 @@ function(add_stm_executable name)
         add_custom_target(flash-${name} ${STFLASH_PROGRAM} --reset --connect-under-reset write ${name}.bin 0x8000000)
         add_dependencies(flash-${name} ${name})
     endif()
+
+    # Add a trace target for SWD output.
+    if(STTRACE_PROGRAM)
+        add_custom_target(trace-${name}
+            ${STTRACE_PROGRAM} -c32
+            USES_TERMINAL)
+        add_dependencies(trace-${name} flash-${name})
+    endif()
 endfunction()
 
 # Create an OBJECT library for platform-independent code.
@@ -58,11 +66,6 @@ elseif(BUILD_TARGET STREQUAL "stm32")
 
     add_stm_executable(etc src/etc.cc)
     add_stm_executable(transmit src/transmit.cc)
-
-    # Add a generic trace target for SWD output.
-    if(STTRACE_PROGRAM)
-        add_custom_target(trace ${STTRACE_PROGRAM} -c32)
-    endif()
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
