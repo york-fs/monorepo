@@ -56,7 +56,8 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     target_link_libraries(shared-stm PUBLIC shared)
     target_link_options(shared-stm PUBLIC -T "${STM_LD_SCRIPT}")
 
-    add_stm_executable(etc src/main.cc)
+    add_stm_executable(etc src/etc.cc)
+    add_stm_executable(transmit src/transmit.cc)
 
     # Add a generic trace target for SWD output.
     if(STTRACE_PROGRAM)
