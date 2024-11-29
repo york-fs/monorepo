@@ -1,0 +1,33 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    name: Build and run tests
+    runs-on: ubuntu-latest
+    container: ubuntu:noble
+    env:
+      DEBIAN_FRONTEND: "noninteractive"
+    steps:
+      - name: Update package lists
+        run: apt-get update -qq
+
+      - name: Install tools
+        run: >-
+          apt-get install -y
+          cmake
+          gcc
+          g++
+          libgtest-dev
+          ninja-build      
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake --preset host -GNinja
+
+      - name: Build
+        run: cmake --build build-host
+
+      - name: Run tests
+        run: cmake --build build-host --target test
