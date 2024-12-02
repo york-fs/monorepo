@@ -30,7 +30,7 @@ Packet parse_packet(const std::uint32_t ext_id, const std::uint32_t data_low, co
     const auto packet_id = (ext_id >> 8u) & 0x1fffffu;
     switch (packet_id) {
     case k_general_data_1_id:
-        return GeneralData1 {
+        return GeneralData1{
             .erpm = read_be<std::int32_t>(data_low),
             .duty_cycle = read_be<std::int16_t>(data_high & 0xffffu),
             .input_voltage = read_be<std::int16_t>(data_high >> 16u),
