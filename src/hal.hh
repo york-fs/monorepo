@@ -27,7 +27,6 @@ enum class GpioOutputSpeed : std::uint32_t {
 
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioInputMode mode);
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, GpioOutputSpeed speed);
-void delay_ms(std::uint32_t ms);
 
 /**
  * Enables the 8 MHz external crystal oscillator and routes it to the PLL with a 4x multiplier, which then becomes the
@@ -37,24 +36,15 @@ void delay_ms(std::uint32_t ms);
 void init_clocks();
 
 /**
- * Initialises the CAN1 peripheral to 500 kbits/s, with CAN_RX mapped to PB8 and CAN_TX mapped to PB9. Assumes
- * a 16 MHz APB1 clock.
+ * Enables the SysTick timer at a period of 1 ms.
  */
-void init_can();
+void init_sys_tick();
 
 /**
- * Configures and enables the specified CAN filter to route incoming messages to the specified FIFO index. A
- * message will be matched if, after applying the given bitmask, it equals the specified value.
- *
- * Incoming messages are structured as follows:
- *   EXID[28:0] | IDE | RTR | 0
- *
- * @param filter the filter index to configure; must be in the range [0, 13]
- * @param fifo   the FIFO index; must be 0 or 1
- * @param mask   the bitmask to be applied to the incoming message (bitwise AND)
- * @param value  the expected value to which the incoming message is compared to, after masking
+ * Spins until the SysTick timer has ticked by the specified number of times. Requires init_sys_tick() to have
+ * previously been called.
  */
-void route_can_filter(std::uint8_t filter, std::uint8_t fifo, std::uint32_t mask, std::uint32_t value);
+void delay_ms(std::uint32_t ms);
 
 void swd_putc(char ch);
 __attribute__((format(printf, 1, 2))) int swd_printf(const char *format, ...);

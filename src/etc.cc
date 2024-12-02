@@ -1,3 +1,4 @@
+#include <can.hh>
 #include <config.hh>
 #include <dti.hh>
 #include <hal.hh>
@@ -34,10 +35,10 @@ struct DtiHandler {
 
 int main() {
     hal::init_clocks();
-    hal::init_can();
 
-    // Route all incoming messages to FIFO 0.
-    hal::route_can_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
+    // Initialise CAN peripheral and route all DTI messages to FIFO 0.
+    can::init();
+    can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
 
     // TODO: Use interrupts.
     DtiHandler dti_handler;
