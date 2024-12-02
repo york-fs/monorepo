@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <variant>
 
+namespace {
+
 struct DtiHandler {
     void operator()(const dti::GeneralData1 &gd1) {
         hal::swd_printf("erpm=%d, duty=%d, dc_input=%d\n", gd1.erpm, gd1.duty_cycle, gd1.input_voltage);
@@ -33,6 +35,13 @@ struct DtiHandler {
     }
 };
 
+void dti_message_callback(const can::Message &message) {
+    const auto dti_packet = dti::parse_packet(message.identifier, message.data_low, message.data_high);
+    std::visit(DtiHandler(), dti_packet);
+}
+
+} // namespace
+
 int main() {
     hal::init_clocks();
 
@@ -40,19 +49,13 @@ int main() {
     can::init();
     can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
 
-    // TODO: Use interrupts.
-    DtiHandler dti_handler;
+    // Install FIFO message pending callback and enable IRQ.
+    can::set_fifo_callback(0, dti_message_callback);
+    NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 2);
+    NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
+
+    SCB->SCR |= SCB_SCR_SLEEPONEXIT_Msk;
     while (true) {
-        if ((CAN1->RF0R & CAN_RF0R_FMP0) == 0u) {
-            continue;
-        }
-
-        const auto &mailbox = CAN1->sFIFOMailBox[0];
-        const auto ext_id = (mailbox.RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos;
-        const auto dti_packet = dti::parse_packet(ext_id, mailbox.RDLR, mailbox.RDHR);
-        std::visit(dti_handler, dti_packet);
-
-        // Release FIFO.
-        CAN1->RF0R |= CAN_RF0R_RFOM0;
+        __WFI();
     }
 }
