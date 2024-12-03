@@ -30,6 +30,15 @@ void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, 
     set_gpio(port, pin, static_cast<std::uint32_t>(mode), static_cast<std::uint32_t>(speed));
 }
 
+void enable_irq(IRQn_Type irq, std::uint32_t priority) {
+    NVIC_SetPriority(irq, priority);
+    NVIC_EnableIRQ(irq);
+}
+
+void disable_irq(IRQn_Type irq) {
+    NVIC_DisableIRQ(irq);
+}
+
 void init_clocks() {
     // Enable HSE (8 MHz crystal) and wait for readiness.
     RCC->CR |= RCC_CR_HSEON;

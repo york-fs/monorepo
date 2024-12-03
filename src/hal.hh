@@ -28,6 +28,9 @@ enum class GpioOutputSpeed : std::uint32_t {
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioInputMode mode);
 void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, GpioOutputSpeed speed);
 
+void enable_irq(IRQn_Type irq, std::uint32_t priority);
+void disable_irq(IRQn_Type irq);
+
 /**
  * Enables the 8 MHz external crystal oscillator and routes it to the PLL with a 4x multiplier, which then becomes the
  * main system and peripheral clocks. APB1 is configured to a 2x divider (16 MHz), and SysTick is configured to tick at
