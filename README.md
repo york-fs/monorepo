@@ -4,6 +4,7 @@ STM32 firmware for York Formula Student.
 
 ## Project structure
 
+* `src/bus_logger.cc` - Logs all messages on the CAN bus to SWD
 * `src/etc.cc` - Electronic throttle control firmware
 * `system/` - CMSIS and startup code for Cortex-M3
 * `test/` - Host-runnable unit tests for platform independent code
