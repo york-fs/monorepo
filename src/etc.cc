@@ -16,13 +16,15 @@ class DtiState {
     std::atomic<bool> m_drive_enabled;
 
 public:
-    void operator()(const dti::GeneralData1 &gd1) {}
+    void operator()(const dti::GeneralData1 &) {}
 
     void operator()(const dti::GeneralData2 &) {}
 
     void operator()(const dti::GeneralData3 &) {}
 
-    void operator()(const dti::GeneralData5 &gd5) { m_drive_enabled.store(true, std::memory_order_relaxed); }
+    void operator()(const dti::GeneralData5 &gd5) {
+        m_drive_enabled.store(gd5.drive_enable, std::memory_order_relaxed);
+    }
 
     void operator()(const dti::UnknownData &) {
         // TODO: Log this as a warning.
