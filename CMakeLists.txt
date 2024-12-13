@@ -3,8 +3,12 @@ project(stm-can ASM C CXX)
 
 option(BUILD_TARGET "Build target" "")
 
-find_program(STFLASH_PROGRAM NAMES st-flash)
-find_program(STTRACE_PROGRAM NAMES st-trace)
+if(NOT ST_FLASH_PROGRAM)
+    find_program(ST_FLASH_PROGRAM NAMES st-flash)
+endif()
+if(NOT ST_TRACE_PROGRAM)
+    find_program(ST_TRACE_PROGRAM NAMES st-trace)
+endif()
 
 set(STM_LD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
 
@@ -25,15 +29,15 @@ function(add_stm_executable name)
             POST_BUILD COMMAND "${CMAKE_OBJCOPY}" -O binary ${name} ${name}.bin)
     endif()
 
-    if(CMAKE_OBJCOPY AND STFLASH_PROGRAM)
-        add_custom_target(flash-${name} ${STFLASH_PROGRAM} --reset --connect-under-reset write ${name}.bin 0x8000000)
+    if(CMAKE_OBJCOPY AND ST_FLASH_PROGRAM)
+        add_custom_target(flash-${name} ${ST_FLASH_PROGRAM} --reset --connect-under-reset write ${name}.bin 0x8000000)
         add_dependencies(flash-${name} ${name})
     endif()
 
     # Add a trace target for SWD output.
-    if(STTRACE_PROGRAM)
+    if(ST_TRACE_PROGRAM)
         add_custom_target(trace-${name}
-            ${STTRACE_PROGRAM} -c32
+            ${ST_TRACE_PROGRAM} -c32
             USES_TERMINAL)
         add_dependencies(trace-${name} flash-${name})
     endif()
