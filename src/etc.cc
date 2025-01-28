@@ -23,7 +23,7 @@ public:
     void operator()(const dti::GeneralData3 &) {}
 
     void operator()(const dti::GeneralData5 &gd5) {
-        m_drive_enabled.store(gd5.drive_enable, std::memory_order_relaxed);
+        m_drive_enabled.store(gd5.drive_enabled, std::memory_order_relaxed);
     }
 
     void operator()(const dti::UnknownData &) {

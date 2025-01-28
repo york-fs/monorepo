@@ -5,10 +5,10 @@
 namespace dti {
 namespace {
 
-constexpr std::uint32_t k_general_data_1_id = 0x2a;
-constexpr std::uint32_t k_general_data_2_id = 0x2b;
-constexpr std::uint32_t k_general_data_3_id = 0x2c;
-constexpr std::uint32_t k_general_data_5_id = 0x2e;
+constexpr std::uint32_t k_general_data_1_id = 0x20;
+constexpr std::uint32_t k_general_data_2_id = 0x21;
+constexpr std::uint32_t k_general_data_3_id = 0x22;
+constexpr std::uint32_t k_general_data_5_id = 0x24;
 
 template <typename T>
 T read_be(std::uint32_t data_word) {
@@ -51,7 +51,7 @@ Packet parse_packet(const std::uint32_t ext_id, const std::uint32_t data_low, co
             .throttle = read_be<std::int8_t>(data_low & 0xffu),
             .brake = read_be<std::int8_t>((data_low >> 8u) & 0xffu),
             .digital_pin_state = read_be<std::uint8_t>((data_low >> 16u) & 0xffu),
-            .drive_enable = ((data_low >> 24u) & 1u) != 0u,
+            .drive_enabled = ((data_low >> 24u) & 1u) != 0u,
             .capacitor_temperature_limit_active = ((data_high >> 0u) & 1u) != 0u,
             .dc_current_limit_active = ((data_high >> 1u) & 1u) != 0u,
             .drive_enable_limit_active = ((data_high >> 2u) & 1u) != 0u,
@@ -63,6 +63,7 @@ Packet parse_packet(const std::uint32_t ext_id, const std::uint32_t data_low, co
             .rpm_min_limit_active = ((data_high >> 8u) & 1u) != 0u,
             .rpm_max_limit_active = ((data_high >> 9u) & 1u) != 0u,
             .power_limit_active = ((data_high >> 10u) & 1u) != 0u,
+            .can_map_version = read_be<std::uint8_t>((data_high >> 24u) & 0xffu),
         };
     default:
         return UnknownData{

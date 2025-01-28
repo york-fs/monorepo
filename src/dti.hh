@@ -59,7 +59,7 @@ struct GeneralData5 {
     std::uint8_t digital_pin_state;
 
     // Current drive enable state.
-    bool drive_enable : 1;
+    bool drive_enabled : 1;
 
     // Various limit activation states.
     bool capacitor_temperature_limit_active : 1;
@@ -73,6 +73,9 @@ struct GeneralData5 {
     bool rpm_min_limit_active : 1;
     bool rpm_max_limit_active : 1;
     bool power_limit_active : 1;
+
+    // Configured CAN map version, e.g. 23 or 24.
+    std::uint8_t can_map_version;
 };
 
 struct UnknownData {

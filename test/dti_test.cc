@@ -7,7 +7,7 @@
 namespace {
 
 TEST(DtiParse, GeneralData1) {
-    const auto packet = dti::parse_packet(0x2a22, 0x5e240000, 0x86017100);
+    const auto packet = dti::parse_packet(0x2022, 0x5e240000, 0x86017100);
     ASSERT_TRUE(std::holds_alternative<dti::GeneralData1>(packet));
 
     const auto gd1 = std::get<dti::GeneralData1>(packet);
@@ -17,7 +17,7 @@ TEST(DtiParse, GeneralData1) {
 }
 
 TEST(DtiParse, GeneralData2) {
-    const auto packet = dti::parse_packet(0x2b22, 0x11005c00, 0xffffffff);
+    const auto packet = dti::parse_packet(0x2122, 0x11005c00, 0xffffffff);
     ASSERT_TRUE(std::holds_alternative<dti::GeneralData2>(packet));
 
     const auto gd2 = std::get<dti::GeneralData2>(packet);
@@ -26,7 +26,7 @@ TEST(DtiParse, GeneralData2) {
 }
 
 TEST(DtiParse, GeneralData3) {
-    const auto packet = dti::parse_packet(0x2c22, 0x17015301, 0xffffff00);
+    const auto packet = dti::parse_packet(0x2222, 0x17015301, 0xffffff00);
     ASSERT_TRUE(std::holds_alternative<dti::GeneralData3>(packet));
 
     const auto gd3 = std::get<dti::GeneralData3>(packet);
@@ -36,14 +36,14 @@ TEST(DtiParse, GeneralData3) {
 }
 
 TEST(DtiParse, GeneralData5) {
-    const auto packet = dti::parse_packet(0x2e22, 0x01aad838, 0x23ff05aa);
+    const auto packet = dti::parse_packet(0x2422, 0x01aad838, 0x18ff05aa);
     ASSERT_TRUE(std::holds_alternative<dti::GeneralData5>(packet));
 
     const auto gd5 = std::get<dti::GeneralData5>(packet);
     EXPECT_EQ(gd5.throttle, 56);
     EXPECT_EQ(gd5.brake, -40);
     EXPECT_EQ(gd5.digital_pin_state, 0xaa);
-    EXPECT_TRUE(gd5.drive_enable);
+    EXPECT_TRUE(gd5.drive_enabled);
     EXPECT_FALSE(gd5.capacitor_temperature_limit_active);
     EXPECT_TRUE(gd5.dc_current_limit_active);
     EXPECT_FALSE(gd5.drive_enable_limit_active);
@@ -55,6 +55,7 @@ TEST(DtiParse, GeneralData5) {
     EXPECT_TRUE(gd5.rpm_min_limit_active);
     EXPECT_FALSE(gd5.rpm_max_limit_active);
     EXPECT_TRUE(gd5.power_limit_active);
+    EXPECT_EQ(gd5.can_map_version, 24);
 }
 
 } // namespace
