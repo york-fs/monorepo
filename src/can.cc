@@ -154,7 +154,7 @@ bool transmit(const Message &message) {
     mailbox.TIR = (message.identifier << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
     mailbox.TDTR = message.length & 0xfu;
     mailbox.TDLR = message.data_low;
-    mailbox.TDTR = message.data_high;
+    mailbox.TDHR = message.data_high;
 
     // Request transmission.
     mailbox.TIR |= CAN_TI0R_TXRQ;
