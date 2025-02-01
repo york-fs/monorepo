@@ -15,7 +15,7 @@ using fifo_callback_t = void (*)(const Message &);
 
 /**
  * Initialises the CAN1 peripheral to 500 kbits/s, with CAN_RX mapped to PB8 and CAN_TX mapped to PB9. Assumes
- * a 16 MHz APB1 clock.
+ * a 28 MHz APB1 clock.
  */
 void init();
 

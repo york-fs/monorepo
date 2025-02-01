@@ -82,9 +82,9 @@ void init() {
     CAN1->MCR &= ~CAN_MCR_SLEEP;
     hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u);
 
-    // Set the bit timing register. Peripheral clocked at 16 MHz and 500 kbits/s.
-    // The value below sets 13+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 2.
-    CAN1->BTR = 0x001c0001;
+    // Set the bit timing register. Peripheral clocked at 28 MHz and 500 kbits/s.
+    // The value below sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 4.
+    CAN1->BTR = 0x001a0003;
 
     // Set automatic bus-off management for now.
     // TODO: We should handle this manually eventually.

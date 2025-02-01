@@ -41,7 +41,7 @@ void disable_irq(IRQn_Type irq) {
 
 void init_sys_tick() {
     // Initialise SysTick at 1 ms.
-    SysTick_Config(32000);
+    SysTick_Config(56000);
 }
 
 void delay_ms(std::uint32_t ms) {
@@ -69,10 +69,10 @@ int main() {
     RCC->CR |= RCC_CR_HSEON;
     hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
 
-    // Configure PLL to HSE * 4 = 32 MHz.
+    // Configure PLL to HSE * 7 = 56 MHz.
     uint32_t rcc_cfgr = RCC->CFGR;
     rcc_cfgr &= ~RCC_CFGR_PLLMULL;
-    rcc_cfgr |= RCC_CFGR_PLLMULL4;
+    rcc_cfgr |= RCC_CFGR_PLLMULL7;
     rcc_cfgr |= RCC_CFGR_PLLSRC;
     RCC->CFGR = rcc_cfgr;
 
@@ -88,8 +88,11 @@ int main() {
     RCC->CR &= ~RCC_CR_HSION;
     hal::wait_equal(RCC->CR, RCC_CR_HSIRDY, 0u);
 
-    // Set a 2x divider on APB1 clock (has CAN peripheral).
+    // Set a 2x divider on APB1 clock as to not exceed 36 MHz limit.
     RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+
+    // Set a 4x divider on the ADC clock to achieve the maximum 14 MHz.
+    RCC->CFGR |= RCC_CFGR_ADCPRE_DIV4;
 
     // Jump to user code.
     app_main();
