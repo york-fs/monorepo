@@ -3,9 +3,8 @@
 #include <hal.hh>
 #include <stm32f103xb.h>
 
-int main() {
-    // Initialise system clocks and SysTick so we can use delay_ms.
-    hal::init_clocks();
+void app_main() {
+    // Initialise SysTick so we can use delay_ms.
     hal::init_sys_tick();
 
     // Initialise and start CAN peripheral.

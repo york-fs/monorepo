@@ -10,8 +10,7 @@ static void message_callback(const can::Message &message) {
                     (dh >> 0u) & 0xffu, (dh >> 8u) & 0xffu, (dh >> 16u) & 0xffu, (dh >> 24u) & 0xffu);
 }
 
-int main() {
-    hal::init_clocks();
+void app_main() {
     can::init();
 
     // Route all messages to FIFO 0.

@@ -39,7 +39,32 @@ void disable_irq(IRQn_Type irq) {
     NVIC_DisableIRQ(irq);
 }
 
-void init_clocks() {
+void init_sys_tick() {
+    // Initialise SysTick at 1 ms.
+    SysTick_Config(32000);
+}
+
+void delay_ms(std::uint32_t ms) {
+    hal::wait_equal(s_ticks, 0xffffffffu, s_ticks + ms);
+}
+
+void swd_putc(char ch) {
+    ITM_SendChar(ch);
+}
+
+int swd_printf(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    int rc = mini_vprintf_cooked(swd_putc, format, args);
+    va_end(args);
+    return rc;
+}
+
+} // namespace hal
+
+extern void app_main();
+
+int main() {
     // Enable HSE (8 MHz crystal) and wait for readiness.
     RCC->CR |= RCC_CR_HSEON;
     hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
@@ -65,27 +90,7 @@ void init_clocks() {
 
     // Set a 2x divider on APB1 clock (has CAN peripheral).
     RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
-}
 
-void init_sys_tick() {
-    // Initialise SysTick at 1 ms.
-    SysTick_Config(32000);
+    // Jump to user code.
+    app_main();
 }
-
-void delay_ms(std::uint32_t ms) {
-    hal::wait_equal(s_ticks, 0xffffffffu, s_ticks + ms);
-}
-
-void swd_putc(char ch) {
-    ITM_SendChar(ch);
-}
-
-int swd_printf(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    int rc = mini_vprintf_cooked(swd_putc, format, args);
-    va_end(args);
-    return rc;
-}
-
-} // namespace hal

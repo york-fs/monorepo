@@ -32,13 +32,6 @@ void enable_irq(IRQn_Type irq, std::uint32_t priority);
 void disable_irq(IRQn_Type irq);
 
 /**
- * Enables the 8 MHz external crystal oscillator and routes it to the PLL with a 4x multiplier, which then becomes the
- * main system and peripheral clocks. APB1 is configured to a 2x divider (16 MHz), and SysTick is configured to tick at
- * a 1 ms period.
- */
-void init_clocks();
-
-/**
  * Enables the SysTick timer at a period of 1 ms.
  */
 void init_sys_tick();

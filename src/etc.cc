@@ -91,9 +91,7 @@ extern "C" void TIM3_IRQHandler() {
     s_should_update_dti = true;
 }
 
-int main() {
-    hal::init_clocks();
-
+void app_main() {
     // Initialise CAN peripheral and route all DTI messages to FIFO 0.
     can::init();
     can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
