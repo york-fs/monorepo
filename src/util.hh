@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 namespace util {
@@ -17,6 +18,22 @@ namespace util {
 template <std::integral T>
 constexpr T clamp(T value, std::type_identity_t<T> min_value, std::type_identity_t<T> max_value) {
     return value < min_value ? min_value : (max_value < value ? max_value : value);
+}
+
+/**
+ * Converts big endian bytes into a signed on unsigned integral.
+ *
+ * @param bytes a correctly sized span of big endian bytes
+ * @return the constructed integral
+ */
+template <std::integral T>
+constexpr T read_be(std::span<const std::uint8_t, sizeof(T)> bytes) {
+    std::make_unsigned_t<T> value = 0;
+    for (std::size_t i = 0; i < sizeof(T); i++) {
+        const auto shift = (sizeof(T) - i - 1) * T(8);
+        value |= static_cast<T>(bytes[i]) << shift;
+    }
+    return static_cast<T>(value);
 }
 
 } // namespace util
