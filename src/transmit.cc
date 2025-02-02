@@ -18,13 +18,8 @@ void app_main() {
         // Toggle LED.
         GPIOA->ODR ^= 0b10u;
 
-        can::Message message{
-            .identifier = (0x2aul << 8u) | config::k_dti_can_id,
-            .data_low = 0x5e240000,
-            .data_high = 0x86017100,
-            .length = 8,
-        };
-        can::transmit(message);
+        const auto message_bytes = std::to_array<std::uint8_t>({0x00, 0x00, 0x24, 0x5e, 0x00, 0x71, 0x01, 0x86});
+        can::transmit(can::build_raw((0x2aul << 8u) | config::k_dti_can_id, message_bytes));
 
         hal::delay_ms(1000);
     }

@@ -1,13 +1,14 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <span>
 
 namespace can {
 
 struct Message {
     std::uint32_t identifier;
-    std::uint32_t data_low;
-    std::uint32_t data_high;
+    std::array<std::uint8_t, 8> data;
     std::uint8_t length;
 };
 
@@ -27,9 +28,9 @@ void init();
  *   EXID[28:0] | IDE | RTR | 0
  *
  * @param filter the filter index to configure; must be in the range [0, 13]
- * @param fifo   the FIFO index; must be 0 or 1
- * @param mask   the bitmask to be applied to the incoming message (bitwise AND)
- * @param value  the expected value to which the incoming message is compared to, after masking
+ * @param fifo the FIFO index; must be 0 or 1
+ * @param mask the bitmask to be applied to the incoming message (bitwise AND)
+ * @param value the expected value to which the incoming message is compared to, after masking
  */
 void route_filter(std::uint8_t filter, std::uint8_t fifo, std::uint32_t mask, std::uint32_t value);
 
@@ -44,5 +45,20 @@ void set_fifo_callback(std::uint8_t index, fifo_callback_t callback);
  * @return true if the message was successfully placed into a FIFO; false otherwise
  */
 bool transmit(const Message &message);
+
+/**
+ * Builds a CAN message given an extended identifier and an array of bytes. The number of bytes will be truncated to
+ * eight bytes maximum.
+ */
+inline Message build_raw(std::uint32_t identifier, std::span<const std::uint8_t> data) {
+    Message message{
+        .identifier = identifier,
+        .length = static_cast<std::uint8_t>(data.size() > 8 ? 8 : data.size()),
+    };
+    for (std::uint8_t i = 0; i < message.length; i++) {
+        message.data[i] = data[i];
+    }
+    return message;
+}
 
 } // namespace can

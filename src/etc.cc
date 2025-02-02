@@ -26,7 +26,7 @@ public:
         m_drive_enabled.store(gd5.drive_enabled, std::memory_order_relaxed);
     }
 
-    void operator()(const dti::UnknownData &) {
+    void operator()(const dti::UnknownMessageType &) {
         // TODO: Log this as a warning.
     }
 
@@ -37,7 +37,7 @@ bool s_should_send_status = false;
 bool s_should_update_dti = false;
 
 void dti_message_callback(const can::Message &message) {
-    const auto dti_packet = dti::parse_packet(message.identifier, message.data_low, message.data_high);
+    const auto dti_packet = dti::parse_packet(message);
     std::visit(s_dti_state, dti_packet);
 }
 
@@ -50,7 +50,7 @@ void update_dti() {
         // Send drive enable message.
         can::Message message{
             .identifier = (0x0cul << 8u) | config::k_dti_can_id,
-            .data_low = drive_enabled_desired ? 0x1u : 0x0u,
+            .data{static_cast<std::uint8_t>(drive_enabled_desired ? 0x1 : 0x0)},
             .length = 1,
         };
         if (!can::transmit(message)) {
@@ -67,14 +67,14 @@ void update_dti() {
     // TODO: Sanity check RPM.
 
     // Send set speed (ERPM) message.
-    can::Message message{
-        .identifier = (0x03ul << 8u) | config::k_dti_can_id,
-        .data_low = static_cast<std::uint32_t>(desired_rpm * config::k_erpm_factor),
-        .length = 4,
-    };
-    if (!can::transmit(message)) {
-        // TODO: Handle this?
-    }
+    // can::Message message{
+    //     .identifier = (0x03ul << 8u) | config::k_dti_can_id,
+    //     .data_low = static_cast<std::uint32_t>(desired_rpm * config::k_erpm_factor),
+    //     .length = 4,
+    // };
+    // if (!can::transmit(message)) {
+    //     // TODO: Handle this?
+    // }
 }
 
 } // namespace

@@ -3,6 +3,12 @@
 #include <cstdint>
 #include <variant>
 
+namespace can {
+
+struct Message;
+
+} // namespace can
+
 namespace dti {
 
 enum class FaultCode : std::uint8_t {
@@ -78,13 +84,19 @@ struct GeneralData5 {
     std::uint8_t can_map_version;
 };
 
-struct UnknownData {
-    std::uint32_t data_low;
-    std::uint32_t data_high;
+struct UnknownMessageType {
+    std::uint32_t packet_id;
 };
 
-using Packet = std::variant<GeneralData1, GeneralData2, GeneralData3, GeneralData5, UnknownData>;
+using Packet = std::variant<GeneralData1, GeneralData2, GeneralData3, GeneralData5, UnknownMessageType>;
 
-Packet parse_packet(std::uint32_t ext_id, std::uint32_t data_low, std::uint32_t data_high);
+/**
+ * Attempts to parse the given CAN message into a DTI status message.
+ *
+ * @param message the CAN message to parse
+ * @return GeneralData if successful
+ * @return UnkownMessageType if the packet ID is not known
+ */
+Packet parse_packet(const can::Message &message);
 
 } // namespace dti

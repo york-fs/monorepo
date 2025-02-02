@@ -28,8 +28,16 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
         // Read data from mailbox.
         Message message{
             .identifier = (mailbox.RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos,
-            .data_low = mailbox.RDLR,
-            .data_high = mailbox.RDHR,
+            .data{
+                mailbox.RDLR & 0xffu,
+                (mailbox.RDLR >> 8u) & 0xffu,
+                (mailbox.RDLR >> 16u) & 0xffu,
+                (mailbox.RDLR >> 24u) & 0xffu,
+                mailbox.RDHR & 0xffu,
+                (mailbox.RDHR >> 8u) & 0xffu,
+                (mailbox.RDHR >> 16u) & 0xffu,
+                (mailbox.RDHR >> 24u) & 0xffu,
+            },
             .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
         };
         if (callback != nullptr) {
@@ -153,8 +161,12 @@ bool transmit(const Message &message) {
     auto &mailbox = CAN1->sTxMailBox[mailbox_index];
     mailbox.TIR = (message.identifier << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
     mailbox.TDTR = message.length & 0xfu;
-    mailbox.TDLR = message.data_low;
-    mailbox.TDHR = message.data_high;
+    mailbox.TDLR = (static_cast<std::uint32_t>(message.data[3]) << 24u) |
+                   (static_cast<std::uint32_t>(message.data[2]) << 16u) |
+                   (static_cast<std::uint32_t>(message.data[1]) << 8u) | message.data[0];
+    mailbox.TDHR = (static_cast<std::uint32_t>(message.data[7]) << 24u) |
+                   (static_cast<std::uint32_t>(message.data[6]) << 16u) |
+                   (static_cast<std::uint32_t>(message.data[5]) << 8u) | message.data[4];
 
     // Request transmission.
     mailbox.TIR |= CAN_TI0R_TXRQ;

@@ -3,11 +3,9 @@
 #include <stm32f103xb.h>
 
 static void message_callback(const can::Message &message) {
-    const auto dl = message.data_low;
-    const auto dh = message.data_high;
     hal::swd_printf("(id: %x, l: %u) - %02x %02x %02x %02x %02x %02x %02x %02x\n", message.identifier, message.length,
-                    (dl >> 0u) & 0xffu, (dl >> 8u) & 0xffu, (dl >> 16u) & 0xffu, (dl >> 24u) & 0xffu,
-                    (dh >> 0u) & 0xffu, (dh >> 8u) & 0xffu, (dh >> 16u) & 0xffu, (dh >> 24u) & 0xffu);
+                    message.data[0], message.data[1], message.data[2], message.data[3], message.data[4],
+                    message.data[5], message.data[6], message.data[7]);
 }
 
 void app_main() {
