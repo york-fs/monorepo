@@ -55,7 +55,8 @@ if(BUILD_TARGET STREQUAL "host")
     enable_testing()
 
     add_executable(tests
-        test/dti_test.cc)
+        test/dti_test.cc
+        test/util_test.cc)
     target_link_libraries(tests PRIVATE GTest::Main shared)
     gtest_discover_tests(tests)
 elseif(BUILD_TARGET STREQUAL "stm32")
