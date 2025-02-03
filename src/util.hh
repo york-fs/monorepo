@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <type_traits>
@@ -21,7 +22,7 @@ constexpr T clamp(T value, std::type_identity_t<T> min_value, std::type_identity
 }
 
 /**
- * Converts big endian bytes into a signed on unsigned integral.
+ * Converts big endian bytes into a signed or unsigned integral.
  *
  * @param bytes a correctly sized span of big endian bytes
  * @return the constructed integral
@@ -34,6 +35,22 @@ constexpr T read_be(std::span<const std::uint8_t, sizeof(T)> bytes) {
         value |= static_cast<T>(bytes[i]) << shift;
     }
     return static_cast<T>(value);
+}
+
+/**
+ * Converts a signed or unsigned integral into big endian bytes.
+ *
+ * @param value the value to convert
+ * @return an array of big endian bytes
+ */
+template <std::integral T>
+constexpr std::array<std::uint8_t, sizeof(T)> write_be(T value) {
+    std::array<std::uint8_t, sizeof(T)> bytes;
+    for (std::size_t i = 0; i < sizeof(T); i++) {
+        const auto shift = (sizeof(T) - i - 1) * T(8);
+        bytes[i] = static_cast<std::uint8_t>((static_cast<std::make_unsigned_t<T>>(value) >> shift) & 0xffu);
+    }
+    return bytes;
 }
 
 } // namespace util

@@ -22,4 +22,11 @@ TEST(Util, ReadBe) {
     EXPECT_EQ(util::read_be<std::int32_t>(std::to_array<std::uint8_t>({0xff, 0xff, 0x03, 0x79})), -64647);
 }
 
+TEST(Util, WriteBe) {
+    EXPECT_EQ(util::write_be<std::uint8_t>(0xff), std::to_array<std::uint8_t>({0xff}));
+    EXPECT_EQ(util::write_be<std::uint16_t>(51929), std::to_array<std::uint8_t>({0xca, 0xd9}));
+    EXPECT_EQ(util::write_be<std::uint32_t>(48934821), std::to_array<std::uint8_t>({0x02, 0xea, 0xaf, 0xa5}));
+    EXPECT_EQ(util::write_be<std::int32_t>(-484839), std::to_array<std::uint8_t>({0xff, 0xf8, 0x9a, 0x19}));
+}
+
 } // namespace
