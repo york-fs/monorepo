@@ -9,6 +9,44 @@
 
 namespace {
 
+TEST(DtiBuild, SetCurrent) {
+    EXPECT_EQ(dti::build_set_current(0x10, 100), can::build_raw(0x0110, std::to_array<std::uint8_t>({0x00, 0x64})));
+    EXPECT_EQ(dti::build_set_current(0x20, -100), can::build_raw(0x0120, std::to_array<std::uint8_t>({0xff, 0x9c})));
+}
+
+TEST(DtiBuild, SetBrakeCurrent) {
+    EXPECT_EQ(dti::build_set_brake_current(0x10, 100),
+              can::build_raw(0x0210, std::to_array<std::uint8_t>({0x00, 0x64})));
+}
+
+TEST(DtiBuild, SetErpm) {
+    EXPECT_EQ(dti::build_set_erpm(0x10, 500),
+              can::build_raw(0x0310, std::to_array<std::uint8_t>({0x00, 0x00, 0x01, 0xf4})));
+    EXPECT_EQ(dti::build_set_erpm(0x20, -500),
+              can::build_raw(0x0320, std::to_array<std::uint8_t>({0xff, 0xff, 0xfe, 0x0c})));
+}
+
+TEST(DtiBuild, SetPosition) {
+    EXPECT_EQ(dti::build_set_position(0x22, 1000), can::build_raw(0x0422, std::to_array<std::uint8_t>({0x03, 0xe8})));
+}
+
+TEST(DtiBuild, SetRelativeCurrent) {
+    EXPECT_EQ(dti::build_set_relative_current(0x10, 100),
+              can::build_raw(0x0510, std::to_array<std::uint8_t>({0x00, 0x64})));
+    EXPECT_EQ(dti::build_set_relative_current(0x20, -100),
+              can::build_raw(0x0520, std::to_array<std::uint8_t>({0xff, 0x9c})));
+}
+
+TEST(DtiBuild, SetRelativeBrakeCurrent) {
+    EXPECT_EQ(dti::build_set_relative_brake_current(0x22, 100),
+              can::build_raw(0x0622, std::to_array<std::uint8_t>({0x00, 0x64})));
+}
+
+TEST(DtiBuild, SetDriveEnabled) {
+    EXPECT_EQ(dti::build_set_drive_enabled(0x10, false), can::build_raw(0x0c10, std::to_array<std::uint8_t>({0x00})));
+    EXPECT_EQ(dti::build_set_drive_enabled(0x20, true), can::build_raw(0x0c20, std::to_array<std::uint8_t>({0x01})));
+}
+
 TEST(DtiParse, GeneralData1) {
     const auto message_bytes = std::to_array<std::uint8_t>({0x00, 0x00, 0x24, 0x5e, 0x00, 0x71, 0x01, 0x86});
     const auto packet = dti::parse_packet(can::build_raw(0x2022, message_bytes));
