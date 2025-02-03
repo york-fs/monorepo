@@ -13,6 +13,8 @@ namespace {
 
 class DtiState {
     // TODO: Record more data such as actual RPM to crosscheck it.
+    std::atomic<std::int16_t> m_controller_temperature;
+    std::atomic<std::int16_t> m_motor_temperature;
     std::atomic<bool> m_drive_enabled;
 
 public:
@@ -20,7 +22,10 @@ public:
 
     void operator()(const dti::GeneralData2 &) {}
 
-    void operator()(const dti::GeneralData3 &) {}
+    void operator()(const dti::GeneralData3 &gd3) {
+        m_controller_temperature.store(gd3.controller_temperature, std::memory_order_relaxed);
+        m_motor_temperature.store(gd3.motor_temperature, std::memory_order_relaxed);
+    }
 
     void operator()(const dti::GeneralData5 &gd5) {
         m_drive_enabled.store(gd5.drive_enabled, std::memory_order_relaxed);
@@ -30,52 +35,13 @@ public:
         // TODO: Log this as a warning.
     }
 
+    std::int16_t controller_temperature() const { return m_controller_temperature.load(std::memory_order_relaxed); }
+    std::int16_t motor_temperature() const { return m_motor_temperature.load(std::memory_order_relaxed); }
     bool is_drive_enabled() const { return m_drive_enabled.load(std::memory_order_relaxed); }
 } s_dti_state;
 
 bool s_should_send_status = false;
 bool s_should_update_dti = false;
-
-void dti_message_callback(const can::Message &message) {
-    const auto dti_packet = dti::parse_packet(message);
-    std::visit(s_dti_state, dti_packet);
-}
-
-void update_dti() {
-    // TODO: Compute based on RTD and inverter data sanity checking.
-    bool drive_enabled_desired = true;
-
-    // Inverter's drive enable state doesn't match what we want, attempt to update it.
-    if (s_dti_state.is_drive_enabled() != drive_enabled_desired) {
-        // Send drive enable message.
-        can::Message message{
-            .identifier = (0x0cul << 8u) | config::k_dti_can_id,
-            .data{static_cast<std::uint8_t>(drive_enabled_desired ? 0x1 : 0x0)},
-            .length = 1,
-        };
-        if (!can::transmit(message)) {
-            // TODO: Handle this?
-        }
-
-        // Early return so we avoid sending throttle data when drive is not enabled.
-        return;
-    }
-
-    // TODO: Calculate desired RPM based on throttle pedal input.
-    std::int32_t desired_rpm = 500;
-
-    // TODO: Sanity check RPM.
-
-    // Send set speed (ERPM) message.
-    // can::Message message{
-    //     .identifier = (0x03ul << 8u) | config::k_dti_can_id,
-    //     .data_low = static_cast<std::uint32_t>(desired_rpm * config::k_erpm_factor),
-    //     .length = 4,
-    // };
-    // if (!can::transmit(message)) {
-    //     // TODO: Handle this?
-    // }
-}
 
 } // namespace
 
@@ -97,7 +63,9 @@ void app_main() {
     can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
 
     // Install FIFO message pending callback and enable IRQ with a high priority.
-    can::set_fifo_callback(0, dti_message_callback);
+    can::set_fifo_callback(0, [](const can::Message &message) {
+        std::visit(s_dti_state, dti::parse_packet(message));
+    });
     hal::enable_irq(USB_LP_CAN1_RX0_IRQn, 2);
 
     // Enable timer 2 and 3 clocks.
@@ -112,8 +80,8 @@ void app_main() {
     TIM3->PSC = 1999;
 
     // Configure auto reload registers.
-    TIM2->ARR = 15999;
-    TIM3->ARR = 7999;
+    TIM2->ARR = 27999; // 2000 ms
+    TIM3->ARR = 34;    // 2.5 ms
 
     // Enable timers and IRQs.
     TIM2->CR1 |= TIM_CR1_CEN;
@@ -125,13 +93,14 @@ void app_main() {
     while (true) {
         if (std::exchange(s_should_send_status, false)) {
             // TODO: Send status report.
+            hal::swd_printf("controller temp: %d, motor temp: %d, drive enabled: %s\n",
+                            s_dti_state.controller_temperature(), s_dti_state.motor_temperature(),
+                            s_dti_state.is_drive_enabled() ? "yes" : "no");
         }
 
         if (std::exchange(s_should_update_dti, false)) {
-            update_dti();
+            // Set 250 RPM.
+            can::transmit(dti::build_set_erpm(config::k_dti_can_id, 250 * config::k_erpm_factor));
         }
-
-        // Sleep until next interrupt.
-        __WFI();
     }
 }
