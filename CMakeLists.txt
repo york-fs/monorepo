@@ -37,7 +37,7 @@ function(add_stm_executable name)
     # Add a trace target for SWD output.
     if(ST_TRACE_PROGRAM)
         add_custom_target(trace-${name}
-            ${ST_TRACE_PROGRAM} -c32
+            ${ST_TRACE_PROGRAM} -c56
             USES_TERMINAL)
         add_dependencies(trace-${name} flash-${name})
     endif()
