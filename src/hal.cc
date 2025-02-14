@@ -65,6 +65,9 @@ int swd_printf(const char *format, ...) {
 extern void app_main();
 
 int main() {
+    // Increase flash latency for use with a 56 MHz AHB clock.
+    FLASH->ACR |= FLASH_ACR_LATENCY_2;
+
     // Enable HSE (8 MHz crystal) and wait for readiness.
     RCC->CR |= RCC_CR_HSEON;
     hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
