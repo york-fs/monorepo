@@ -76,18 +76,18 @@ void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count) {
     }
 }
 
-void adc_init_dma(ADC_TypeDef *adc, DMA_Channel_TypeDef *dma_channel, std::span<std::uint16_t> data) {
+void adc_init_dma(std::span<std::uint16_t> data) {
     // Enable DMA peripheral clock.
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
 
-    // Enable DMA mode on ADC.
-    adc->CR2 |= ADC_CR2_DMA;
+    // Enable DMA mode on ADC1.
+    ADC1->CR2 |= ADC_CR2_DMA;
 
-    // Configure DMA channel.
-    dma_channel->CPAR = std::bit_cast<std::uint32_t>(&adc->DR);
-    dma_channel->CMAR = std::bit_cast<std::uint32_t>(data.data());
-    dma_channel->CNDTR = data.size();
-    dma_channel->CCR = DMA_CCR_MSIZE_0 | DMA_CCR_PSIZE_0 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_EN;
+    // Configure DMA channel 1.
+    DMA1_Channel1->CPAR = std::bit_cast<std::uint32_t>(&ADC1->DR);
+    DMA1_Channel1->CMAR = std::bit_cast<std::uint32_t>(data.data());
+    DMA1_Channel1->CNDTR = data.size();
+    DMA1_Channel1->CCR = DMA_CCR_MSIZE_0 | DMA_CCR_PSIZE_0 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_EN;
 }
 
 void adc_sequence_channel(ADC_TypeDef *adc, std::uint32_t index, std::uint32_t channel, std::uint32_t sample_time) {

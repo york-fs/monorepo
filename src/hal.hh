@@ -52,13 +52,11 @@ void delay_ms(std::uint32_t ms);
 void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count);
 
 /**
- * Sets up DMA in circular, memory-increment mode for the given ADC.
+ * Enables DMA in a circular, memory-increment mode for ADC1. Note that ADC2 doesn't support DMA.
  *
- * @param adc the target ADC peripheral
- * @param dma_channel the DMA channel to use
- * @param data DMA destination buffer
+ * @param data the DMA destination buffer
  */
-void adc_init_dma(ADC_TypeDef *adc, DMA_Channel_TypeDef *dma_channel, std::span<std::uint16_t> data);
+void adc_init_dma(std::span<std::uint16_t> data);
 
 /**
  * Sets the channel to be sequenced at the given index. Refer to the datasheet for sample time meaning.

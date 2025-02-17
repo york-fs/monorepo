@@ -281,7 +281,7 @@ void app_main() {
 
     // Set 13.5 cycle conversion time (~1.85 us).
     hal::adc_init(ADC1, 2);
-    hal::adc_init_dma(ADC1, DMA1_Channel1, s_adc_buffer);
+    hal::adc_init_dma(s_adc_buffer);
     hal::adc_sequence_channel(ADC1, 1, 0, 0b010u);
     hal::adc_sequence_channel(ADC1, 2, 1, 0b010u);
 
