@@ -166,8 +166,9 @@ std::uint16_t calculate_current() {
     }
 
     // Apply current preload if needed.
-    if (s_dti_state.erpm() < 1000) {
-        current += 100;
+    const auto rpm = s_dti_state.erpm() / config::k_erpm_factor;
+    if (rpm < 100) {
+        current = std::max(current, static_cast<std::uint16_t>(100 - rpm));
     }
     return current;
 }
