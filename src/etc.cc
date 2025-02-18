@@ -57,10 +57,12 @@ enum class LedState : std::uint32_t {
     Calibrating,
     Uncalibrated,
     SensorError,
+    CanError,
     On,
 };
 
 enum class State {
+    CanOffline,
     Uncalibrated,
     Calibrating,
     CalibrationWait,
@@ -73,10 +75,12 @@ std::array<std::uint32_t, static_cast<std::uint32_t>(LedState::On) * 2u> s_led_d
 CalibrationData s_left_calibration;
 CalibrationData s_right_calibration;
 std::atomic<LedState> s_led_state{LedState::Off};
-std::atomic<State> s_state{State::Uncalibrated};
+std::atomic<State> s_state{State::CanOffline};
 
 const char *state_name(State state) {
     switch (state) {
+    case State::CanOffline:
+        return "can offline";
     case State::Uncalibrated:
         return "uncalibrated";
     case State::Calibrating:
@@ -179,9 +183,12 @@ extern "C" void EXTI15_10_IRQHandler() {
     // Clear all pending interrupts just in case.
     const auto pending = std::exchange(EXTI->PR, 0x7ffffu);
     if ((pending & EXTI_PR_PR14) != 0u) {
-        s_left_calibration = {};
-        s_right_calibration = {};
-        s_state.store(State::Calibrating);
+        const auto current_state = s_state.load();
+        if (current_state == State::Uncalibrated || current_state == State::Running) {
+            s_left_calibration = {};
+            s_right_calibration = {};
+            s_state.store(State::Calibrating);
+        }
     }
 }
 
@@ -197,6 +204,24 @@ extern "C" void TIM3_IRQHandler() {
     TIM3->SR = ~TIM_SR_UIF;
 
     switch (s_state.load()) {
+    case State::CanOffline:
+        set_led_state(LedState::CanError);
+
+        // Attempt to initialise CAN peripheral.
+        if (can::init()) {
+            // Route all DTI messages to FIFO 0.
+            can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
+
+            // Install FIFO message pending callback and enable IRQ with a high priority.
+            can::set_fifo_callback(0, [](const can::Message &message) {
+                std::visit(s_dti_state, dti::parse_packet(message));
+            });
+            hal::enable_irq(USB_LP_CAN1_RX0_IRQn, 2);
+
+            // Move to uncalibrated state.
+            s_state.store(State::Uncalibrated);
+        }
+        break;
     case State::Uncalibrated:
         set_led_state(LedState::Uncalibrated);
         break;
@@ -226,16 +251,6 @@ extern "C" void TIM3_IRQHandler() {
 }
 
 void app_main() {
-    // Initialise CAN peripheral and route all DTI messages to FIFO 0.
-    can::init();
-    can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
-
-    // Install FIFO message pending callback and enable IRQ with a high priority.
-    can::set_fifo_callback(0, [](const can::Message &message) {
-        std::visit(s_dti_state, dti::parse_packet(message));
-    });
-    hal::enable_irq(USB_LP_CAN1_RX0_IRQn, 2);
-
     // Configure GPIOs for ADC channels.
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
     hal::configure_gpio(GPIOA, 0, hal::GpioInputMode::Analog);
@@ -286,6 +301,7 @@ void app_main() {
     hal::adc_sequence_channel(ADC1, 1, 0, 0b010u);
     hal::adc_sequence_channel(ADC1, 2, 1, 0b010u);
 
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PB;
     EXTI->IMR |= EXTI_IMR_MR14;
     EXTI->FTSR |= EXTI_FTSR_TR14;
