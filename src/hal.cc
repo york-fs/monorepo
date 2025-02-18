@@ -133,6 +133,18 @@ int swd_printf(const char *format, ...) {
     return rc;
 }
 
+bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired, std::uint32_t timeout) {
+    for (; (reg & mask) != desired; timeout--) {
+        if (timeout == 0) {
+            return false;
+        }
+        for (std::uint32_t i = 0; i < 7000; i++) {
+            __NOP();
+        }
+    }
+    return true;
+}
+
 } // namespace hal
 
 extern void app_main();

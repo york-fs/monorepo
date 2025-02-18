@@ -78,10 +78,17 @@ void adc_start(ADC_TypeDef *adc);
 void swd_putc(char ch);
 __attribute__((format(printf, 1, 2))) int swd_printf(const char *format, ...);
 
-inline void wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired) {
-    while ((reg & mask) != desired) {
-        asm volatile("" ::: "memory");
-    }
-}
+/**
+ * Waits until the register ANDed with the given mask is equal to the desired value, or the timeout expires.
+
+ * @param reg the MMIO register
+ * @param mask a mask to AND the register's value with
+ * @param desired the desired value
+ * @param timeout a timeout in milliseconds
+ * @return true if the register now equals the desired value; false otherwise
+ */
+// TODO: Make this nodiscard.
+bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired,
+                std::uint32_t timeout = UINT32_MAX);
 
 } // namespace hal
