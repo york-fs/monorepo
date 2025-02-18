@@ -70,7 +70,7 @@ extern "C" void CAN1_SCE_IRQHandler() {
     CAN1->MSR |= CAN_MSR_ERRI;
 }
 
-void init() {
+bool init() {
     // Ensure peripheral clocks are active.
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
     RCC->APB2ENR |= RCC_APB2ENR_IOPBEN | RCC_APB2ENR_AFIOEN;
@@ -84,11 +84,15 @@ void init() {
 
     // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;
-    hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK);
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK, 2)) {
+        return false;
+    }
 
     // Exit sleep mode.
     CAN1->MCR &= ~CAN_MCR_SLEEP;
-    hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u);
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u, 2)) {
+        return false;
+    }
 
     // Set the bit timing register. Peripheral clocked at 28 MHz and 500 kbits/s.
     // The value below sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 4.
@@ -100,7 +104,9 @@ void init() {
 
     // Leave initialisation mode.
     CAN1->MCR &= ~CAN_MCR_INRQ;
-    hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u);
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u, 2)) {
+        return false;
+    }
 
     // Enable setting of CAN_MSR_ERRI on bus-off event.
     CAN1->IER |= CAN_IER_BOFIE;
@@ -114,6 +120,7 @@ void init() {
 
     // Enable master error interrupt generation for any bit set in CAN_ESR.
     CAN1->IER |= CAN_IER_ERRIE;
+    return true;
 }
 
 void route_filter(const std::uint8_t filter, const std::uint8_t fifo, const std::uint32_t mask,

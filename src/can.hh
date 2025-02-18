@@ -19,8 +19,10 @@ using fifo_callback_t = void (*)(const Message &);
 /**
  * Initialises the CAN1 peripheral to 500 kbits/s, with CAN_RX mapped to PB8 and CAN_TX mapped to PB9. Assumes
  * a 28 MHz APB1 clock.
+ *
+ * @return true if initialisation was successful; false otherwise
  */
-void init();
+[[nodiscard]] bool init();
 
 /**
  * Configures and enables the specified CAN filter to route incoming messages to the specified FIFO index. A
