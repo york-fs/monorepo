@@ -29,14 +29,14 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
         Message message{
             .identifier = (mailbox.RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos,
             .data{
-                mailbox.RDLR & 0xffu,
-                (mailbox.RDLR >> 8u) & 0xffu,
-                (mailbox.RDLR >> 16u) & 0xffu,
-                (mailbox.RDLR >> 24u) & 0xffu,
-                mailbox.RDHR & 0xffu,
-                (mailbox.RDHR >> 8u) & 0xffu,
-                (mailbox.RDHR >> 16u) & 0xffu,
-                (mailbox.RDHR >> 24u) & 0xffu,
+                static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 8u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 16u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 24u) & 0xffu),
+                static_cast<std::uint8_t>(mailbox.RDHR & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 8u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 16u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 24u) & 0xffu),
             },
             .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
         };
