@@ -9,7 +9,7 @@ static void message_callback(const can::Message &message) {
 }
 
 void app_main() {
-    can::init();
+    static_cast<void>(can::init());
 
     // Route all messages to FIFO 0.
     can::route_filter(0, 0, 0, 0);

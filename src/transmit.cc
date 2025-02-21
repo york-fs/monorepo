@@ -8,7 +8,7 @@ void app_main() {
     hal::init_sys_tick();
 
     // Initialise and start CAN peripheral.
-    can::init();
+    static_cast<void>(can::init());
 
     // Configure PA1 LED pin.
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
