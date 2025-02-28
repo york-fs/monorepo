@@ -1,0 +1,38 @@
+name: Build
+on:
+  workflow_call:
+    inputs:
+      preset:
+        required: true
+        type: string
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    container: ghcr.io/york-fs/stm-can:master
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: >-
+          cmake .
+          --preset ${{ inputs.preset }}
+          -Bbuild
+          -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          -GNinja
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run host tests
+        if: ${{ inputs.preset == 'host' }}
+        run: cmake --build build --target test
+
+      - name: Upload release artifacts
+        if: ${{ inputs.preset == 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            build/*.bin

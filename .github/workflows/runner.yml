@@ -1,0 +1,26 @@
+name: CI Runner
+on: [push, pull_request]
+
+concurrency:
+  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-runner
+  cancel-in-progress: true
+
+# In parallel, build and run the host tests, and check the formatting. If both succeed, build and upload the release
+# artifacts.
+jobs:
+  build-test:
+    name: Build Host Tests
+    uses: ./.github/workflows/build.yml
+    with:
+      preset: host
+
+  code-style:
+    name: Code Style
+    uses: ./.github/workflows/code_style.yml
+
+  build-release:
+    name: Release Build
+    needs: [build-test, code-style]
+    uses: ./.github/workflows/build.yml
+    with:
+      preset: release
