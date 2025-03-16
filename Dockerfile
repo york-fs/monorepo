@@ -14,6 +14,7 @@ RUN apt-get update \
     latexmk \
     libgtest-dev \
     ninja-build \
+    plantuml \
     texlive \
     texlive-latex-extra \
     texlive-luatex \
