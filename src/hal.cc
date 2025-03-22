@@ -189,6 +189,9 @@ int main() {
         RCC->CFGR |= RCC_CFGR_ADCPRE_DIV4;
     }
 
+    // Default to setting the internal LDO to a low-power mode in stop mode. This incurs a small startup time penalty.
+    PWR->CR |= PWR_CR_LPDS;
+
     // Jump to user code.
     app_main();
 }
