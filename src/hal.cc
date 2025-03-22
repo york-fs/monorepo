@@ -192,6 +192,10 @@ int main() {
     // Default to setting the internal LDO to a low-power mode in stop mode. This incurs a small startup time penalty.
     PWR->CR |= PWR_CR_LPDS;
 
+    // Disable JTAG interface.
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+    AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_JTAGDISABLE;
+
     // Jump to user code.
     app_main();
 }
