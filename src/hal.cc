@@ -149,38 +149,45 @@ bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint
 
 extern void app_main();
 
+[[gnu::weak]] bool hal_low_power() {
+    return false;
+}
+
 int main() {
-    // Increase flash latency for use with a 56 MHz AHB clock.
-    FLASH->ACR |= FLASH_ACR_LATENCY_2;
+    // Enable 56 MHz system clock via an 8 MHz external crystal if low power mode is not desired.
+    if (!hal_low_power()) {
+        // Increase flash latency for use with a 56 MHz AHB clock.
+        FLASH->ACR |= FLASH_ACR_LATENCY_2;
 
-    // Enable HSE (8 MHz crystal) and wait for readiness.
-    RCC->CR |= RCC_CR_HSEON;
-    hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
+        // Enable HSE (8 MHz crystal) and wait for readiness.
+        RCC->CR |= RCC_CR_HSEON;
+        hal::wait_equal(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY);
 
-    // Configure PLL to HSE * 7 = 56 MHz.
-    uint32_t rcc_cfgr = RCC->CFGR;
-    rcc_cfgr &= ~RCC_CFGR_PLLMULL;
-    rcc_cfgr |= RCC_CFGR_PLLMULL7;
-    rcc_cfgr |= RCC_CFGR_PLLSRC;
-    RCC->CFGR = rcc_cfgr;
+        // Configure PLL to HSE * 7 = 56 MHz.
+        uint32_t rcc_cfgr = RCC->CFGR;
+        rcc_cfgr &= ~RCC_CFGR_PLLMULL;
+        rcc_cfgr |= RCC_CFGR_PLLMULL7;
+        rcc_cfgr |= RCC_CFGR_PLLSRC;
+        RCC->CFGR = rcc_cfgr;
 
-    // Enable PLL and wait for readiness.
-    RCC->CR |= RCC_CR_PLLON;
-    hal::wait_equal(RCC->CR, RCC_CR_PLLRDY, RCC_CR_PLLRDY);
+        // Enable PLL and wait for readiness.
+        RCC->CR |= RCC_CR_PLLON;
+        hal::wait_equal(RCC->CR, RCC_CR_PLLRDY, RCC_CR_PLLRDY);
 
-    // Switch system clock to PLL. HSI is default, so no need to mask.
-    RCC->CFGR |= RCC_CFGR_SW_PLL;
-    hal::wait_equal(RCC->CFGR, RCC_CFGR_SWS, RCC_CFGR_SWS_PLL);
+        // Switch system clock to PLL. HSI is default, so no need to mask.
+        RCC->CFGR |= RCC_CFGR_SW_PLL;
+        hal::wait_equal(RCC->CFGR, RCC_CFGR_SWS, RCC_CFGR_SWS_PLL);
 
-    // Done with the HSI, disable it.
-    RCC->CR &= ~RCC_CR_HSION;
-    hal::wait_equal(RCC->CR, RCC_CR_HSIRDY, 0u);
+        // Done with the HSI, disable it.
+        RCC->CR &= ~RCC_CR_HSION;
+        hal::wait_equal(RCC->CR, RCC_CR_HSIRDY, 0u);
 
-    // Set a 2x divider on APB1 clock as to not exceed 36 MHz limit.
-    RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
+        // Set a 2x divider on APB1 clock as to not exceed 36 MHz limit.
+        RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
 
-    // Set a 4x divider on the ADC clock to achieve the maximum 14 MHz.
-    RCC->CFGR |= RCC_CFGR_ADCPRE_DIV4;
+        // Set a 4x divider on the ADC clock to achieve the maximum 14 MHz.
+        RCC->CFGR |= RCC_CFGR_ADCPRE_DIV4;
+    }
 
     // Jump to user code.
     app_main();
