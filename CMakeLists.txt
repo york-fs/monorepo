@@ -72,7 +72,6 @@ elseif(BUILD_TARGET STREQUAL "stm32")
 
     add_stm_executable(bus_logger src/bus_logger.cc)
     add_stm_executable(etc src/etc.cc)
-    add_stm_executable(transmit src/transmit.cc)
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
