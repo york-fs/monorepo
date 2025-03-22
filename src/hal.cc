@@ -16,7 +16,13 @@ extern "C" void SysTick_Handler() {
     s_ticks = s_ticks + 1;
 }
 
+static void ensure_gpio_clock(GPIO_TypeDef *port) {
+    const auto index = (std::bit_cast<std::uint32_t>(port) - std::bit_cast<std::uint32_t>(GPIOA)) / 1024;
+    RCC->APB2ENR |= 1u << (index + RCC_APB2ENR_IOPAEN_Pos);
+}
+
 static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
+    ensure_gpio_clock(port);
     const auto shift = (pin % 8) * 4;
     auto &reg = pin > 7 ? port->CRH : port->CRL;
     reg &= ~(0xf << shift);
@@ -24,12 +30,30 @@ static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, s
     reg |= mode << shift;
 }
 
-void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioInputMode mode) {
-    set_gpio(port, pin, static_cast<std::uint32_t>(mode), 0b00u);
+static GPIO_TypeDef *gpio_port(GpioPort port) {
+    return std::array{
+        GPIOA, GPIOB, GPIOC, GPIOD, GPIOE,
+    }[static_cast<std::uint32_t>(port)];
 }
 
-void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, GpioOutputSpeed speed) {
-    set_gpio(port, pin, static_cast<std::uint32_t>(mode), static_cast<std::uint32_t>(speed));
+Gpio::Gpio(GpioPort port, std::uint8_t pin) : m_port(gpio_port(port)), m_pin(pin) {}
+
+void Gpio::configure(GpioInputMode mode) const {
+    auto cnf_bits = static_cast<std::uint32_t>(mode);
+    if (mode == GpioInputMode::PullDown || mode == GpioInputMode::PullUp) {
+        cnf_bits = 0b10u;
+    }
+    set_gpio(m_port, m_pin, cnf_bits, 0b00u);
+    if (mode == GpioInputMode::PullUp) {
+        hal::gpio_set(*this);
+    } else if (mode == GpioInputMode::PullDown) {
+        hal::gpio_reset(*this);
+    }
+}
+
+void Gpio::configure(GpioOutputMode mode, GpioOutputSpeed speed) const {
+    set_gpio(m_port, m_pin, static_cast<std::uint32_t>(mode), static_cast<std::uint32_t>(speed));
+    hal::gpio_reset(*this);
 }
 
 void enable_irq(IRQn_Type irq, std::uint32_t priority) {

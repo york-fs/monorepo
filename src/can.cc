@@ -71,16 +71,15 @@ extern "C" void CAN1_SCE_IRQHandler() {
 }
 
 bool init() {
-    // Ensure peripheral clocks are active.
+    // Enable CAN peripheral clock.
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
-    RCC->APB2ENR |= RCC_APB2ENR_IOPBEN | RCC_APB2ENR_AFIOEN;
 
     // Remap CAN1 to PB8 and PB9.
     AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
 
     // Configure PB8 suitable to be CAN_RX and PB9 suitable to be CAN_TX.
-    hal::configure_gpio(GPIOB, 8, hal::GpioInputMode::Floating);
-    hal::configure_gpio(GPIOB, 9, hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
+    hal::Gpio(hal::GpioPort::B, 8).configure(hal::GpioInputMode::Floating);
+    hal::Gpio(hal::GpioPort::B, 9).configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
 
     // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;

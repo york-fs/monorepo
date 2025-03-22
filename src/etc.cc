@@ -69,6 +69,11 @@ enum class State {
     Running,
 };
 
+hal::Gpio s_left_hall(hal::GpioPort::A, 0);
+hal::Gpio s_right_hall(hal::GpioPort::A, 1);
+hal::Gpio s_led(hal::GpioPort::B, 13);
+hal::Gpio s_button(hal::GpioPort::B, 14);
+
 std::array<std::uint16_t, 2> s_adc_buffer{};
 std::array<std::uint32_t, static_cast<std::uint32_t>(LedState::On) * 2u> s_led_dma{};
 
@@ -251,16 +256,11 @@ extern "C" void TIM3_IRQHandler() {
 }
 
 void app_main() {
-    // Configure GPIOs for ADC channels.
-    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
-    hal::configure_gpio(GPIOA, 0, hal::GpioInputMode::Analog);
-    hal::configure_gpio(GPIOA, 1, hal::GpioInputMode::Analog);
-
-    // Configure GPIOs for LED and button.
-    RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
-    hal::configure_gpio(GPIOB, 13, hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max10);
-    hal::configure_gpio(GPIOB, 14, hal::GpioInputMode::PullUpPullDown);
-    GPIOB->ODR |= 1u << 14u;
+    // Configure GPIOs for ADC channels, LED, and button.
+    s_left_hall.configure(hal::GpioInputMode::Analog);
+    s_right_hall.configure(hal::GpioInputMode::Analog);
+    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_button.configure(hal::GpioInputMode::PullUp);
 
     // Enable timer 2 and 3 clocks.
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
@@ -301,7 +301,6 @@ void app_main() {
     hal::adc_sequence_channel(ADC1, 1, 0, 0b010u);
     hal::adc_sequence_channel(ADC1, 2, 1, 0b010u);
 
-    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PB;
     EXTI->IMR |= EXTI_IMR_MR14;
     EXTI->FTSR |= EXTI_FTSR_TR14;

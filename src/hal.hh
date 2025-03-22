@@ -4,13 +4,15 @@
 
 #include <cstdint>
 #include <span>
+#include <utility>
 
 namespace hal {
 
 enum class GpioInputMode : std::uint32_t {
     Analog = 0b00u,
     Floating = 0b01u,
-    PullUpPullDown = 0b10u,
+    PullDown,
+    PullUp,
 };
 
 enum class GpioOutputMode : std::uint32_t {
@@ -26,8 +28,63 @@ enum class GpioOutputSpeed : std::uint32_t {
     Max50 = 0b11u,
 };
 
-void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioInputMode mode);
-void configure_gpio(GPIO_TypeDef *port, std::uint32_t pin, GpioOutputMode mode, GpioOutputSpeed speed);
+enum class GpioPort {
+    A,
+    B,
+    C,
+    D,
+    E,
+};
+
+class Gpio {
+    GPIO_TypeDef *const m_port;
+    const std::uint8_t m_pin;
+
+public:
+    Gpio(GpioPort port, std::uint8_t pin);
+
+    void configure(GpioInputMode mode) const;
+    void configure(GpioOutputMode mode, GpioOutputSpeed speed) const;
+
+    GPIO_TypeDef *port() const { return m_port; }
+    std::uint8_t pin() const { return m_pin; }
+};
+
+template <typename... Ts>
+void gpio_set(Ts... list) {
+    GPIO_TypeDef *port = nullptr;
+    std::uint32_t bitset = 0;
+    for (const auto gpio : {list...}) {
+        if (port != gpio.port()) {
+            if (port != nullptr) {
+                port->BSRR = std::exchange(bitset, 0);
+            }
+            port = gpio.port();
+        }
+        bitset |= 1u << gpio.pin();
+    }
+    if (port != nullptr) {
+        port->BSRR = bitset;
+    }
+}
+
+template <typename... Ts>
+void gpio_reset(Ts... list) {
+    GPIO_TypeDef *port = nullptr;
+    std::uint16_t bitset = 0;
+    for (const auto gpio : {list...}) {
+        if (port != gpio.port()) {
+            if (port != nullptr) {
+                port->BRR = std::exchange(bitset, 0);
+            }
+            port = gpio.port();
+        }
+        bitset |= 1u << gpio.pin();
+    }
+    if (port != nullptr) {
+        port->BRR = bitset;
+    }
+}
 
 void enable_irq(IRQn_Type irq, std::uint32_t priority);
 void disable_irq(IRQn_Type irq);
