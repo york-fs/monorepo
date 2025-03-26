@@ -16,13 +16,7 @@ extern "C" void SysTick_Handler() {
     s_ticks = s_ticks + 1;
 }
 
-static void ensure_gpio_clock(GPIO_TypeDef *port) {
-    const auto index = (std::bit_cast<std::uint32_t>(port) - std::bit_cast<std::uint32_t>(GPIOA)) / 1024;
-    RCC->APB2ENR |= 1u << (index + RCC_APB2ENR_IOPAEN_Pos);
-}
-
 static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
-    ensure_gpio_clock(port);
     const auto shift = (pin % 8) * 4;
     auto &reg = pin > 7 ? port->CRH : port->CRL;
     reg &= ~(0xf << shift);
@@ -220,6 +214,11 @@ int main() {
     // Disable JTAG interface.
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_JTAGDISABLE;
+
+    // Enable clocks for all GPIO ports. For cases where we care about power usage, stop and standby mode will disable
+    // them anyway. Otherwise, where we don't care about power usage, this simplifies things.
+    RCC->APB2ENR |=
+        RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPDEN | RCC_APB2ENR_IOPEEN;
 
     // Jump to user code.
     app_main();
