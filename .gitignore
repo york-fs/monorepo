@@ -1,2 +1,13 @@
 /build-*/
 /CMakeUserPresets.json
+
+# Latex.
+/docs/*.aux
+/docs/*.fdb_latexmk
+/docs/*.fls
+/docs/*.hst
+/docs/*.log
+/docs/*.out
+/docs/*.pdf
+/docs/*.toc
+/docs/*.ver
