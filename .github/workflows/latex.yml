@@ -1,0 +1,28 @@
+name: LaTeX
+on:
+  workflow_call:
+    inputs:
+      name:
+        required: true
+        type: string
+      path:
+        required: true
+        type: string
+
+jobs:
+  latex:
+    name: Build LaTeX Document
+    runs-on: ubuntu-latest
+    container: ghcr.io/york-fs/stm-can:master
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run latexmk
+        run: latexmk -pdflua -silent ${{ inputs.path }}
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.name }}
+          path: ${{ inputs.name }}.pdf

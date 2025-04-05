@@ -6,7 +6,7 @@ concurrency:
   cancel-in-progress: true
 
 # In parallel, build and run the host tests, and check the formatting. If both succeed, build and upload the release
-# artifacts.
+# artifacts. Also build the LaTeX manual.
 jobs:
   build-test:
     name: Build Host Tests
@@ -24,3 +24,10 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       preset: release
+
+  manual:
+    name: Build LaTeX Manual
+    uses: ./.github/workflows/latex.yml
+    with:
+      name: manual
+      path: docs/manual
