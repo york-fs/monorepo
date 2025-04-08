@@ -30,4 +30,3 @@ jobs:
     uses: ./.github/workflows/latex.yml
     with:
       name: manual
-      path: docs/manual
