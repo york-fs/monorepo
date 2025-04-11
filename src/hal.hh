@@ -90,17 +90,6 @@ void enable_irq(IRQn_Type irq, std::uint32_t priority);
 void disable_irq(IRQn_Type irq);
 
 /**
- * Enables the SysTick timer at a period of 1 ms.
- */
-void init_sys_tick();
-
-/**
- * Spins until the SysTick timer has ticked by the specified number of times. Requires init_sys_tick() to have
- * previously been called.
- */
-void delay_ms(std::uint32_t ms);
-
-/**
  * Enables and calibrates the given ADC.
  *
  * @param adc the target ADC peripheral

@@ -10,12 +10,6 @@
 
 namespace hal {
 
-static volatile uint32_t s_ticks = 0;
-
-extern "C" void SysTick_Handler() {
-    s_ticks = s_ticks + 1;
-}
-
 static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
     const auto shift = (pin % 8) * 4;
     auto &reg = pin > 7 ? port->CRH : port->CRL;
@@ -57,15 +51,6 @@ void enable_irq(IRQn_Type irq, std::uint32_t priority) {
 
 void disable_irq(IRQn_Type irq) {
     NVIC_DisableIRQ(irq);
-}
-
-void init_sys_tick() {
-    // Initialise SysTick at 1 ms.
-    SysTick_Config(56000);
-}
-
-void delay_ms(std::uint32_t ms) {
-    hal::wait_equal(s_ticks, 0xffffffffu, s_ticks + ms);
 }
 
 void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count) {
