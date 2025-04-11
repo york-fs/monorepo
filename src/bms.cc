@@ -38,7 +38,6 @@ hal::Gpio s_sda(hal::GpioPort::B, 7);
 hal::Gpio s_adc_cs(hal::GpioPort::B, 9);
 hal::Gpio s_afe_cs(hal::GpioPort::B, 10);
 hal::Gpio s_afe_en(hal::GpioPort::B, 11);
-hal::Gpio s_afe_sampl(hal::GpioPort::B, 12);
 hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 hal::Gpio s_mosi(hal::GpioPort::B, 15);
@@ -91,16 +90,11 @@ void app_main() {
     }
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_afe_sampl.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
     // Configure CS pin and enable a pull-up on MISO to avoid floating when no slave is selected.
     s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
-
-    // Keep AFE SAMPL pin always high and use SPI control instead.
-    // TODO: This will be removed in a future hardware revision.
-    hal::gpio_set(s_afe_sampl);
 
     // Enable external interrupt on SCL (PB6).
     AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
