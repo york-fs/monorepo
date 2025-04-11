@@ -53,6 +53,28 @@ void disable_irq(IRQn_Type irq) {
     NVIC_DisableIRQ(irq);
 }
 
+// Workaround for STM32F103 erratum affecting stop debug mode.
+[[gnu::noinline]] static void wfe() {
+    __WFE();
+    __NOP();
+}
+
+void enter_stop_mode() {
+    // Clear the PDDS bit to ensure stop mode, not standby mode, is selected.
+    PWR->CR &= ~PWR_CR_PDDS;
+
+    // Set the SLEEPDEEP bit to set stop mode rather than sleep mode.
+    SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
+
+    // Set event and invoke WFE twice to clear any stale events.
+    __SEV();
+    wfe();
+    wfe();
+
+    // Clear the SLEEPDEEP bit.
+    SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+}
+
 void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count) {
     // Enable clock for ADC.
     RCC->APB2ENR |= (adc == ADC1 ? RCC_APB2ENR_ADC1EN : RCC_APB2ENR_ADC2EN);

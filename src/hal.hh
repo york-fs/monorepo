@@ -90,6 +90,12 @@ void enable_irq(IRQn_Type irq, std::uint32_t priority);
 void disable_irq(IRQn_Type irq);
 
 /**
+ * Place the MCU into stop mode. In this mode, all clocks are stopped but register, RAM, and GPIO states are saved.
+ * The MCU will wake up on an event.
+ */
+void enter_stop_mode();
+
+/**
  * Enables and calibrates the given ADC.
  *
  * @param adc the target ADC peripheral
