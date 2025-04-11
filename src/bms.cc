@@ -32,7 +32,7 @@ std::array s_thermistor_enable{
     hal::Gpio(hal::GpioPort::A, 6), hal::Gpio(hal::GpioPort::A, 7),
 };
 
-hal::Gpio s_led(hal::GpioPort::A, 15);
+hal::Gpio s_led(hal::GpioPort::B, 5);
 hal::Gpio s_scl(hal::GpioPort::B, 6);
 hal::Gpio s_sda(hal::GpioPort::B, 7);
 hal::Gpio s_adc_cs(hal::GpioPort::B, 9);
