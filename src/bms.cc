@@ -131,7 +131,7 @@ void app_main() {
 
         // Enable SPI2 in master mode at 1 MHz (8x divider).
         RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
-        SPI2->CR1 |= SPI_CR1_SPE | SPI_CR1_BR_1 | SPI_CR1_MSTR;
+        SPI2->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_1 | SPI_CR1_MSTR;
 
         // Initial AFE transfer to start sampling.
         // TODO: Check OT and product bits.
