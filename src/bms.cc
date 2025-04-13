@@ -47,18 +47,6 @@ std::uint8_t cell_selection_bits(std::uint8_t index) {
                                         0b10110000, 0b11110000, 0b10001000, 0b11001000, 0b10101000, 0b11101000}[index];
 }
 
-[[gnu::noinline]] void wfe() {
-    __WFE();
-    __NOP();
-}
-
-void enter_stop_mode() {
-    SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
-    __SEV();
-    wfe();
-    wfe();
-}
-
 void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
     // TODO: Add timeouts.
     CsGuard cs_guard(cs);
@@ -113,7 +101,7 @@ void app_main() {
 
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode.
         s_scl.configure(hal::GpioInputMode::Floating);
-        enter_stop_mode();
+        hal::enter_stop_mode();
 
         // Wake ADC and enable AFE.
         hal::gpio_reset(s_sck, s_adc_cs);
