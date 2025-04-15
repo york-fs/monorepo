@@ -62,25 +62,25 @@ The primary job of the BMS is to monitor cell voltages and temperatures and prov
 \subsection{Applicable Rules}
 As per the FSUK 2025 rules, the BMS must:
 \begin{itemize}
-\item[(EV5.8.1)] Be monitoring whenever the low-voltage system or charging is active.
-\item[(EV5.8.3)] Continuously measure:
+\item\textbf{EV5.8.1:} Be monitoring whenever the low-voltage system or charging is active.
+\item\textbf{EV5.8.3:} Continuously measure:
   \begin{itemize}
   \item All cell voltages;
   \item The temperature of at least 30\% of all cells;
   \item The total tractive system current.
   \end{itemize}
-\item[(EV5.8.7)] Switch off the tractive system via the shutdown circuit if critical voltage, temperature, or current values are reached and are persistent for more than:
+\item\textbf{EV5.8.7:} Switch off the tractive system via the shutdown circuit if critical voltage, temperature, or current values are reached and are persistent for more than:
   \begin{itemize}
   \item 500 ms for voltage and current values;
   \item 1 s for temperature values.
   \end{itemize}
-\item[(EV5.8.10)] Fail-safe.
+\item\textbf{EV5.8.10:} Fail-safe.
   In particular, all signals are system critical signals, meaning the loss of any measurement signal must result in an opened shutdown circuit.
-\item[(EV5.8.11)] Have individually disconnectable current sensors, temperature sensors, and cell voltage taps.
-\item[(EV5.8.12)] Be able to display all measured values at any time.
+\item\textbf{EV5.8.11:} Have individually disconnectable current sensors, temperature sensors, and cell voltage taps.
+\item\textbf{EV5.8.12:} Be able to display all measured values at any time.
 \end{itemize}
 
-In general, the BMS does not need to concern itself with rule EV1.2.2:
+In general, the BMS does not need to concern itself with rule \textbf{EV1.2.2}:
 \begin{displayquote}
   High Current Path -- any path of a TS circuitry that, during normal operation, carries more than 1A.
 \end{displayquote}
