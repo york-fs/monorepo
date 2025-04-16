@@ -32,6 +32,7 @@ std::array s_thermistor_enable{
     hal::Gpio(hal::GpioPort::A, 6), hal::Gpio(hal::GpioPort::A, 7),
 };
 
+hal::Gpio s_ref_en(hal::GpioPort::B, 1);
 hal::Gpio s_led(hal::GpioPort::B, 5);
 hal::Gpio s_scl(hal::GpioPort::B, 6);
 hal::Gpio s_sda(hal::GpioPort::B, 7);
@@ -76,6 +77,7 @@ void app_main() {
     for (const auto &gpio : s_thermistor_enable) {
         gpio.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     }
+    s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
@@ -94,18 +96,18 @@ void app_main() {
         s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
         s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
-        // Pull CS lines high by default (active-low) and put ADC and AFE into shutdown.
+        // Pull CS lines high by default (active-low) and put the ADC, AFE, and reference into shutdown.
         hal::gpio_set(s_adc_cs, s_afe_cs, s_sck);
-        hal::gpio_reset(s_adc_cs, s_afe_en);
+        hal::gpio_reset(s_adc_cs, s_afe_en, s_ref_en);
         hal::gpio_set(s_adc_cs);
 
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode.
         s_scl.configure(hal::GpioInputMode::Floating);
         hal::enter_stop_mode();
 
-        // Wake ADC and enable AFE.
+        // Wake the ADC and enable the AFE and reference.
         hal::gpio_reset(s_sck, s_adc_cs);
-        hal::gpio_set(s_adc_cs, s_afe_cs, s_afe_en, s_led);
+        hal::gpio_set(s_adc_cs, s_afe_cs, s_afe_en, s_ref_en);
 
         // Configure SCK and MOSI for use with SPI peripheral.
         s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
@@ -190,7 +192,5 @@ void app_main() {
             const auto max_voltage = (max_adc * 40960u) >> 16u;
             hal::swd_printf("v%u: [%u, %u, %u]\n", cell, min_voltage, max_voltage, max_voltage - min_voltage);
         }
-
-        hal::gpio_reset(s_led);
     }
 }
