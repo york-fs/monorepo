@@ -1,5 +1,6 @@
 #include <hal.hh>
 #include <stm32f103xb.h>
+#include <util.hh>
 
 #include <array>
 #include <bit>
@@ -30,25 +31,6 @@ enum class AfeStatus {
     Shutdown,
 };
 
-class CsGuard {
-    hal::Gpio m_pin;
-
-public:
-    explicit CsGuard(hal::Gpio pin) : m_pin(pin) {
-        // Pull CS low.
-        hal::gpio_reset(pin);
-    }
-    CsGuard(const CsGuard &) = delete;
-    CsGuard(CsGuard &&) = delete;
-    ~CsGuard() {
-        // Pull CS high again.
-        hal::gpio_set(m_pin);
-    }
-
-    CsGuard &operator=(const CsGuard &) = delete;
-    CsGuard &operator=(CsGuard &&) = delete;
-};
-
 std::array s_thermistor_enable{
     hal::Gpio(hal::GpioPort::A, 0), hal::Gpio(hal::GpioPort::A, 1), hal::Gpio(hal::GpioPort::A, 2),
     hal::Gpio(hal::GpioPort::A, 3), hal::Gpio(hal::GpioPort::A, 4), hal::Gpio(hal::GpioPort::A, 5),
@@ -68,8 +50,14 @@ hal::Gpio s_miso(hal::GpioPort::B, 14);
 hal::Gpio s_mosi(hal::GpioPort::B, 15);
 
 void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
+    // Pull CS low and create a scope guard to pull it high again on return.
     // TODO: Add timeouts.
-    CsGuard cs_guard(cs);
+    util::ScopeGuard cs_guard([&cs] {
+        hal::gpio_set(cs);
+    });
+    hal::gpio_reset(cs);
+
+    // Transmit each byte one-by-one.
     for (auto &byte : data) {
         // Transmit byte.
         hal::wait_equal(SPI2->SR, SPI_SR_TXE, SPI_SR_TXE);
