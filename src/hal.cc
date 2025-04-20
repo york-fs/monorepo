@@ -168,11 +168,12 @@ int swd_printf(const char *format, ...) {
 }
 
 bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired, std::uint32_t timeout) {
-    for (; (reg & mask) != desired; timeout--) {
-        if (timeout == 0) {
+    auto timeout_scaled = timeout * 10;
+    for (; (reg & mask) != desired; timeout_scaled--) {
+        if (timeout_scaled == 0) {
             return false;
         }
-        hal::delay_us(1000);
+        hal::delay_us(100);
     }
     return true;
 }
