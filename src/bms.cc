@@ -282,9 +282,6 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    // Configure SDA for I2C. The configuration for SDA never changes, only SCL does.
-    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-
     // Enable clocks for I2C1 and SPI2.
     RCC->APB1ENR |= RCC_APB1ENR_I2C1EN | RCC_APB1ENR_SPI2EN;
 
@@ -310,12 +307,15 @@ void app_main() {
         hal::gpio_reset(s_adc_cs);
         hal::gpio_set(s_adc_cs);
 
-        // Reconfigure SCL as a regular input for use as an external event and enter stop mode.
+        // Reconfigure SCL as a regular input for use as an external event and enter stop mode. Also reconfigure SDA to
+        // avoid the STM driving it low and upsetting the isolator.
         s_scl.configure(hal::GpioInputMode::Floating);
+        s_sda.configure(hal::GpioInputMode::Floating);
         hal::enter_stop_mode();
 
-        // Configure SCL for use with the I2C peripheral.
+        // Configure SCL and SDA for use with the I2C peripheral.
         s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
 
         // Reset the I2C and SPI peripherals just in case.
         RCC->APB1RSTR = RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_SPI2RST;
