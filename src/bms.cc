@@ -298,9 +298,7 @@ void app_main() {
     bms::SegmentData data{};
     while (true) {
         // Wait a bit to allow a repeated start to be captured.
-        for (std::size_t i = 0; i < 2000; i++) {
-            __NOP();
-        }
+        hal::delay_us(100);
         i2c_handle(data);
 
         // Reconfigure SCK and MOSI as regular GPIOs before going to sleep.
@@ -329,15 +327,7 @@ void app_main() {
         I2C1->CR1 = I2C_CR1_ACK | I2C_CR1_PE;
 
         // Wait a maximum of 10 ms for address match.
-        // TODO: Time this better.
-        for (std::uint32_t timeout = 10000; timeout != 0; timeout--) {
-            if ((I2C1->SR1 & I2C_SR1_ADDR) != 0u) {
-                break;
-            }
-            for (std::uint32_t i = 0; i < 10; i++) {
-                __NOP();
-            }
-        }
+        hal::wait_equal(I2C1->SR1, I2C_SR1_ADDR, I2C_SR1_ADDR, 10);
 
         const auto request = i2c_handle(data);
         if (!request) {
