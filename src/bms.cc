@@ -60,16 +60,22 @@ void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
     // Transmit each byte one-by-one.
     for (auto &byte : data) {
         // Transmit byte.
-        hal::wait_equal(SPI2->SR, SPI_SR_TXE, SPI_SR_TXE);
+        while ((SPI2->SR & SPI_SR_TXE) != SPI_SR_TXE) {
+            __NOP();
+        }
         SPI2->DR = byte;
 
         // Receive byte.
-        hal::wait_equal(SPI2->SR, SPI_SR_RXNE, SPI_SR_RXNE);
+        while ((SPI2->SR & SPI_SR_RXNE) != SPI_SR_RXNE) {
+            __NOP();
+        }
         byte = SPI2->DR;
     }
 
     // Wait for busy to be clear and then reset CS to high.
-    hal::wait_equal(SPI2->SR, SPI_SR_BSY, 0u);
+    while ((SPI2->SR & SPI_SR_BSY) != 0u) {
+        __NOP();
+    }
 }
 
 std::uint16_t adc_sample_raw() {
