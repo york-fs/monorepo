@@ -1,28 +1,41 @@
+#include <bms.hh>
 #include <hal.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
 #include <array>
-#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <tuple>
 #include <utility>
 
 namespace {
 
-// MAX14920 product and die version bits.
-constexpr std::uint8_t k_afe_version_bits = 0b1010;
+// Number of ADC samples to perform for rail voltage, cell voltage, and thermistor measurements respectively.
+constexpr std::size_t k_rail_sample_count = 1024;
+constexpr std::size_t k_cell_sample_count = 64;
+constexpr std::size_t k_thermistor_sample_count = 8;
 
-// Number of ADC samples to perform for voltage measurement.
-constexpr std::uint32_t k_adc_sample_count = 8;
+// Cell degraded threshold in ADC counts.
+constexpr std::uint16_t k_cell_degraded_threshold = 10;
+
+// Open cell tap voltage threshold in 100 uV resolution.
+constexpr std::uint16_t k_cell_open_threshold = 1000;
 
 // Maximum number of connected thermistors, including the onboard ones.
-constexpr std::uint32_t k_max_thermistor_count = 23;
+constexpr std::uint8_t k_max_thermistor_count = 23;
 
 // Voltage threshold from the absolute endpoints (0 and Vref) in 100 uV resolution from when to consider a thermistor as
 // being either open or short circuit.
-constexpr std::uint32_t k_thermistor_range_threshold = 5000;
+constexpr std::uint32_t k_thermistor_range_threshold = 3000;
+
+// Hard-coded value of the on-board precision voltage reference in 100 uV resolution.
+constexpr std::uint16_t k_reference_voltage = 45000;
+
+// MAX14920 product and die version bits.
+constexpr std::uint8_t k_afe_version_bits = 0b1010;
 
 enum class AfeStatus {
     Ready,
@@ -48,6 +61,64 @@ hal::Gpio s_afe_en(hal::GpioPort::B, 11);
 hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 hal::Gpio s_mosi(hal::GpioPort::B, 15);
+
+std::optional<bms::Command> i2c_handle(const bms::SegmentData &data) {
+    if ((I2C1->SR1 & I2C_SR1_ADDR) == 0u) {
+        // Address not matched.
+        return std::nullopt;
+    }
+
+    // Clear address matched status by reading SR2.
+    const std::uint32_t sr2 = I2C1->SR2;
+
+    // Check if master is sending us a command.
+    if ((sr2 & I2C_SR2_TRA) == 0u) {
+        // Receive the single command byte.
+        while ((I2C1->SR1 & I2C_SR1_RXNE) == 0u) {
+            __NOP();
+        }
+        return static_cast<bms::Command>(I2C1->DR);
+    }
+
+    // Otherwise master wants to read our data.
+    std::array<std::uint8_t, sizeof(bms::SegmentData)> bytes;
+    auto it = bytes.begin();
+    auto append_value = [&](auto value) {
+        auto value_bytes = util::write_be(value);
+        it = std::copy(value_bytes.begin(), value_bytes.end(), it);
+    };
+    append_value(data.thermistor_bitset);
+    append_value(data.cell_tap_bitset);
+    append_value(data.degraded_bitset);
+    append_value(data.rail_voltage);
+    for (std::uint16_t voltage : data.voltages) {
+        append_value(voltage);
+    }
+    for (std::uint8_t temperature : data.temperatures) {
+        *it++ = temperature;
+    }
+
+    // TODO: Rewrite this.
+    std::uint32_t index = 0;
+    while ((I2C1->SR1 & I2C_SR1_STOPF) == 0u) {
+        if ((I2C1->SR1 & I2C_SR1_AF) != 0u) {
+            // NACK received.
+            I2C1->SR1 &= ~I2C_SR1_AF;
+            break;
+        }
+
+        if ((I2C1->SR1 & I2C_SR1_TXE) != 0u) {
+            if (index < bytes.size()) {
+                I2C1->DR = bytes[index++];
+            } else {
+                I2C1->DR = 0xff;
+            }
+        }
+    }
+    I2C1->SR1 &= ~I2C_SR1_STOPF;
+    I2C1->CR1 |= I2C_CR1_PE;
+    return std::nullopt;
+}
 
 void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
     // Pull CS low and create a scope guard to pull it high again on return.
@@ -91,11 +162,11 @@ std::uint16_t adc_sample_raw() {
     return (static_cast<std::uint16_t>(bytes[0]) << 8u) | bytes[1];
 }
 
-std::pair<std::uint16_t, std::uint16_t> adc_sample_voltage(std::uint32_t sample_count) {
+std::pair<std::uint16_t, std::uint16_t> adc_sample_voltage(std::size_t sample_count) {
     std::uint16_t min_value = std::numeric_limits<std::uint16_t>::max();
     std::uint16_t max_value = 0;
     std::uint32_t sum = 0;
-    for (std::uint32_t i = 0; i < sample_count; i++) {
+    for (std::size_t i = 0; i < sample_count; i++) {
         const auto value = adc_sample_raw();
         min_value = std::min(min_value, value);
         max_value = std::max(max_value, value);
@@ -103,11 +174,11 @@ std::pair<std::uint16_t, std::uint16_t> adc_sample_voltage(std::uint32_t sample_
     }
 
     const auto average = sum / sample_count;
-    const auto voltage = (average * 45000u) >> 16u;
+    const auto voltage = (average * k_reference_voltage) >> 16u;
     return std::make_pair(voltage, max_value - min_value);
 }
 
-AfeStatus afe_command(std::uint16_t balance_bits, std::uint8_t control_bits) {
+[[nodiscard]] AfeStatus afe_command(std::uint16_t balance_bits, std::uint8_t control_bits) {
     std::array<std::uint8_t, 3> data{
         static_cast<std::uint8_t>(balance_bits >> 8u),
         static_cast<std::uint8_t>(balance_bits),
@@ -132,73 +203,62 @@ AfeStatus afe_command(std::uint16_t balance_bits, std::uint8_t control_bits) {
     return AfeStatus::Ready;
 }
 
-void sample_cell_voltage(std::uint8_t index) {
+std::optional<std::pair<std::uint16_t, bool>> sample_cell_voltage(std::uint8_t index) {
+    // Select cell for output on AOUT in hold mode. The level shift and AOUT settle delay should pass before the first
+    // ADC acquisition occurs.
     constexpr std::array<std::uint8_t, 12> index_table{
         0b10000000, 0b11000000, 0b10100000, 0b11100000, 0b10010000, 0b11010000,
         0b10110000, 0b11110000, 0b10001000, 0b11001000, 0b10101000, 0b11101000,
     };
-
-    // Deselect hold mode.
-    afe_command(0u, 0b10000000u);
-
-    // Select cell for output on AOUT.
-    afe_command(0u, index_table[index] | 0b100u);
-
-    // Wait for level shift and AOUT settle (50 us).
-    // TODO: Measure this.
-    for (std::uint32_t i = 0; i < 50; i++) {
-        __NOP();
+    if (afe_command(0u, index_table[index] | 0b100u) != AfeStatus::Ready) {
+        return std::nullopt;
     }
 
-    const auto [voltage, adc_range] = adc_sample_voltage(k_adc_sample_count);
-    hal::swd_printf("v%u: [%u, %u]\n", index + 1, voltage, adc_range);
+    // Take successive ADC samples to obtain an average voltage reading. Check whether the cell tap is open by checking
+    // closeness to the ADC reading endpoints.
+    const auto [voltage, adc_range] = adc_sample_voltage(k_cell_sample_count);
+    if (voltage < k_cell_open_threshold || voltage > (k_reference_voltage - k_cell_open_threshold)) {
+        return std::nullopt;
+    }
+    return std::make_pair(voltage, adc_range > k_cell_degraded_threshold);
 }
 
-void sample_thermistors(std::uint16_t reference_voltage) {
-    std::uint32_t bitset = 0;
-    std::array<std::uint8_t, 23> temperatures;
-    for (std::uint32_t index = 0; index < k_max_thermistor_count; index++) {
-        // Enable the MOSFET.
-        GPIOA->ODR = 1u << (index / 3);
+std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::uint8_t index) {
+    // Enable the relevant MOSFET and create a scope guard to turn it off at the end.
+    const auto &mosfet = s_thermistor_enable[index / 3];
+    util::ScopeGuard cs_guard([&mosfet] {
+        hal::gpio_reset(mosfet);
+    });
+    hal::gpio_set(mosfet);
 
-        const auto selection_bits = std::array<std::uint8_t, 3>{
-            0b01011000u, // T1 (buffered)
-            0b00111000u, // T2 (buffered)
-            0b01111000u, // T3 (buffered)
-        }[index % 3];
-        afe_command(0u, selection_bits);
-
-        // Wait for settle (5 us).
-        for (std::uint32_t i = 0; i < 10; i++) {
-            __NOP();
-        }
-
-        const auto adc_value = adc_sample_raw();
-        const auto voltage = (adc_value * 45000u) >> 16u;
-        if (std::abs(static_cast<std::int32_t>(voltage) - reference_voltage) > k_thermistor_range_threshold) {
-            // Thermistor is connected.
-            bitset |= 1u << index;
-
-            const auto resistance = (voltage * 10000) / (reference_voltage - voltage);
-            float beta = 1.0f / 3950.0f;
-            if (index < 3) {
-                beta = 1.0f / 3350.0f;
-            }
-            float t0 = 1.0f / 298.15f;
-            float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 10000.0f)) - 273.15f;
-            temperatures[index] = static_cast<std::uint32_t>(temperature);
-        }
+    // Route the relevant Tx input to AOUT.
+    constexpr std::array<std::uint8_t, 3> index_table{
+        0b01011000u, // T1 (buffered)
+        0b00111000u, // T2 (buffered)
+        0b01111000u, // T3 (buffered)
+    };
+    if (afe_command(0u, index_table[index % 3]) != AfeStatus::Ready) {
+        return std::nullopt;
     }
 
-    // Disable all MOSFETs.
-    GPIOA->ODR = 0u;
-
-    hal::swd_printf("%u thermistors connected\n", std::popcount(bitset));
-    for (std::uint32_t index = 0; index < k_max_thermistor_count; index++) {
-        if ((bitset & (1u << index)) != 0u) {
-            hal::swd_printf("t%u: %u\n", index, temperatures[index]);
-        }
+    // Take ADC samples and check if the voltage reading is viable. The min ensures that a bad rail voltage doesn't
+    // result in false readings.
+    const auto voltage = std::min(adc_sample_voltage(k_thermistor_sample_count).first, rail_voltage);
+    if (voltage < k_thermistor_range_threshold || voltage > (rail_voltage - k_thermistor_range_threshold)) {
+        return std::nullopt;
     }
+
+    // Thermistor is connected, so we can calculate the temperature.
+    // TODO: Use a lookup table/don't use floats here.
+    const auto resistance = (voltage * 10000) / (rail_voltage - voltage);
+    float beta = 1.0f / 3950.0f;
+    if (index < 3) {
+        // The onboard thermistors have a different beta.
+        beta = 1.0f / 3350.0f;
+    }
+    const float t0 = 1.0f / 298.15f;
+    const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 10000.0f)) - 273.15f;
+    return static_cast<std::int8_t>(temperature);
 }
 
 } // namespace
@@ -222,6 +282,9 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
+    // Configure SDA for I2C. The configuration for SDA never changes, only SCL does.
+    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+
     // Enable clocks for I2C1 and SPI2.
     RCC->APB1ENR |= RCC_APB1ENR_I2C1EN | RCC_APB1ENR_SPI2EN;
 
@@ -230,52 +293,128 @@ void app_main() {
     EXTI->EMR |= EXTI_EMR_MR6;
     EXTI->FTSR |= EXTI_FTSR_TR6;
 
+    // TODO: Don't hardcode the I2C address.
+    const std::uint8_t i2c_address = 0x58u;
+    bms::SegmentData data{};
     while (true) {
+        // Wait a bit to allow a repeated start to be captured.
+        for (std::size_t i = 0; i < 2000; i++) {
+            __NOP();
+        }
+        i2c_handle(data);
+
         // Reconfigure SCK and MOSI as regular GPIOs before going to sleep.
         s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
         s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
-        // Pull CS lines high by default (active-low) and put the ADC, AFE, and reference into shutdown.
+        // Pull CS lines high by default (active-low) and put the ADC into shutdown.
         hal::gpio_set(s_adc_cs, s_afe_cs, s_sck);
-        hal::gpio_reset(s_adc_cs, s_afe_en, s_ref_en);
+        hal::gpio_reset(s_adc_cs);
         hal::gpio_set(s_adc_cs);
 
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode.
         s_scl.configure(hal::GpioInputMode::Floating);
         hal::enter_stop_mode();
 
-        // Wake the ADC and enable the AFE and reference.
-        hal::gpio_reset(s_sck, s_adc_cs);
-        hal::gpio_set(s_adc_cs, s_afe_cs, s_afe_en, s_ref_en);
+        // Configure SCL for use with the I2C peripheral.
+        s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
 
-        // Configure SCK and MOSI for use with SPI peripheral.
+        // Reset the I2C and SPI peripherals just in case.
+        RCC->APB1RSTR = RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_SPI2RST;
+        RCC->APB1RSTR = 0u;
+
+        // Configure I2C peripheral.
+        I2C1->OAR1 = i2c_address << 1u;
+        I2C1->CR2 = 8u;
+        I2C1->CR1 = I2C_CR1_ACK | I2C_CR1_PE;
+
+        // Wait a maximum of 10 ms for address match.
+        // TODO: Time this better.
+        for (std::uint32_t timeout = 10000; timeout != 0; timeout--) {
+            if ((I2C1->SR1 & I2C_SR1_ADDR) != 0u) {
+                break;
+            }
+            for (std::uint32_t i = 0; i < 10; i++) {
+                __NOP();
+            }
+        }
+
+        const auto request = i2c_handle(data);
+        if (!request) {
+            // Data not for us or spurious wakeup - go back to sleep.
+            continue;
+        }
+
+        switch (*request) {
+            using enum bms::Command;
+        case Enable:
+            hal::gpio_set(s_afe_en, s_ref_en);
+            break;
+        case Disable:
+            hal::gpio_reset(s_afe_en, s_ref_en);
+            break;
+        case MeasureRail:
+        case Sample:
+            break;
+        default:
+            // Bad request.
+            continue;
+        }
+
+        // Wake the ADC.
+        hal::gpio_reset(s_sck, s_adc_cs);
+        hal::gpio_set(s_adc_cs, s_afe_cs);
+
+        // Configure SCK and MOSI for use with the SPI peripheral.
         s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
         s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
 
         // Enable SPI2 in master mode at 2 MHz (4x divider).
         SPI2->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_0 | SPI_CR1_MSTR;
 
-        // Wait for AFE startup to complete.
-        while (afe_command(0, 0) == AfeStatus::NotReady) {
+        // Wait for AFE startup to complete. Route T1 (buffered) by default.
+        while (afe_command(0, 0b01011000u) == AfeStatus::NotReady) {
             __NOP();
         }
 
-        // Wait 100 ms for sampling and reference comeup.
-        for (std::uint32_t i = 0; i < 400000; i++) {
-            __NOP();
+        if (*request == bms::Command::MeasureRail) {
+            // All thermistors are switched off so we can measure the 3V3 rail voltage directly.
+            std::tie(data.rail_voltage, std::ignore) = adc_sample_voltage(k_rail_sample_count);
+            continue;
         }
 
-        // Route T1 (buffered) with all thermistors switched off to measure the 3V3 voltage.
-        afe_command(0u, 0b01011000u);
-        const auto [rail_voltage, rail_noise] = adc_sample_voltage(128);
-        hal::swd_printf("3v3 rail: [%u, %u]\n", rail_voltage, rail_noise);
-
-        // Sample all thermistors.
-        sample_thermistors(rail_voltage);
-
-        // Sample all cells.
-        for (std::uint32_t cell = 12; cell > 0; cell--) {
-            sample_cell_voltage(cell - 1);
+        // Sample all thermistors. Doing this first allows the sampling capacitors to top up a bit.
+        data.thermistor_bitset = 0;
+        std::fill(data.temperatures.begin(), data.temperatures.end(), 0);
+        for (std::uint8_t index = 0; index < k_max_thermistor_count; index++) {
+            const auto temperature = sample_thermistor(data.rail_voltage, index);
+            if (temperature) {
+                // Temperature reading is viable.
+                data.thermistor_bitset |= 1u << index;
+                data.temperatures[index] = *temperature;
+            }
         }
+
+        // Clear previously stored cell data.
+        data.cell_tap_bitset = 0;
+        data.degraded_bitset = 0;
+        std::fill(data.voltages.begin(), data.voltages.end(), 0);
+
+        // Sample all cells in order of most potential to least potential (w.r.t. ground).
+        for (std::size_t cell = 12; cell > 0; cell--) {
+            const auto index = static_cast<std::uint8_t>(cell - 1);
+            const auto sample = sample_cell_voltage(index);
+            if (sample) {
+                // AFE is working and cell tap is connected.
+                data.cell_tap_bitset |= 1u << index;
+                data.voltages[index] = sample->first;
+                if (sample->second) {
+                    data.degraded_bitset |= 1u << index;
+                }
+            }
+        }
+
+        // Put the AFE into diagnostic mode.
+        static_cast<void>(afe_command(0u, 0b01011010u));
     }
 }
