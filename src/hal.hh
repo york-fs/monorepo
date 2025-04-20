@@ -2,6 +2,7 @@
 
 #include <stm32f103xb.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <utility>
@@ -126,6 +127,13 @@ void adc_sequence_channel(ADC_TypeDef *adc, std::uint32_t index, std::uint32_t c
  * @param adc the target ADC peripheral
  */
 void adc_start(ADC_TypeDef *adc);
+
+/**
+ * Spins for the specified amount of microseconds.
+ *
+ * @param us the time to wait in microseconds
+ */
+void delay_us(std::size_t us);
 
 void swd_putc(char ch);
 __attribute__((format(printf, 1, 2))) int swd_printf(const char *format, ...);

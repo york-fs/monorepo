@@ -8,6 +8,10 @@
 #include <cstdint>
 #include <span>
 
+[[gnu::weak]] bool hal_low_power() {
+    return false;
+}
+
 namespace hal {
 
 static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
@@ -81,9 +85,7 @@ void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count) {
 
     // Wait for ADC to settle.
     adc->CR2 |= ADC_CR2_ADON;
-    for (std::size_t i = 0; i < 56000; i++) {
-        asm volatile("" ::: "memory");
-    }
+    hal::delay_us(100);
 
     // Perform calibration.
     adc->CR2 |= ADC_CR2_RSTCAL;
@@ -146,6 +148,13 @@ void adc_start(ADC_TypeDef *adc) {
     adc->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
 }
 
+void delay_us(std::size_t us) {
+    const auto count = us * (hal_low_power() ? 2 : 14);
+    for (std::size_t i = 0; i < us * 2; i++) {
+        __NOP();
+    }
+}
+
 void swd_putc(char ch) {
     ITM_SendChar(ch);
 }
@@ -163,9 +172,7 @@ bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint
         if (timeout == 0) {
             return false;
         }
-        for (std::uint32_t i = 0; i < 7000; i++) {
-            __NOP();
-        }
+        hal::delay_us(1000);
     }
     return true;
 }
@@ -173,10 +180,6 @@ bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint
 } // namespace hal
 
 extern void app_main();
-
-[[gnu::weak]] bool hal_low_power() {
-    return false;
-}
 
 int main() {
     // Enable 56 MHz system clock via an 8 MHz external crystal if low power mode is not desired.
