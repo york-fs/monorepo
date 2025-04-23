@@ -12,7 +12,7 @@ endif()
 
 set(STM_LD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
 
-function(add_stm_executable name)
+function(add_stm_executable name frequency)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE shared-stm)
 
@@ -37,7 +37,7 @@ function(add_stm_executable name)
     # Add a trace target for SWD output.
     if(ST_TRACE_PROGRAM)
         add_custom_target(trace-${name}
-            ${ST_TRACE_PROGRAM} -c56
+            ${ST_TRACE_PROGRAM} -c${frequency}
             USES_TERMINAL)
         add_dependencies(trace-${name} flash-${name})
     endif()
@@ -70,9 +70,9 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     target_link_libraries(shared-stm PUBLIC shared)
     target_link_options(shared-stm PUBLIC -T "${STM_LD_SCRIPT}")
 
-    add_stm_executable(bms src/bms.cc)
-    add_stm_executable(bus_logger src/bus_logger.cc)
-    add_stm_executable(etc src/etc.cc)
+    add_stm_executable(bms 8 src/bms.cc)
+    add_stm_executable(bus_logger 56 src/bus_logger.cc)
+    add_stm_executable(etc 56 src/etc.cc)
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
