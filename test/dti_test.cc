@@ -69,14 +69,14 @@ TEST(DtiParse, GeneralData2) {
 }
 
 TEST(DtiParse, GeneralData3) {
-    const auto message_bytes = std::to_array<std::uint8_t>({0x01, 0x53, 0x01, 0x17, 0x00});
+    const auto message_bytes = std::to_array<std::uint8_t>({0x01, 0x53, 0x01, 0x17, 0x04});
     const auto packet = dti::parse_packet(can::build_raw(0x2222, message_bytes));
     ASSERT_TRUE(std::holds_alternative<dti::GeneralData3>(packet));
 
     const auto gd3 = std::get<dti::GeneralData3>(packet);
     EXPECT_EQ(gd3.controller_temperature, 339);
     EXPECT_EQ(gd3.motor_temperature, 279);
-    EXPECT_EQ(gd3.fault_code, dti::FaultCode::NoFaults);
+    EXPECT_EQ(gd3.fault_code, dti::FaultCode::Overcurrent);
 }
 
 TEST(DtiParse, GeneralData5) {

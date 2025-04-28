@@ -71,7 +71,7 @@ Packet parse_packet(const can::Message &message) {
         return GeneralData3{
             .controller_temperature = util::read_be<std::int16_t>(span.subspan<0, 2>()),
             .motor_temperature = util::read_be<std::int16_t>(span.subspan<2, 2>()),
-            .fault_code = static_cast<FaultCode>(span[5]),
+            .fault_code = static_cast<FaultCode>(span[4]),
         };
     case k_general_data_5_id:
         return GeneralData5{
