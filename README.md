@@ -4,9 +4,9 @@ STM32 firmware for York Formula Student.
 
 ## Project structure
 
+* `src/apps.cc` - Accelerator pedal position sensor firmware
 * `src/bms.cc` - Battery management system firmware
 * `src/bus_logger.cc` - Logs all messages on the CAN bus to SWD
-* `src/etc.cc` - Electronic throttle control firmware
 * `system/` - CMSIS and startup code for Cortex-M3
 * `test/` - Host-runnable unit tests for platform independent code
 
@@ -20,7 +20,7 @@ Ensure a suitable ARM toolchain is in the `PATH` and run
 ### Flashing with stlink
 
 If [stlink](https://github.com/texane/stlink) is installed, flash targets will be available for each executable. For
-example, `flash-etc`.
+example, `flash-apps`.
 
 ## Building the unit tests
 
