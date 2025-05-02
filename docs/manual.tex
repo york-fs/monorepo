@@ -52,13 +52,6 @@
 The Battery Management System (BMS) is an integral part of the overall accumulator design of the YFS car, which implements a distributed design.
 The primary job of the BMS is to monitor cell voltages and temperatures and provide cell balancing capability during charging.
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{bms.png}
-  \caption{Segment BMS PCB Render}
-  \label{fig:bms-pcb}
-\end{figure}
-
 \subsection{Applicable Rules}
 As per the FSUK 2025 rules, the BMS must:
 \begin{itemize}
@@ -111,6 +104,14 @@ This CAN connection is non-critical, since the shutdown mechanism is implemented
 
 \subsection{Segment-Level Design}
 This section covers the distributed segment design of the BMS.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{bms.png}
+  \caption{Segment BMS PCB Render}
+  \label{fig:bms-pcb}
+\end{figure}
+
 Cell voltage taps are connected via a pluggable terminal block.
 Cell voltage measurements are provided by three main components:
 \begin{itemize}
