@@ -1,3 +1,5 @@
+#include "util.hh"
+#include <apps_logic.hh>
 #include <can.hh>
 #include <config.hh>
 #include <dti.hh>
@@ -82,6 +84,10 @@ CalibrationData s_right_calibration;
 std::atomic<LedState> s_led_state{LedState::Off};
 std::atomic<State> s_state{State::CanOffline};
 
+apps::ThrottleMap s_throttle_map;
+apps::Sensor s_left_sensor;
+apps::Sensor s_right_sensor;
+
 const char *state_name(State state) {
     switch (state) {
     case State::CanOffline:
@@ -140,6 +146,10 @@ std::uint32_t CalibrationData::update(std::uint16_t adc_value) {
 }
 
 bool calibration_iteration() {
+    s_left_sensor.update_calibration(s_adc_buffer[0]);
+    s_right_sensor.update_calibration(s_adc_buffer[1]);
+    return s_left_sensor.is_calibrated() && s_right_sensor.is_calibrated();
+    
     const auto left_now = static_cast<std::int32_t>(s_adc_buffer[0]);
     const auto right_now = static_cast<std::int32_t>(s_adc_buffer[1]);
     const auto left_average = s_left_calibration.update(s_adc_buffer[0]);
@@ -163,16 +173,36 @@ bool calibration_iteration() {
     return true;
 }
 
+static std::uint16_t max_difference = 0;
+
 std::uint16_t calculate_current() {
+    auto current_left = s_throttle_map[s_left_sensor.foo(s_adc_buffer[0])];
+    auto current_right = s_throttle_map[s_right_sensor.foo(s_adc_buffer[1])];
+
+    const auto difference = current_left > current_right ? current_left - current_right : current_right - current_left;
+    max_difference = std::max((uint16_t) difference, max_difference);
+    hal::swd_printf("current: [%u, %u, %u, %u]\n", current_left, current_right, difference, max_difference);
+    
+    std::uint16_t current = 0;
+    
+    // const auto clamped_value = util::clamp(s_adc_buffer[0], s_left_calibration.min_value, s_left_calibration.max_value);
+    // const auto offset_value = (clamped_value - s_left_calibration.min_value) * 2095ul;
+    // auto normalised = std::min(offset_value / (s_left_calibration.max_value - s_left_calibration.min_value), 2095ul);
+    // normalised = 2095u - normalised;
+    // auto current = s_throttle_map[normalised];
+    // if (current < 20) {
+    //     return 0;
+    // }
+    
     // TODO: Use a lookup table.
-    std::int32_t x = s_adc_buffer[0] - s_left_calibration.min_value;
-    float normalised = static_cast<float>(x) / (s_left_calibration.max_value - s_left_calibration.min_value);
-    normalised = 1.0f - normalised;
-    float curve = 1.0f / (1.0f + std::exp(-10.0f * (normalised - 0.5f)));
-    auto current = static_cast<std::uint16_t>(curve * 1000.0f);
-    if (current < 20) {
-        return 0;
-    }
+    // std::int32_t x = s_adc_buffer[0] - s_left_calibration.min_value;
+    // float normalised = static_cast<float>(x) / (s_left_calibration.max_value - s_left_calibration.min_value);
+    // normalised = 1.0f - normalised;
+    // float curve = 1.0f / (1.0f + std::exp(-10.0f * (normalised - 0.5f)));
+    // auto current = static_cast<std::uint16_t>(curve * 1000.0f);
+    // if (current < 20) {
+    //     return 0;
+    // }
 
     // Apply current preload if needed.
     const auto rpm = s_dti_state.erpm() / config::k_erpm_factor;
@@ -234,19 +264,22 @@ extern "C" void TIM3_IRQHandler() {
         set_led_state(LedState::Calibrating);
         if (calibration_iteration()) {
             s_state.store(State::CalibrationWait);
+
+            hal::swd_printf("left: [%u, %u, %u]\n", s_left_sensor.m_start_value, s_left_sensor.m_min_value,
+                            s_left_sensor.m_max_value);
+            hal::swd_printf("right: [%u, %u, %u]\n", s_right_sensor.m_start_value, s_right_sensor.m_min_value, s_right_sensor.m_max_value);
         }
         break;
     case State::CalibrationWait:
         set_led_state(LedState::On);
-        if (std::abs(static_cast<std::int32_t>(s_adc_buffer[0]) -
-                     static_cast<std::int32_t>(s_left_calibration.max_value)) < 10) {
+        if (s_left_sensor.at_idle(s_adc_buffer[0]) && s_right_sensor.at_idle(s_adc_buffer[1])) {
             s_state.store(State::Running);
         }
         break;
     case State::Running:
         set_led_state(LedState::Off);
         const auto current = calculate_current();
-        hal::swd_printf("Current: %u, ERPM: %d\n", current, s_dti_state.erpm());
+        // hal::swd_printf("Current: %u, ERPM: %d\n", current, s_dti_state.erpm());
         can::transmit(dti::build_set_relative_current(config::k_dti_can_id, static_cast<std::int16_t>(current)));
         break;
     }
@@ -307,6 +340,8 @@ void app_main() {
     hal::enable_irq(EXTI15_10_IRQn, 5);
 
     // TODO: Synchronise timers together.
+
+    s_throttle_map = apps::ThrottleMap::create_default();
 
     while (true) {
         // TODO: WFI.

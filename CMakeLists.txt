@@ -45,6 +45,7 @@ endfunction()
 
 # Create an OBJECT library for platform-independent code.
 add_library(shared OBJECT
+    src/apps_logic.cc
     src/dti.cc)
 target_compile_features(shared PUBLIC cxx_std_20)
 target_include_directories(shared PUBLIC src)
