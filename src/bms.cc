@@ -339,10 +339,10 @@ void app_main() {
             using enum bms::Command;
         case Enable:
             hal::gpio_set(s_afe_en, s_ref_en);
-            break;
+            continue;
         case Disable:
             hal::gpio_reset(s_afe_en, s_ref_en);
-            break;
+            continue;
         case MeasureRail:
         case Sample:
             break;
