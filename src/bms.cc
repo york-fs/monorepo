@@ -44,6 +44,13 @@ enum class AfeStatus {
     Shutdown,
 };
 
+std::array s_address_pins{
+    hal::Gpio(hal::GpioPort::A, 8),
+    hal::Gpio(hal::GpioPort::A, 9),
+    hal::Gpio(hal::GpioPort::A, 10),
+    hal::Gpio(hal::GpioPort::A, 11),
+};
+
 std::array s_thermistor_enable{
     hal::Gpio(hal::GpioPort::A, 0), hal::Gpio(hal::GpioPort::A, 1), hal::Gpio(hal::GpioPort::A, 2),
     hal::Gpio(hal::GpioPort::A, 3), hal::Gpio(hal::GpioPort::A, 4), hal::Gpio(hal::GpioPort::A, 5),
@@ -270,6 +277,9 @@ bool hal_low_power() {
 
 void app_main() {
     // Configure general GPIOs.
+    for (const auto &gpio : s_address_pins) {
+        gpio.configure(hal::GpioInputMode::PullUp);
+    }
     for (const auto &gpio : s_thermistor_enable) {
         gpio.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     }
@@ -290,8 +300,9 @@ void app_main() {
     EXTI->EMR |= EXTI_EMR_MR6;
     EXTI->FTSR |= EXTI_FTSR_TR6;
 
-    // TODO: Don't hardcode the I2C address.
-    const std::uint8_t i2c_address = 0x58u;
+    // Compute I2C address from on-board solder jumpers.
+    const auto i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
+
     bms::SegmentData data{};
     while (true) {
         // Wait a bit to allow a repeated start to be captured.
