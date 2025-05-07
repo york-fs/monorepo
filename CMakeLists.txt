@@ -10,6 +10,14 @@ if(NOT ST_TRACE_PROGRAM)
     find_program(ST_TRACE_PROGRAM NAMES st-trace)
 endif()
 
+# Get nanopb via FetchContent.
+include(FetchContent)
+FetchContent_Declare(nanopb
+    GIT_REPOSITORY https://github.com/nanopb/nanopb
+    GIT_TAG nanopb-0.4.9.1
+    GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(nanopb)
+
 set(STM_LD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
 
 function(add_stm_executable name frequency)
