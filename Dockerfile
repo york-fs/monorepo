@@ -15,6 +15,7 @@ RUN apt-get update \
     libgtest-dev \
     ninja-build \
     plantuml \
+    protobuf-compiler \
     texlive \
     texlive-latex-extra \
     texlive-luatex \
