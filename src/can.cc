@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace can {
 namespace {
@@ -49,6 +50,17 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
     }
 }
 
+std::pair<hal::Gpio, hal::Gpio> pin_pair(Port port) {
+    switch (port) {
+    case Port::B:
+        return std::make_pair(hal::Gpio(hal::GpioPort::B, 8), hal::Gpio(hal::GpioPort::B, 9));
+    case Port::D:
+        return std::make_pair(hal::Gpio(hal::GpioPort::D, 0), hal::Gpio(hal::GpioPort::D, 1));
+    default:
+        return std::make_pair(hal::Gpio(hal::GpioPort::A, 11), hal::Gpio(hal::GpioPort::A, 12));
+    }
+}
+
 } // namespace
 
 extern "C" void USB_LP_CAN1_RX0_IRQHandler() {
@@ -70,16 +82,24 @@ extern "C" void CAN1_SCE_IRQHandler() {
     CAN1->MSR |= CAN_MSR_ERRI;
 }
 
-bool init() {
-    // Enable CAN peripheral clock.
+bool init(Port port) {
+    // Enable CAN1's peripheral clock.
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
 
-    // Remap CAN1 to PB8 and PB9.
-    AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
+    // Configure pin functions.
+    const auto [rx_pin, tx_pin] = pin_pair(port);
+    rx_pin.configure(hal::GpioInputMode::Floating);
+    tx_pin.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
 
-    // Configure PB8 suitable to be CAN_RX and PB9 suitable to be CAN_TX.
-    hal::Gpio(hal::GpioPort::B, 8).configure(hal::GpioInputMode::Floating);
-    hal::Gpio(hal::GpioPort::B, 9).configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
+    // Configure alternate function if not the default pin pair (port A).
+    AFIO->MAPR &= ~AFIO_MAPR_CAN_REMAP;
+    if (port == Port::B) {
+        // Remap to PB8 and PB9.
+        AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;
+    } else if (port == Port::D) {
+        // Remap to PD0 and PD1.
+        AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP3;
+    }
 
     // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;

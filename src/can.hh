@@ -6,6 +6,17 @@
 
 namespace can {
 
+enum class Port {
+    /// RX on PA11 and TX on PA12.
+    A,
+
+    /// RX on PB8 and TX on PB9.
+    B,
+
+    /// RX on PD0 and TX on PD1.
+    D,
+};
+
 struct Message {
     std::uint32_t identifier;
     std::array<std::uint8_t, 8> data;
@@ -17,12 +28,12 @@ struct Message {
 using fifo_callback_t = void (*)(const Message &);
 
 /**
- * Initialises the CAN1 peripheral to 500 kbits/s, with CAN_RX mapped to PB8 and CAN_TX mapped to PB9. Assumes
- * a 28 MHz APB1 clock.
+ * Initialises the CAN1 peripheral to 500 kbits/s. Assumes a 28 MHz APB1 clock.
  *
+ * @param port the pin pair to use as RX and TX
  * @return true if initialisation was successful; false otherwise
  */
-[[nodiscard]] bool init();
+[[nodiscard]] bool init(Port port);
 
 /**
  * Configures and enables the specified CAN filter to route incoming messages to the specified FIFO index. A
