@@ -149,10 +149,18 @@ void adc_start(ADC_TypeDef *adc) {
 }
 
 void delay_us(std::size_t us) {
-    const auto count = us * (hal_low_power() ? 2 : 14);
-    for (std::size_t i = 0; i < us * 2; i++) {
-        __NOP();
+    // Use a 2 us tick rate on 8 MHz to mitigate the slowness of the loop.
+    SysTick->LOAD = (hal_low_power() ? 16 : 56) - 1;
+    SysTick->VAL = 0;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+    if (hal_low_power()) {
+        us /= 2;
     }
+    for (std::size_t i = 0; i < us; i++) {
+        while ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) == 0) {
+        }
+    }
+    SysTick->CTRL = 0;
 }
 
 void swd_putc(char ch) {
