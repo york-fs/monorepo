@@ -84,7 +84,7 @@ struct Message {
 using fifo_callback_t = void (*)(const Message &);
 
 /**
- * Initialises the CAN1 peripheral to 500 kbits/s. Assumes a 28 MHz APB1 clock.
+ * Initialises the CAN1 peripheral to the given bus speed. Assumes a 28 MHz APB1 clock.
  *
  * @param port the pin pair to use as RX and TX
  * @param speed the bus speed to use
