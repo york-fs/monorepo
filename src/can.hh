@@ -1,11 +1,14 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <span>
+#include <variant>
 
 namespace can {
 
+/// An enum which represents which GPIO port is being used for CAN.
 enum class Port {
     /// RX on PA11 and TX on PA12.
     A,
@@ -17,14 +20,55 @@ enum class Port {
     D,
 };
 
+/// A class to make distinct numerical types for CAN identifiers.
+template <int N, std::integral T>
+struct BaseIdentifier {
+    using Self = BaseIdentifier<N, T>;
+    T value;
+
+    BaseIdentifier(T value) : value(value) {}
+    constexpr operator T() const { return value; }
+};
+
+/// 11-bit standard identifier.
+using StandardIdentifier = BaseIdentifier<0, std::uint16_t>;
+
+/// 29-bit extended identifier.
+using ExtendedIdentifier = BaseIdentifier<1, std::uint32_t>;
+
+/// CAN message identifier.
+using Identifier = std::variant<StandardIdentifier, ExtendedIdentifier>;
+
+/// A struct which represents a CAN message.
 struct Message {
-    std::uint32_t identifier;
+    Identifier identifier;
     std::array<std::uint8_t, 8> data;
     std::uint8_t length;
 
     bool operator==(const Message &) const = default;
+
+    /**
+     * @return the standard identifier of the message
+     */
+    StandardIdentifier standard_id() const { return std::get<StandardIdentifier>(identifier); }
+
+    /**
+     * @return the extended identifier of the message
+     */
+    ExtendedIdentifier extended_id() const { return std::get<ExtendedIdentifier>(identifier); }
+
+    /**
+     * @return true if the message has a standard identifier; false otherwise
+     */
+    bool is_standard() const { return std::holds_alternative<StandardIdentifier>(identifier); }
+
+    /**
+     * @return true if the message has an extended identifier; false otherwise
+     */
+    bool is_extended() const { return std::holds_alternative<ExtendedIdentifier>(identifier); }
 };
 
+/// CAN FIFO callback function type.
 using fifo_callback_t = void (*)(const Message &);
 
 /**
@@ -39,8 +83,11 @@ using fifo_callback_t = void (*)(const Message &);
  * Configures and enables the specified CAN filter to route incoming messages to the specified FIFO index. A
  * message will be matched if, after applying the given bitmask, it equals the specified value.
  *
- * Incoming messages are structured as follows:
+ * Incoming extended messages are structured as follows:
  *   EXID[28:0] | IDE | RTR | 0
+ *
+ * Incoming standard messages are structured as follows:
+ *   STID[10:0] | 0[17:0] | IDE | RTR | 0
  *
  * @param filter the filter index to configure; must be in the range [0, 13]
  * @param fifo the FIFO index; must be 0 or 1
@@ -62,10 +109,10 @@ void set_fifo_callback(std::uint8_t index, fifo_callback_t callback);
 bool transmit(const Message &message);
 
 /**
- * Builds a CAN message given an extended identifier and an array of bytes. The number of bytes will be truncated to
- * eight bytes maximum.
+ * Builds a CAN message given an identifier and an array of bytes. The number of bytes will be truncated to eight
+ * bytes maximum.
  */
-inline Message build_raw(std::uint32_t identifier, std::span<const std::uint8_t> data) {
+inline Message build_raw(Identifier identifier, std::span<const std::uint8_t> data) {
     Message message{
         .identifier = identifier,
         .length = static_cast<std::uint8_t>(data.size() > 8 ? 8 : data.size()),
@@ -74,6 +121,22 @@ inline Message build_raw(std::uint32_t identifier, std::span<const std::uint8_t>
         message.data[i] = data[i];
     }
     return message;
+}
+
+/**
+ * Builds a CAN message given a standard identifier and an array of bytes. The number of bytes will be truncated to
+ * eight bytes maximum.
+ */
+inline Message build_standard(StandardIdentifier identifier, std::span<const std::uint8_t> data) {
+    return build_raw(identifier, data);
+}
+
+/**
+ * Builds a CAN message given an extended identifier and an array of bytes. The number of bytes will be truncated to
+ * eight bytes maximum.
+ */
+inline Message build_extended(ExtendedIdentifier identifier, std::span<const std::uint8_t> data) {
+    return build_raw(identifier, data);
 }
 
 } // namespace can

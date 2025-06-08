@@ -13,6 +13,13 @@ namespace {
 std::array<fifo_callback_t, 2> s_fifo_callbacks{};
 std::array<std::uint16_t, 2> s_fifo_overrun_counter{};
 
+Identifier decode_identifier(std::uint32_t rir) {
+    if ((rir & CAN_RI0R_IDE_Msk) != 0u) {
+        return ExtendedIdentifier((rir & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos);
+    }
+    return StandardIdentifier((rir & CAN_RI0R_STID_Msk) >> CAN_RI0R_STID_Pos);
+}
+
 void fifo_interrupt(const std::uint8_t fifo_index) {
     volatile std::uint32_t &fifo_reg = fifo_index == 1 ? CAN1->RF1R : CAN1->RF0R;
     const auto &mailbox = CAN1->sFIFOMailBox[fifo_index];
@@ -28,7 +35,7 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
     for (std::uint32_t i = 0; i < pending_count; i++) {
         // Read data from mailbox.
         Message message{
-            .identifier = (mailbox.RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos,
+            .identifier = decode_identifier(mailbox.RIR),
             .data{
                 static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
                 static_cast<std::uint8_t>((mailbox.RDLR >> 8u) & 0xffu),
@@ -185,7 +192,11 @@ bool transmit(const Message &message) {
     // Fill mailbox data.
     const auto mailbox_index = (CAN1->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos;
     auto &mailbox = CAN1->sTxMailBox[mailbox_index];
-    mailbox.TIR = (message.identifier << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
+    if (auto *standard = std::get_if<StandardIdentifier>(&message.identifier)) {
+        mailbox.TIR = *standard << CAN_TI0R_STID_Pos;
+    } else {
+        mailbox.TIR = (message.extended_id() << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
+    }
     mailbox.TDTR = message.length & 0xfu;
     mailbox.TDLR = (static_cast<std::uint32_t>(message.data[3]) << 24u) |
                    (static_cast<std::uint32_t>(message.data[2]) << 16u) |
