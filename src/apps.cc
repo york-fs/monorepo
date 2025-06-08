@@ -213,7 +213,7 @@ extern "C" void TIM3_IRQHandler() {
         set_led_state(LedState::CanError);
 
         // Attempt to initialise CAN peripheral.
-        if (can::init(can::Port::B)) {
+        if (can::init(can::Port::B, can::Speed::_500)) {
             // Route all DTI messages to FIFO 0.
             can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
 

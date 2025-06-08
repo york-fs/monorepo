@@ -57,7 +57,7 @@ void app_main() {
     hal::gpio_set(s_eeprom_wc, s_current_switch);
 
     // Initialise CAN on PB8 (RX) and PB9 (TX).
-    if (!can::init(can::Port::B)) {
+    if (!can::init(can::Port::B, can::Speed::_500)) {
         // TODO: Handle failure.
     }
 }

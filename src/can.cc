@@ -89,7 +89,7 @@ extern "C" void CAN1_SCE_IRQHandler() {
     CAN1->MSR |= CAN_MSR_ERRI;
 }
 
-bool init(Port port) {
+bool init(Port port, Speed speed) {
     // Enable CAN1's peripheral clock.
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
 
@@ -120,9 +120,21 @@ bool init(Port port) {
         return false;
     }
 
-    // Set the bit timing register. Peripheral clocked at 28 MHz and 500 kbits/s.
-    // The value below sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 4.
-    CAN1->BTR = 0x001a0003;
+    // Configure the bit timing register. The peripheral is clocked at 28 MHz.
+    switch (speed) {
+    case Speed::_33_3:
+        // 33.333 kbit/s sets 12+2+3 (seg1+seg2+sync) time quanta per bit with a prescaler of 56.
+        CAN1->BTR = 0x001b0037;
+        break;
+    case Speed::_500:
+        // 500 kbit/s sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 4.
+        CAN1->BTR = 0x001a0003;
+        break;
+    case Speed::_1000:
+        // 1000 kbit/s sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 2.
+        CAN1->BTR = 0x001a0001;
+        break;
+    }
 
     // Set automatic bus-off management for now.
     // TODO: We should handle this manually eventually.

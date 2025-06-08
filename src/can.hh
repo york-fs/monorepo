@@ -20,6 +20,18 @@ enum class Port {
     D,
 };
 
+/// An enum which represents the different available bus speeds.
+enum class Speed {
+    /// 33.3333 kbit/s.
+    _33_3,
+
+    /// 500 kbit/s.
+    _500,
+
+    /// 1000 kbit/s.
+    _1000,
+};
+
 /// A class to make distinct numerical types for CAN identifiers.
 template <int N, std::integral T>
 struct BaseIdentifier {
@@ -75,9 +87,10 @@ using fifo_callback_t = void (*)(const Message &);
  * Initialises the CAN1 peripheral to 500 kbits/s. Assumes a 28 MHz APB1 clock.
  *
  * @param port the pin pair to use as RX and TX
+ * @param speed the bus speed to use
  * @return true if initialisation was successful; false otherwise
  */
-[[nodiscard]] bool init(Port port);
+[[nodiscard]] bool init(Port port, Speed speed);
 
 /**
  * Configures and enables the specified CAN filter to route incoming messages to the specified FIFO index. A
