@@ -6,7 +6,7 @@ STM32 firmware for York Formula Student.
 
 * `src/apps.cc` - Accelerator pedal position sensor firmware
 * `src/bms.cc` - Battery management system firmware
-* `src/bus_logger.cc` - Logs all messages on the CAN bus to SWD
+* `src/bms_master.cc` - Battery management system master firmware
 * `system/` - CMSIS and startup code for Cortex-M3
 * `test/` - Host-runnable unit tests for platform independent code
 
