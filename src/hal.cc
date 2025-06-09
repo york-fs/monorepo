@@ -176,14 +176,19 @@ int swd_printf(const char *format, ...) {
 }
 
 bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired, std::uint32_t timeout) {
-    auto timeout_scaled = timeout * 10;
-    for (; (reg & mask) != desired; timeout_scaled--) {
-        if (timeout_scaled == 0) {
-            return false;
+    // Start SysTick with a 1 ms period.
+    SysTick->LOAD = (hal_low_power() ? 8000 : 56000) - 1;
+    SysTick->VAL = 0;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+
+    while (timeout > 0 && (reg & mask) != desired) {
+        // Reading from SysTick->CTRL clears the underflow flag.
+        if ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) != 0) {
+            timeout--;
         }
-        hal::delay_us(100);
     }
-    return true;
+    SysTick->CTRL = 0;
+    return timeout > 0;
 }
 
 } // namespace hal
