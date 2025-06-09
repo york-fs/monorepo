@@ -221,7 +221,7 @@ extern "C" void TIM3_IRQHandler() {
             can::set_fifo_callback(0, [](const can::Message &message) {
                 std::visit(s_dti_state, dti::parse_packet(message));
             });
-            hal::enable_irq(USB_LP_CAN1_RX0_IRQn, 2);
+            hal::enable_irq(CAN1_RX0_IRQn, 2);
 
             // Move to uncalibrated state.
             s_state.store(State::Uncalibrated);
