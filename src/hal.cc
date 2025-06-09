@@ -6,6 +6,7 @@
 #include <bit>
 #include <cstdarg>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 [[gnu::weak]] bool hal_low_power() {
@@ -13,8 +14,9 @@
 }
 
 namespace hal {
+namespace {
 
-static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
+void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
     const auto shift = (pin % 8) * 4;
     auto &reg = pin > 7 ? port->CRH : port->CRL;
     reg &= ~(0xf << shift);
@@ -22,11 +24,30 @@ static void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, s
     reg |= mode << shift;
 }
 
-static GPIO_TypeDef *gpio_port(GpioPort port) {
+GPIO_TypeDef *gpio_port(GpioPort port) {
     return std::array{
         GPIOA, GPIOB, GPIOC, GPIOD, GPIOE,
     }[static_cast<std::uint32_t>(port)];
 }
+
+template <typename Predicate>
+bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
+    // Start SysTick with a 1 ms period.
+    SysTick->LOAD = (hal_low_power() ? 8000 : 56000) - 1;
+    SysTick->VAL = 0;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+
+    while (timeout > 0 && !predicate()) {
+        // Reading from SysTick->CTRL clears the underflow flag.
+        if ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) != 0) {
+            timeout--;
+        }
+    }
+    SysTick->CTRL = 0;
+    return timeout > 0;
+}
+
+} // namespace
 
 Gpio::Gpio(GpioPort port, std::uint8_t pin) : m_port(gpio_port(port)), m_pin(pin) {}
 
@@ -163,6 +184,148 @@ void delay_us(std::size_t us) {
     SysTick->CTRL = 0;
 }
 
+void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
+    // Enable peripheral clock.
+    RCC->APB1ENR |= (i2c == I2C1 ? RCC_APB1ENR_I2C1EN : RCC_APB1ENR_I2C2EN);
+
+    // Configure peripheral clock frequency.
+    i2c->CR2 = hal_low_power() ? 8u : 28u;
+
+    // Configure for 100 kHz.
+    // TODO: Calculate this properly and allow different speeds.
+    if (hal_low_power()) {
+        i2c->CCR = 140u;
+        i2c->TRISE = 29u;
+    } else {
+        i2c->CCR = 40u;
+        i2c->TRISE = 9u;
+    }
+
+    // Set own address if supplied.
+    if (own_address) {
+        i2c->OAR1 = *own_address << 1;
+    }
+
+    // Enable peripheral.
+    i2c->CR1 = I2C_CR1_PE;
+}
+
+static bool i2c_wait_af(I2C_TypeDef *i2c, std::uint32_t flag) {
+    return hal::wait_until(1, [&] {
+        return (i2c->SR1 & (I2C_SR1_AF | flag)) != 0u;
+    });
+}
+
+static I2cStatus i2c_begin(I2C_TypeDef *i2c, std::uint8_t address) {
+    // Clear status flags.
+    i2c->SR1 = 0u;
+
+    // Send start.
+    i2c->CR1 |= I2C_CR1_START;
+    if (!hal::wait_equal(i2c->SR1, I2C_SR1_SB, I2C_SR1_SB, 1)) {
+        return I2cStatus::Timeout;
+    }
+
+    // Send address and wait for acknowledge or acknowledge failure.
+    i2c->DR = address;
+    const bool timed_out = !i2c_wait_af(i2c, I2C_SR1_ADDR);
+    if ((i2c->SR1 & I2C_SR1_AF) != 0u) {
+        return I2cStatus::AcknowledgeFailure;
+    }
+    if (timed_out || (i2c->SR1 & I2C_SR1_ADDR) == 0u) {
+        return I2cStatus::Timeout;
+    }
+
+    // Clear address sent flag.
+    i2c->SR2;
+    return I2cStatus::Ok;
+}
+
+I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data) {
+    // Enable acknowledge if needed before receiving the first data.
+    i2c->CR1 &= ~(I2C_CR1_POS | I2C_CR1_ACK);
+    if (data.size() >= 2) {
+        i2c->CR1 |= I2C_CR1_ACK;
+        if (data.size() == 2) {
+            // Handle 2 byte edge case.
+            i2c->CR1 |= I2C_CR1_POS;
+        }
+    }
+
+    // Begin transaction with the read bit set.
+    if (auto status = i2c_begin(i2c, (address << 1) | 1u); status != I2cStatus::Ok) {
+        return status;
+    }
+
+    // Handle 2 byte edge case.
+    if (data.size() == 2) {
+        i2c->CR1 &= ~I2C_CR1_ACK;
+    }
+
+    // Read bytes.
+    std::size_t index = 0;
+    while (index < data.size()) {
+        const auto bytes_remaining = data.size() - index;
+        if (bytes_remaining == 3) {
+            // Last 3 bytes - wait for the current byte to be flushed from the shift register and disable the ACK flag
+            // ready to NACK the last byte.
+            if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, 1)) {
+                return I2cStatus::Timeout;
+            }
+            i2c->CR1 &= ~I2C_CR1_ACK;
+        }
+        if (!hal::wait_equal(i2c->SR1, I2C_SR1_RXNE, I2C_SR1_RXNE, 1)) {
+            return I2cStatus::Timeout;
+        }
+        data[index++] = i2c->DR;
+    }
+
+    // Wait for the transfer to fully finish.
+    if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, 1)) {
+        return I2cStatus::Timeout;
+    }
+    return I2cStatus::Ok;
+}
+
+I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<const std::uint8_t> data) {
+    // Begin transaction with the read bit unset.
+    i2c->CR1 &= ~(I2C_CR1_POS | I2C_CR1_ACK);
+    if (auto status = i2c_begin(i2c, address << 1); status != I2cStatus::Ok) {
+        return status;
+    }
+
+    // Send bytes.
+    for (std::uint8_t byte : data) {
+        if (!i2c_wait_af(i2c, I2C_SR1_TXE)) {
+            return I2cStatus::Timeout;
+        }
+        if ((i2c->SR1 & I2C_SR1_AF) != 0u) {
+            i2c->CR1 |= I2C_CR1_STOP;
+            return I2cStatus::AcknowledgeFailure;
+        }
+        i2c->DR = byte;
+    }
+
+    // Wait for the transfer to fully finish.
+    if (!i2c_wait_af(i2c, I2C_SR1_BTF)) {
+        return I2cStatus::Timeout;
+    }
+    if ((i2c->SR1 & I2C_SR1_AF) != 0u) {
+        i2c->CR1 |= I2C_CR1_STOP;
+        return I2cStatus::AcknowledgeFailure;
+    }
+    return I2cStatus::Ok;
+}
+
+void i2c_stop(I2C_TypeDef *i2c) {
+    i2c->CR1 |= I2C_CR1_STOP;
+}
+
+I2cStatus i2c_wait_idle(I2C_TypeDef *i2c) {
+    // Allow 25 ms for bus idle.
+    return hal::wait_equal(i2c->SR2, I2C_SR2_BUSY, 0, 25) ? I2cStatus::Ok : I2cStatus::Timeout;
+}
+
 void swd_putc(char ch) {
     ITM_SendChar(ch);
 }
@@ -176,19 +339,9 @@ int swd_printf(const char *format, ...) {
 }
 
 bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint32_t desired, std::uint32_t timeout) {
-    // Start SysTick with a 1 ms period.
-    SysTick->LOAD = (hal_low_power() ? 8000 : 56000) - 1;
-    SysTick->VAL = 0;
-    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
-
-    while (timeout > 0 && (reg & mask) != desired) {
-        // Reading from SysTick->CTRL clears the underflow flag.
-        if ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) != 0) {
-            timeout--;
-        }
-    }
-    SysTick->CTRL = 0;
-    return timeout > 0;
+    return wait_until(timeout, [&] {
+        return (reg & mask) == desired;
+    });
 }
 
 } // namespace hal
