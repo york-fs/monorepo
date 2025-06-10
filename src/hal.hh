@@ -10,7 +10,7 @@
 
 namespace hal {
 
-enum class I2cStatus {
+enum class [[nodiscard]] I2cStatus {
     Ok,
     AcknowledgeFailure,
     ArbitrationLost,
@@ -146,10 +146,10 @@ void delay_us(std::size_t us);
 
 // TODO: Document these.
 void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address);
-[[nodiscard]] I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data);
-[[nodiscard]] I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<const std::uint8_t> data);
+I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data);
+I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<const std::uint8_t> data);
 void i2c_stop(I2C_TypeDef *i2c);
-[[nodiscard]] I2cStatus i2c_wait_idle(I2C_TypeDef *i2c);
+I2cStatus i2c_wait_idle(I2C_TypeDef *i2c);
 
 void swd_putc(char ch);
 __attribute__((format(printf, 1, 2))) int swd_printf(const char *format, ...);
