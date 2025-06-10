@@ -8,6 +8,9 @@
 
 namespace util {
 
+template <typename T>
+concept trivially_copyable = std::is_trivially_copyable_v<T>;
+
 template <typename Callback>
 class ScopeGuard {
     const Callback m_callback;
