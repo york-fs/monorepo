@@ -10,6 +10,9 @@
 namespace can {
 namespace {
 
+// Allow 10 milliseconds for synchronising with the bus.
+constexpr std::uint32_t k_init_timeout = 10;
+
 std::array<fifo_callback_t, 2> s_fifo_callbacks{};
 std::array<std::uint16_t, 2> s_fifo_overrun_counter{};
 
@@ -110,13 +113,13 @@ bool init(Port port, Speed speed) {
 
     // Request CAN initialisation.
     CAN1->MCR |= CAN_MCR_INRQ;
-    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK, 2)) {
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK, k_init_timeout)) {
         return false;
     }
 
     // Exit sleep mode.
     CAN1->MCR &= ~CAN_MCR_SLEEP;
-    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u, 2)) {
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_SLAK, 0u, k_init_timeout)) {
         return false;
     }
 
@@ -142,7 +145,7 @@ bool init(Port port, Speed speed) {
 
     // Leave initialisation mode.
     CAN1->MCR &= ~CAN_MCR_INRQ;
-    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u, 2)) {
+    if (!hal::wait_equal(CAN1->MSR, CAN_MSR_INAK, 0u, k_init_timeout)) {
         return false;
     }
 
