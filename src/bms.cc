@@ -396,6 +396,9 @@ void app_main() {
             }
         }
 
+        // Give a bit more time for the cell voltages to sample just in case.
+        hal::delay_us(1000);
+
         // Clear previously stored cell data.
         data.cell_tap_bitset = 0;
         data.degraded_bitset = 0;
