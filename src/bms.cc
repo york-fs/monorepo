@@ -27,6 +27,9 @@ constexpr std::uint16_t k_cell_open_threshold = 1000;
 // Maximum number of connected thermistors, including the onboard ones.
 constexpr std::uint8_t k_max_thermistor_count = 23;
 
+// Thermistor acceptable noise threshold in ADC counts. This value corresponds to around 100 mV.
+constexpr std::uint16_t k_thermistor_noise_threshold = 1500;
+
 // Voltage threshold from the absolute endpoints (0 and Vref) in 100 uV resolution from when to consider a thermistor as
 // being either open or short circuit.
 constexpr std::uint32_t k_thermistor_range_threshold = 3000;
@@ -44,6 +47,18 @@ enum class AfeStatus {
     Shutdown,
 };
 
+// TCA9535 I2C registers.
+enum class ExpanderRegister : std::uint8_t {
+    InputPort0 = 0x00,
+    InputPort1 = 0x01,
+    OutputPort0 = 0x02,
+    OutputPort1 = 0x03,
+    PolarityPort0 = 0x04,
+    PolarityPort1 = 0x05,
+    ConfigurationPort0 = 0x06,
+    ConfigurationPort1 = 0x07,
+};
+
 std::array s_address_pins{
     hal::Gpio(hal::GpioPort::A, 8),
     hal::Gpio(hal::GpioPort::A, 9),
@@ -51,23 +66,27 @@ std::array s_address_pins{
     hal::Gpio(hal::GpioPort::A, 11),
 };
 
-std::array s_thermistor_enable{
-    hal::Gpio(hal::GpioPort::A, 0), hal::Gpio(hal::GpioPort::A, 1), hal::Gpio(hal::GpioPort::A, 2),
-    hal::Gpio(hal::GpioPort::A, 3), hal::Gpio(hal::GpioPort::A, 4), hal::Gpio(hal::GpioPort::A, 5),
-    hal::Gpio(hal::GpioPort::A, 6), hal::Gpio(hal::GpioPort::A, 7),
+// Thermistors connected directly to the STM.
+std::array s_mcu_thermistor_enable{
+    hal::Gpio(hal::GpioPort::B, 9), hal::Gpio(hal::GpioPort::B, 8), hal::Gpio(hal::GpioPort::B, 12),
+    hal::Gpio(hal::GpioPort::A, 1), hal::Gpio(hal::GpioPort::A, 2), hal::Gpio(hal::GpioPort::A, 3),
+    hal::Gpio(hal::GpioPort::A, 4),
 };
-static_assert(s_thermistor_enable.size() * 3 >= k_max_thermistor_count);
 
+hal::Gpio s_adc_cs(hal::GpioPort::A, 5);
+hal::Gpio s_afe_cs(hal::GpioPort::A, 7);
+hal::Gpio s_afe_en(hal::GpioPort::B, 0);
 hal::Gpio s_ref_en(hal::GpioPort::B, 1);
 hal::Gpio s_led(hal::GpioPort::B, 5);
-hal::Gpio s_scl(hal::GpioPort::B, 6);
-hal::Gpio s_sda(hal::GpioPort::B, 7);
-hal::Gpio s_adc_cs(hal::GpioPort::B, 9);
-hal::Gpio s_afe_cs(hal::GpioPort::B, 10);
-hal::Gpio s_afe_en(hal::GpioPort::B, 11);
 hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 hal::Gpio s_mosi(hal::GpioPort::B, 15);
+
+// I2C pins.
+hal::Gpio s_scl_1(hal::GpioPort::B, 6);
+hal::Gpio s_sda_1(hal::GpioPort::B, 7);
+hal::Gpio s_scl_2(hal::GpioPort::B, 10);
+hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 
 std::optional<bms::Command> i2c_handle(const bms::SegmentData &data) {
     if ((I2C1->SR1 & I2C_SR1_ADDR) == 0u) {
@@ -230,34 +249,72 @@ std::optional<std::pair<std::uint16_t, bool>> sample_cell_voltage(std::uint8_t i
     return std::make_pair(voltage, adc_range > k_cell_degraded_threshold);
 }
 
-std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::uint8_t index) {
-    // Enable the relevant MOSFET and create a scope guard to turn it off at the end.
-    const auto &mosfet = s_thermistor_enable[index / 3];
-    util::ScopeGuard cs_guard([&mosfet] {
-        hal::gpio_reset(mosfet);
-    });
-    hal::gpio_set(mosfet);
-
-    // Route the relevant Tx input to AOUT.
-    constexpr std::array<std::uint8_t, 3> index_table{
-        0b01011000u, // T1 (buffered)
-        0b00111000u, // T2 (buffered)
-        0b01111000u, // T3 (buffered)
+hal::I2cStatus set_expander_register(ExpanderRegister reg, std::uint8_t value) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+        value,
     };
-    if (afe_command(0u, index_table[index % 3]) != AfeStatus::Ready) {
+    if (auto status = hal::i2c_wait_idle(I2C2); status != hal::I2cStatus::Ok) {
+        return status;
+    }
+    if (auto status = hal::i2c_master_write(I2C2, 0x20, data); status != hal::I2cStatus::Ok) {
+        return status;
+    }
+    hal::i2c_stop(I2C2);
+    return hal::I2cStatus::Ok;
+}
+
+std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::uint8_t index) {
+    auto configuration_register = ExpanderRegister::ConfigurationPort0;
+    if (index >= s_mcu_thermistor_enable.size() + 8) {
+        configuration_register = ExpanderRegister::ConfigurationPort1;
+    }
+
+    // Enable the thermistor.
+    if (index < s_mcu_thermistor_enable.size()) {
+        // Pull the MCU pin high.
+        s_mcu_thermistor_enable[index].configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+        hal::gpio_set(s_mcu_thermistor_enable[index]);
+    } else {
+        // The thermistor order is reversed on port 1 compared to port 0, i.e. the pins go in a clockwise fashion.
+        const auto pin_index = index - s_mcu_thermistor_enable.size();
+        const auto pin_bit =
+            configuration_register == ExpanderRegister::ConfigurationPort0 ? pin_index : 15 - pin_index;
+        if (set_expander_register(configuration_register, ~(1u << pin_bit)) != hal::I2cStatus::Ok) {
+            // Failed to configure expander.
+            return std::nullopt;
+        }
+    }
+
+    // Allow some settling time.
+    hal::delay_us(5);
+
+    // Sample the voltage on the ADC. The min ensures that a bad rail voltage doesn't result in false readings.
+    auto [voltage, adc_range] = adc_sample_voltage(k_thermistor_sample_count);
+    voltage = std::min(voltage, rail_voltage);
+
+    // Disable the thermistor.
+    if (index < s_mcu_thermistor_enable.size()) {
+        // Reconfigure MCU pin to high impedance.
+        s_mcu_thermistor_enable[index].configure(hal::GpioInputMode::Floating);
+    } else if (set_expander_register(configuration_register, 0xff) != hal::I2cStatus::Ok) {
+        // Failed to configure expander.
         return std::nullopt;
     }
 
-    // Take ADC samples and check if the voltage reading is viable. The min ensures that a bad rail voltage doesn't
-    // result in false readings.
-    const auto voltage = std::min(adc_sample_voltage(k_thermistor_sample_count).first, rail_voltage);
+    // Check if the voltage measurement is viable.
     if (voltage < k_thermistor_range_threshold || voltage > (rail_voltage - k_thermistor_range_threshold)) {
+        return std::nullopt;
+    }
+
+    // Check if the voltage measurement is too noisy.
+    if (adc_range > k_thermistor_noise_threshold) {
         return std::nullopt;
     }
 
     // Thermistor is connected, so we can calculate the temperature.
     // TODO: Use a lookup table/don't use floats here.
-    const auto resistance = (voltage * 10000) / (rail_voltage - voltage);
+    const auto resistance = (rail_voltage * 10000) / voltage - 10000;
     float beta = 1.0f / 3950.0f;
     if (index < 3) {
         // The onboard thermistors have a different beta.
@@ -280,8 +337,8 @@ void app_main() {
     for (const auto &gpio : s_address_pins) {
         gpio.configure(hal::GpioInputMode::PullUp);
     }
-    for (const auto &gpio : s_thermistor_enable) {
-        gpio.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    for (const auto &gpio : s_mcu_thermistor_enable) {
+        gpio.configure(hal::GpioInputMode::Floating);
     }
     s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
@@ -292,8 +349,8 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    // Enable clocks for I2C1 and SPI2.
-    RCC->APB1ENR |= RCC_APB1ENR_I2C1EN | RCC_APB1ENR_SPI2EN;
+    // Enable SPI2 clock.
+    RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
 
     // Enable external interrupt on SCL (PB6).
     AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
@@ -320,22 +377,32 @@ void app_main() {
 
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode. Also reconfigure SDA to
         // avoid the STM driving it low and upsetting the isolator.
-        s_scl.configure(hal::GpioInputMode::Floating);
-        s_sda.configure(hal::GpioInputMode::Floating);
+        for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
+            pin.configure(hal::GpioInputMode::Floating);
+        }
         hal::enter_stop_mode();
 
         // Configure SCL and SDA for use with the I2C peripheral.
-        s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
+            pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        }
 
         // Reset the I2C and SPI peripherals just in case.
-        RCC->APB1RSTR = RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_SPI2RST;
+        RCC->APB1RSTR = RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_I2C2RST | RCC_APB1RSTR_SPI2RST;
         RCC->APB1RSTR = 0u;
 
-        // Configure I2C peripheral.
-        I2C1->OAR1 = i2c_address << 1u;
-        I2C1->CR2 = 8u;
+        // Configure the I2C peripherals.
+        hal::i2c_init(I2C1, i2c_address);
+        hal::i2c_init(I2C2, std::nullopt);
         I2C1->CR1 = I2C_CR1_ACK | I2C_CR1_PE;
+
+        // Make sure GPIO expander is in a good state.
+        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
+        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0xff));
+        static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort0, 0x00));
+        static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort1, 0x00));
+        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff));
+        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff));
 
         // Wait a maximum of 10 ms for address match.
         hal::wait_equal(I2C1->SR1, I2C_SR1_ADDR, I2C_SR1_ADDR, 10);
@@ -373,14 +440,17 @@ void app_main() {
         // Enable SPI2 in master mode at 2 MHz (4x divider).
         SPI2->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_0 | SPI_CR1_MSTR;
 
-        // Wait for AFE startup to complete. Route T1 (buffered) by default.
-        while (afe_command(0, 0b01011000u) == AfeStatus::NotReady) {
+        // Wait for AFE startup to complete. Route T2 (buffered) by default to measure thermistors.
+        while (afe_command(0, 0b00111000u) == AfeStatus::NotReady) {
             __NOP();
         }
 
         if (*request == bms::Command::MeasureRail) {
             // All thermistors are switched off so we can measure the 3V3 rail voltage directly.
             std::tie(data.rail_voltage, std::ignore) = adc_sample_voltage(k_rail_sample_count);
+
+            // TODO: This is broken in hardware revision D.
+            data.rail_voltage = 33330;
             continue;
         }
 
