@@ -12,6 +12,8 @@ namespace hal {
 
 enum class [[nodiscard]] I2cStatus {
     Ok,
+    OkRead,
+    OkWrite,
     AcknowledgeFailure,
     ArbitrationLost,
     BusError,
@@ -148,6 +150,9 @@ void delay_us(std::size_t us);
 void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address);
 I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data);
 I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<const std::uint8_t> data);
+I2cStatus i2c_slave_accept(I2C_TypeDef *i2c, std::uint32_t timeout);
+I2cStatus i2c_slave_read(I2C_TypeDef *i2c, std::span<std::uint8_t> data, std::uint32_t timeout);
+I2cStatus i2c_slave_write(I2C_TypeDef *i2c, std::span<const std::uint8_t> data, std::uint32_t timeout);
 void i2c_stop(I2C_TypeDef *i2c);
 I2cStatus i2c_wait_idle(I2C_TypeDef *i2c);
 

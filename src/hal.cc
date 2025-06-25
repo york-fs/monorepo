@@ -44,7 +44,7 @@ bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
         }
     }
     SysTick->CTRL = 0;
-    return timeout > 0;
+    return predicate();
 }
 
 } // namespace
@@ -314,6 +314,47 @@ I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<con
         i2c->CR1 |= I2C_CR1_STOP;
         return I2cStatus::AcknowledgeFailure;
     }
+    return I2cStatus::Ok;
+}
+
+I2cStatus i2c_slave_accept(I2C_TypeDef *i2c, std::uint32_t timeout) {
+    // Enable address acknowledge.
+    i2c->CR1 |= I2C_CR1_ACK;
+
+    // Wait for address match.
+    if (!hal::wait_equal(i2c->SR1, I2C_SR1_ADDR, I2C_SR1_ADDR, timeout)) {
+        return I2cStatus::Timeout;
+    }
+    return ((i2c->SR2 & I2C_SR2_TRA) == 0u) ? I2cStatus::OkRead : I2cStatus::OkWrite;
+}
+
+I2cStatus i2c_slave_read(I2C_TypeDef *i2c, std::span<std::uint8_t> data, std::uint32_t timeout) {
+    // Enable acknowledgement of bytes.
+    i2c->CR1 |= I2C_CR1_ACK;
+
+    // Read bytes.
+    for (auto &byte : data) {
+        if (!hal::wait_equal(i2c->SR1, I2C_SR1_RXNE, I2C_SR1_RXNE, timeout)) {
+            i2c->CR1 &= ~I2C_CR1_ACK;
+            return I2cStatus::Timeout;
+        }
+        byte = i2c->DR;
+    }
+    return I2cStatus::Ok;
+}
+
+I2cStatus i2c_slave_write(I2C_TypeDef *i2c, std::span<const std::uint8_t> data, std::uint32_t timeout) {
+    for (auto byte : data) {
+        if (!hal::wait_equal(i2c->SR1, I2C_SR1_TXE, I2C_SR1_TXE, timeout)) {
+            return I2cStatus::Timeout;
+        }
+        i2c->DR = byte;
+    }
+
+    if (!hal::wait_equal(i2c->SR1, I2C_SR1_AF, I2C_SR1_AF, timeout)) {
+        return I2cStatus::Timeout;
+    }
+    i2c->SR1 &= ~I2C_SR1_AF;
     return I2cStatus::Ok;
 }
 
