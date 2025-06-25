@@ -241,7 +241,7 @@ static I2cStatus i2c_begin(I2C_TypeDef *i2c, std::uint8_t address) {
     return I2cStatus::Ok;
 }
 
-I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data) {
+I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data, std::uint32_t timeout) {
     // Enable acknowledge if needed before receiving the first data.
     i2c->CR1 &= ~(I2C_CR1_POS | I2C_CR1_ACK);
     if (data.size() >= 2) {
@@ -269,19 +269,19 @@ I2cStatus i2c_master_read(I2C_TypeDef *i2c, std::uint8_t address, std::span<std:
         if (bytes_remaining == 3) {
             // Last 3 bytes - wait for the current byte to be flushed from the shift register and disable the ACK flag
             // ready to NACK the last byte.
-            if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, 1)) {
+            if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, timeout)) {
                 return I2cStatus::Timeout;
             }
             i2c->CR1 &= ~I2C_CR1_ACK;
         }
-        if (!hal::wait_equal(i2c->SR1, I2C_SR1_RXNE, I2C_SR1_RXNE, 1)) {
+        if (!hal::wait_equal(i2c->SR1, I2C_SR1_RXNE, I2C_SR1_RXNE, timeout)) {
             return I2cStatus::Timeout;
         }
         data[index++] = i2c->DR;
     }
 
     // Wait for the transfer to fully finish.
-    if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, 1)) {
+    if (!hal::wait_equal(i2c->SR1, I2C_SR1_BTF, I2C_SR1_BTF, timeout)) {
         return I2cStatus::Timeout;
     }
     return I2cStatus::Ok;

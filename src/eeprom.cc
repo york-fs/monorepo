@@ -25,7 +25,7 @@ hal::I2cStatus Eeprom::read(std::uint16_t page_index, std::span<std::uint8_t> da
     if (auto status = hal::i2c_master_write(m_i2c, m_address, address_bytes); status != hal::I2cStatus::Ok) {
         return status;
     }
-    if (auto status = hal::i2c_master_read(m_i2c, m_address, data); status != hal::I2cStatus::Ok) {
+    if (auto status = hal::i2c_master_read(m_i2c, m_address, data, 1); status != hal::I2cStatus::Ok) {
         return status;
     }
     hal::i2c_stop(m_i2c);
