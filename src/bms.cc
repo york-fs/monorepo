@@ -88,64 +88,6 @@ hal::Gpio s_sda_1(hal::GpioPort::B, 7);
 hal::Gpio s_scl_2(hal::GpioPort::B, 10);
 hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 
-std::optional<bms::Command> i2c_handle(const bms::SegmentData &data) {
-    if ((I2C1->SR1 & I2C_SR1_ADDR) == 0u) {
-        // Address not matched.
-        return std::nullopt;
-    }
-
-    // Clear address matched status by reading SR2.
-    const std::uint32_t sr2 = I2C1->SR2;
-
-    // Check if master is sending us a command.
-    if ((sr2 & I2C_SR2_TRA) == 0u) {
-        // Receive the single command byte.
-        while ((I2C1->SR1 & I2C_SR1_RXNE) == 0u) {
-            __NOP();
-        }
-        return static_cast<bms::Command>(I2C1->DR);
-    }
-
-    // Otherwise master wants to read our data.
-    std::array<std::uint8_t, sizeof(bms::SegmentData)> bytes;
-    auto it = bytes.begin();
-    auto append_value = [&](auto value) {
-        auto value_bytes = util::write_be(value);
-        it = std::copy(value_bytes.begin(), value_bytes.end(), it);
-    };
-    append_value(data.thermistor_bitset);
-    append_value(data.cell_tap_bitset);
-    append_value(data.degraded_bitset);
-    append_value(data.rail_voltage);
-    for (std::uint16_t voltage : data.voltages) {
-        append_value(voltage);
-    }
-    for (std::uint8_t temperature : data.temperatures) {
-        *it++ = temperature;
-    }
-
-    // TODO: Rewrite this.
-    std::uint32_t index = 0;
-    while ((I2C1->SR1 & I2C_SR1_STOPF) == 0u) {
-        if ((I2C1->SR1 & I2C_SR1_AF) != 0u) {
-            // NACK received.
-            I2C1->SR1 &= ~I2C_SR1_AF;
-            break;
-        }
-
-        if ((I2C1->SR1 & I2C_SR1_TXE) != 0u) {
-            if (index < bytes.size()) {
-                I2C1->DR = bytes[index++];
-            } else {
-                I2C1->DR = 0xff;
-            }
-        }
-    }
-    I2C1->SR1 &= ~I2C_SR1_STOPF;
-    I2C1->CR1 |= I2C_CR1_PE;
-    return std::nullopt;
-}
-
 void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
     // Pull CS low and create a scope guard to pull it high again on return.
     // TODO: Add timeouts.
@@ -325,6 +267,44 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     return static_cast<std::int8_t>(temperature);
 }
 
+std::optional<bms::Command> i2c_check(const bms::SegmentData &data, std::uint32_t timeout) {
+    // TODO: Record bus errors and timeouts.
+    const auto status = hal::i2c_slave_accept(I2C1, timeout);
+    if (status != hal::I2cStatus::OkRead && status != hal::I2cStatus::OkWrite) {
+        return std::nullopt;
+    }
+
+    if (status == hal::I2cStatus::OkRead) {
+        // Receive the command byte.
+        std::uint8_t byte = 0;
+        if (hal::i2c_slave_read(I2C1, std::span(&byte, 1), 1) != hal::I2cStatus::Ok) {
+            return std::nullopt;
+        }
+        return static_cast<bms::Command>(byte);
+    }
+
+    // Otherwise the master wants our data.
+    std::array<std::uint8_t, sizeof(bms::SegmentData)> bytes;
+    auto it = bytes.begin();
+    auto append_value = [&](auto value) {
+        auto value_bytes = util::write_be(value);
+        it = std::copy(value_bytes.begin(), value_bytes.end(), it);
+    };
+    append_value(data.thermistor_bitset);
+    append_value(data.cell_tap_bitset);
+    append_value(data.degraded_bitset);
+    append_value(data.rail_voltage);
+    for (std::uint16_t voltage : data.voltages) {
+        append_value(voltage);
+    }
+    for (std::uint8_t temperature : data.temperatures) {
+        *it++ = temperature;
+    }
+
+    static_cast<void>(hal::i2c_slave_write(I2C1, bytes, 1));
+    return std::nullopt;
+}
+
 } // namespace
 
 bool hal_low_power() {
@@ -364,7 +344,7 @@ void app_main() {
     while (true) {
         // Wait a bit to allow a repeated start to be captured.
         hal::delay_us(100);
-        i2c_handle(data);
+        i2c_check(data, 0);
 
         // Reconfigure SCK and MOSI as regular GPIOs before going to sleep.
         s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
@@ -394,7 +374,9 @@ void app_main() {
         // Configure the I2C peripherals.
         hal::i2c_init(I2C1, i2c_address);
         hal::i2c_init(I2C2, std::nullopt);
-        I2C1->CR1 = I2C_CR1_ACK | I2C_CR1_PE;
+
+        // Wait a maximum of 10 ms for address match.
+        const auto command = i2c_check(data, 10);
 
         // Make sure GPIO expander is in a good state.
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
@@ -404,16 +386,12 @@ void app_main() {
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff));
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff));
 
-        // Wait a maximum of 10 ms for address match.
-        hal::wait_equal(I2C1->SR1, I2C_SR1_ADDR, I2C_SR1_ADDR, 10);
-
-        const auto request = i2c_handle(data);
-        if (!request) {
+        if (!command) {
             // Data not for us or spurious wakeup - go back to sleep.
             continue;
         }
 
-        switch (*request) {
+        switch (*command) {
             using enum bms::Command;
         case Enable:
             hal::gpio_set(s_afe_en, s_ref_en);
@@ -445,7 +423,7 @@ void app_main() {
             __NOP();
         }
 
-        if (*request == bms::Command::MeasureRail) {
+        if (*command == bms::Command::MeasureRail) {
             // All thermistors are switched off so we can measure the 3V3 rail voltage directly.
             std::tie(data.rail_voltage, std::ignore) = adc_sample_voltage(k_rail_sample_count);
 
