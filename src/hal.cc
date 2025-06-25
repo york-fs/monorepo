@@ -194,11 +194,11 @@ void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
     // Configure for 100 kHz.
     // TODO: Calculate this properly and allow different speeds.
     if (hal_low_power()) {
-        i2c->CCR = 140u;
-        i2c->TRISE = 29u;
-    } else {
         i2c->CCR = 40u;
         i2c->TRISE = 9u;
+    } else {
+        i2c->CCR = 140u;
+        i2c->TRISE = 29u;
     }
 
     // Set own address if supplied.
