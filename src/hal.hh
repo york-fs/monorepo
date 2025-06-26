@@ -156,6 +156,9 @@ I2cStatus i2c_slave_write(I2C_TypeDef *i2c, std::span<const std::uint8_t> data, 
 void i2c_stop(I2C_TypeDef *i2c);
 I2cStatus i2c_wait_idle(I2C_TypeDef *i2c);
 
+void spi_init_master(SPI_TypeDef *spi, std::uint32_t baud_rate);
+bool spi_transfer(SPI_TypeDef *spi, const Gpio &chip_select, std::span<std::uint8_t> data, std::uint32_t timeout);
+
 void swd_putc(char ch);
 __attribute__((format(printf, 1, 2))) int swd_printf(const char *format, ...);
 

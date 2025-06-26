@@ -2,6 +2,7 @@
 
 #include <miniprintf.h>
 #include <stm32f103xb.h>
+#include <util.hh>
 
 #include <bit>
 #include <cstdarg>
@@ -365,6 +366,42 @@ void i2c_stop(I2C_TypeDef *i2c) {
 I2cStatus i2c_wait_idle(I2C_TypeDef *i2c) {
     // Allow 25 ms for bus idle.
     return hal::wait_equal(i2c->SR2, I2C_SR2_BUSY, 0, 25) ? I2cStatus::Ok : I2cStatus::Timeout;
+}
+
+void spi_init_master(SPI_TypeDef *spi, std::uint32_t baud_rate) {
+    // Enable peripheral clock.
+    if (spi == SPI1) {
+        RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+    } else {
+        RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+    }
+    spi->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | baud_rate | SPI_CR1_MSTR;
+}
+
+bool spi_transfer(SPI_TypeDef *spi, const Gpio &chip_select, std::span<std::uint8_t> data, std::uint32_t timeout) {
+    // Pull CS low and create a scope guard to pull it high again on return.
+    util::ScopeGuard cs_guard([&chip_select] {
+        hal::gpio_set(chip_select);
+    });
+    hal::gpio_reset(chip_select);
+
+    // Transmit and receive each byte.
+    for (auto &byte : data) {
+        // Transmit byte.
+        if (!hal::wait_equal(spi->SR, SPI_SR_TXE, SPI_SR_TXE, timeout)) {
+            return false;
+        }
+        spi->DR = byte;
+
+        // Receive byte.
+        if (!hal::wait_equal(spi->SR, SPI_SR_RXNE, SPI_SR_RXNE, timeout)) {
+            return false;
+        }
+        byte = spi->DR;
+    }
+
+    // Wait for busy to clear before resetting CS to high.
+    return hal::wait_equal(spi->SR, SPI_SR_BSY, 0u, timeout);
 }
 
 void swd_putc(char ch) {
