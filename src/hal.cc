@@ -308,7 +308,7 @@ I2cStatus i2c_master_write(I2C_TypeDef *i2c, std::uint8_t address, std::span<con
     }
 
     // Wait for the transfer to fully finish.
-    if (!i2c_wait_af(i2c, I2C_SR1_BTF)) {
+    if (!data.empty() && !i2c_wait_af(i2c, I2C_SR1_BTF)) {
         return I2cStatus::Timeout;
     }
     if ((i2c->SR1 & I2C_SR1_AF) != 0u) {
