@@ -1,5 +1,6 @@
 #include <bms.hh>
 #include <hal.hh>
+#include <max_adc.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
@@ -88,71 +89,15 @@ hal::Gpio s_sda_1(hal::GpioPort::B, 7);
 hal::Gpio s_scl_2(hal::GpioPort::B, 10);
 hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 
-void spi_transfer(const hal::Gpio &cs, std::span<std::uint8_t> data) {
-    // Pull CS low and create a scope guard to pull it high again on return.
-    // TODO: Add timeouts.
-    util::ScopeGuard cs_guard([&cs] {
-        hal::gpio_set(cs);
-    });
-    hal::gpio_reset(cs);
-
-    // Transmit each byte one-by-one.
-    for (auto &byte : data) {
-        // Transmit byte.
-        while ((SPI2->SR & SPI_SR_TXE) != SPI_SR_TXE) {
-            __NOP();
-        }
-        SPI2->DR = byte;
-
-        // Receive byte.
-        while ((SPI2->SR & SPI_SR_RXNE) != SPI_SR_RXNE) {
-            __NOP();
-        }
-        byte = SPI2->DR;
-    }
-
-    // Wait for busy to be clear and then reset CS to high.
-    while ((SPI2->SR & SPI_SR_BSY) != 0u) {
-        __NOP();
-    }
-}
-
-std::uint16_t adc_sample_raw() {
-    // Trigger conversion.
-    hal::gpio_reset(s_adc_cs);
-    hal::gpio_set(s_adc_cs);
-
-    // Read value over SPI.
-    std::array<std::uint8_t, 2> bytes{};
-    spi_transfer(s_adc_cs, bytes);
-
-    // Return assembled value.
-    return (static_cast<std::uint16_t>(bytes[0]) << 8u) | bytes[1];
-}
-
-std::pair<std::uint16_t, std::uint16_t> adc_sample_voltage(std::size_t sample_count) {
-    std::uint16_t min_value = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t max_value = 0;
-    std::uint32_t sum = 0;
-    for (std::size_t i = 0; i < sample_count; i++) {
-        const auto value = adc_sample_raw();
-        min_value = std::min(min_value, value);
-        max_value = std::max(max_value, value);
-        sum += value;
-    }
-
-    const auto average = sum / sample_count;
-    const auto voltage = (average * k_reference_voltage) >> 16u;
-    return std::make_pair(voltage, max_value - min_value);
-}
-
 [[nodiscard]] AfeStatus afe_command(std::uint16_t balance_bits, std::uint8_t control_bits) {
     std::array<std::uint8_t, 3> data{
         static_cast<std::uint8_t>(balance_bits >> 8u),
         static_cast<std::uint8_t>(balance_bits),
         control_bits,
     };
-    spi_transfer(s_afe_cs, data);
+    if (!hal::spi_transfer(SPI2, s_afe_cs, data, 1)) {
+        return AfeStatus::BadSpi;
+    }
 
     // Check version bits are correct.
     if ((data[2] >> 4u) != k_afe_version_bits) {
@@ -184,8 +129,14 @@ std::optional<std::pair<std::uint16_t, bool>> sample_cell_voltage(std::uint8_t i
 
     // Take successive ADC samples to obtain an average voltage reading. Check whether the cell tap is open by checking
     // closeness to the ADC reading endpoints.
-    const auto [voltage, adc_range] = adc_sample_voltage(k_cell_sample_count);
+    const auto sample = max_adc::sample_voltage(SPI2, s_adc_cs, k_reference_voltage, k_cell_sample_count);
+    if (!sample) {
+        // Failed to sample ADC.
+        return std::nullopt;
+    }
+    const auto [voltage, adc_range] = *sample;
     if (voltage < k_cell_open_threshold || voltage > (k_reference_voltage - k_cell_open_threshold)) {
+        // Cell tap is bad.
         return std::nullopt;
     }
     return std::make_pair(voltage, adc_range > k_cell_degraded_threshold);
@@ -232,7 +183,12 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     hal::delay_us(5);
 
     // Sample the voltage on the ADC. The min ensures that a bad rail voltage doesn't result in false readings.
-    auto [voltage, adc_range] = adc_sample_voltage(k_thermistor_sample_count);
+    const auto sample = max_adc::sample_voltage(SPI2, s_adc_cs, k_reference_voltage, k_thermistor_sample_count);
+    if (!sample) {
+        // Failed to sample ADC.
+        return std::nullopt;
+    }
+    auto [voltage, adc_range] = *sample;
     voltage = std::min(voltage, rail_voltage);
 
     // Disable the thermistor.
@@ -329,9 +285,6 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    // Enable SPI2 clock.
-    RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
-
     // Enable external interrupt on SCL (PB6).
     AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
     EXTI->EMR |= EXTI_EMR_MR6;
@@ -416,7 +369,7 @@ void app_main() {
         s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
 
         // Enable SPI2 in master mode at 2 MHz (4x divider).
-        SPI2->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_0 | SPI_CR1_MSTR;
+        hal::spi_init_master(SPI2, SPI_CR1_BR_0);
 
         // Wait for AFE startup to complete. Route T2 (buffered) by default to measure thermistors.
         while (afe_command(0, 0b00111000u) == AfeStatus::NotReady) {
@@ -425,7 +378,10 @@ void app_main() {
 
         if (*command == bms::Command::MeasureRail) {
             // All thermistors are switched off so we can measure the 3V3 rail voltage directly.
-            std::tie(data.rail_voltage, std::ignore) = adc_sample_voltage(k_rail_sample_count);
+            const auto voltage = max_adc::sample_voltage(SPI2, s_adc_cs, k_reference_voltage, k_rail_sample_count);
+            if (voltage) {
+                std::tie(data.rail_voltage, std::ignore) = *voltage;
+            }
 
             // TODO: This is broken in hardware revision D.
             data.rail_voltage = 33330;
