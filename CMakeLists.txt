@@ -73,6 +73,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
         src/can.cc
         src/eeprom.cc
         src/hal.cc
+        src/max_adc.cc
         src/miniprintf.c
         system/startup_stm32f103c8tx.s)
     target_include_directories(shared-stm SYSTEM PUBLIC system)
