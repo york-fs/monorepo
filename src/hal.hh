@@ -140,6 +140,13 @@ void adc_sequence_channel(ADC_TypeDef *adc, std::uint32_t index, std::uint32_t c
 void adc_start(ADC_TypeDef *adc);
 
 /**
+ * Computes the 32-bit CRC of the given data using the Ethernet polynomial.
+ *
+ * @param data the data buffer
+ */
+std::uint32_t crc_compute(std::span<const std::uint8_t> data);
+
+/**
  * Spins for the specified amount of microseconds.
  *
  * @param us the time to wait in microseconds
