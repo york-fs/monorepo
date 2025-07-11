@@ -342,6 +342,9 @@ bool hal_low_power() {
 }
 
 void app_main() {
+    // Small startup delay.
+    hal::delay_us(100000);
+
     // Configure general GPIOs.
     for (const auto &gpio : s_address_pins) {
         gpio.configure(hal::GpioInputMode::PullUp);
