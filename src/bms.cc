@@ -147,7 +147,7 @@ hal::I2cStatus set_expander_register(ExpanderRegister reg, std::uint8_t value) {
         static_cast<std::uint8_t>(reg),
         value,
     };
-    if (auto status = hal::i2c_wait_idle(I2C2); status != hal::I2cStatus::Ok) {
+    if (auto status = hal::i2c_wait_idle(I2C2, 5); status != hal::I2cStatus::Ok) {
         return status;
     }
     if (auto status = hal::i2c_master_write(I2C2, 0x20, data); status != hal::I2cStatus::Ok) {

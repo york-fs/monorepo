@@ -19,7 +19,7 @@ hal::I2cStatus Eeprom::read(std::uint16_t page_index, std::span<std::uint8_t> da
         static_cast<std::uint8_t>((address >> 8u) & 0xffu),
         static_cast<std::uint8_t>(address & 0xffu),
     };
-    if (auto status = hal::i2c_wait_idle(m_i2c); status != hal::I2cStatus::Ok) {
+    if (auto status = hal::i2c_wait_idle(m_i2c, 25); status != hal::I2cStatus::Ok) {
         return status;
     }
     if (auto status = hal::i2c_master_write(m_i2c, m_address, address_bytes); status != hal::I2cStatus::Ok) {
@@ -49,7 +49,7 @@ hal::I2cStatus Eeprom::write_page(std::uint16_t index, std::span<const std::uint
     std::copy_n(page.begin(), size, std::next(bytes.begin(), 2));
 
     const auto span = std::span(bytes).subspan(0, size + 2);
-    if (auto status = hal::i2c_wait_idle(m_i2c); status != hal::I2cStatus::Ok) {
+    if (auto status = hal::i2c_wait_idle(m_i2c, 25); status != hal::I2cStatus::Ok) {
         return status;
     }
     if (auto status = hal::i2c_master_write(m_i2c, m_address, span); status != hal::I2cStatus::Ok) {
