@@ -207,6 +207,10 @@ void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
     // Enable peripheral clock.
     RCC->APB1ENR |= (i2c == I2C1 ? RCC_APB1ENR_I2C1EN : RCC_APB1ENR_I2C2EN);
 
+    // Reset the peripheral.
+    RCC->APB1RSTR = (i2c == I2C1 ? RCC_APB1RSTR_I2C1RST : RCC_APB1RSTR_I2C2RST);
+    RCC->APB1RSTR = 0u;
+
     // Configure peripheral clock frequency.
     i2c->CR2 = hal_low_power() ? 8u : 28u;
 
@@ -387,11 +391,15 @@ I2cStatus i2c_wait_idle(I2C_TypeDef *i2c, std::uint32_t timeout) {
 }
 
 void spi_init_master(SPI_TypeDef *spi, std::uint32_t baud_rate) {
-    // Enable peripheral clock.
+    // Enable peripheral clock and reset the peripheral.
     if (spi == SPI1) {
         RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+        RCC->APB2RSTR = RCC_APB2RSTR_SPI1RST;
+        RCC->APB2RSTR = 0u;
     } else {
         RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+        RCC->APB1RSTR = RCC_APB1RSTR_SPI2RST;
+        RCC->APB1RSTR = 0u;
     }
     spi->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | baud_rate | SPI_CR1_MSTR;
 }

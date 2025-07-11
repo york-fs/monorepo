@@ -401,11 +401,7 @@ void app_main() {
             pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
         }
 
-        // Reset the I2C and SPI peripherals just in case.
-        RCC->APB1RSTR = RCC_APB1RSTR_I2C1RST | RCC_APB1RSTR_I2C2RST | RCC_APB1RSTR_SPI2RST;
-        RCC->APB1RSTR = 0u;
-
-        // Configure the I2C peripherals.
+        // Configure the I2C peripherals. This also resets them.
         hal::i2c_init(I2C1, i2c_address);
         hal::i2c_init(I2C2, std::nullopt);
 
