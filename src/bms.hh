@@ -5,13 +5,6 @@
 
 namespace bms {
 
-enum class Command : std::uint8_t {
-    Disable = 0x10,
-    Enable = 0x20,
-    MeasureRail = 0x30,
-    Sample = 0x40,
-};
-
 struct SegmentData {
     // For a given thermistor index, the bit corresponding to that index is:
     //   0 if the thermistor is disconnected or otherwise reading out of range;
@@ -36,6 +29,9 @@ struct SegmentData {
 
     // Thermistor temperatures to the nearest degree.
     std::array<std::int8_t, 23> temperatures;
+
+    // True if the segment is ready and the data is valid.
+    bool valid;
 };
 
 } // namespace bms

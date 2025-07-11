@@ -60,6 +60,17 @@ enum class ExpanderRegister : std::uint8_t {
     ConfigurationPort1 = 0x07,
 };
 
+enum class State {
+    // AFE and reference are unpowered.
+    Offline,
+
+    // Ready to sample the rail voltage.
+    ReadyRailVoltage,
+
+    // Sampling active.
+    Ready,
+};
+
 std::array s_address_pins{
     hal::Gpio(hal::GpioPort::A, 8),
     hal::Gpio(hal::GpioPort::A, 9),
@@ -223,23 +234,20 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     return static_cast<std::int8_t>(temperature);
 }
 
-std::optional<bms::Command> i2c_check(const bms::SegmentData &data, std::uint32_t timeout) {
-    // TODO: Record bus errors and timeouts.
-    const auto status = hal::i2c_slave_accept(I2C1, timeout);
-    if (status != hal::I2cStatus::OkRead && status != hal::I2cStatus::OkWrite) {
-        return std::nullopt;
+/**
+ * Replies to the master if it requested data.
+ *
+ * @return true if the master requested data from us; false otherwise
+ */
+bool i2c_reply(const bms::SegmentData &data) {
+    // Wait a maximum of 10 ms for address match.
+    // TODO: Record bus errors and timeouts as a statistic.
+    const auto status = hal::i2c_slave_accept(I2C1, 10);
+    if (status != hal::I2cStatus::OkWrite) {
+        return false;
     }
 
-    if (status == hal::I2cStatus::OkRead) {
-        // Receive the command byte.
-        std::uint8_t byte = 0;
-        if (hal::i2c_slave_read(I2C1, std::span(&byte, 1), 1) != hal::I2cStatus::Ok) {
-            return std::nullopt;
-        }
-        return static_cast<bms::Command>(byte);
-    }
-
-    // Otherwise the master wants our data.
+    // The master wants our data.
     std::array<std::uint8_t, sizeof(bms::SegmentData)> bytes;
     auto it = bytes.begin();
     auto append_value = [&](auto value) {
@@ -256,9 +264,9 @@ std::optional<bms::Command> i2c_check(const bms::SegmentData &data, std::uint32_
     for (std::uint8_t temperature : data.temperatures) {
         *it++ = temperature;
     }
-
+    *it++ = data.valid ? 1 : 0;
     static_cast<void>(hal::i2c_slave_write(I2C1, bytes, 1));
-    return std::nullopt;
+    return true;
 }
 
 } // namespace
@@ -294,11 +302,8 @@ void app_main() {
     const auto i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
 
     bms::SegmentData data{};
+    auto state = State::Offline;
     while (true) {
-        // Wait a bit to allow a repeated start to be captured.
-        hal::delay_us(100);
-        i2c_check(data, 0);
-
         // Reconfigure SCK and MOSI as regular GPIOs before going to sleep.
         s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
         s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
@@ -328,8 +333,22 @@ void app_main() {
         hal::i2c_init(I2C1, i2c_address);
         hal::i2c_init(I2C2, std::nullopt);
 
-        // Wait a maximum of 10 ms for address match.
-        const auto command = i2c_check(data, 10);
+        // Try to reply to the master.
+        if (!i2c_reply(data)) {
+            // Request not for us or a spurious wakeup - go back to sleep.
+            continue;
+        }
+
+        // Conservatively unset the data validity flag.
+        data.valid = false;
+
+        // TODO: Start a timer to depower the AFE and reference.
+        if (state == State::Offline) {
+            // Power the AFE and reference.
+            hal::gpio_set(s_afe_en, s_ref_en, s_led);
+            state = State::ReadyRailVoltage;
+            continue;
+        }
 
         // Make sure GPIO expander is in a good state.
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
@@ -338,27 +357,6 @@ void app_main() {
         static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort1, 0x00));
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff));
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff));
-
-        if (!command) {
-            // Data not for us or spurious wakeup - go back to sleep.
-            continue;
-        }
-
-        switch (*command) {
-            using enum bms::Command;
-        case Enable:
-            hal::gpio_set(s_afe_en, s_ref_en);
-            continue;
-        case Disable:
-            hal::gpio_reset(s_afe_en, s_ref_en);
-            continue;
-        case MeasureRail:
-        case Sample:
-            break;
-        default:
-            // Bad request.
-            continue;
-        }
 
         // Wake the ADC.
         hal::gpio_reset(s_sck, s_adc_cs);
@@ -376,7 +374,7 @@ void app_main() {
             __NOP();
         }
 
-        if (*command == bms::Command::MeasureRail) {
+        if (state == State::ReadyRailVoltage) {
             // All thermistors are switched off so we can measure the 3V3 rail voltage directly.
             const auto voltage = max_adc::sample_voltage(SPI2, s_adc_cs, k_reference_voltage, k_rail_sample_count);
             if (voltage) {
@@ -385,6 +383,7 @@ void app_main() {
 
             // TODO: This is broken in hardware revision D.
             data.rail_voltage = 33330;
+            state = State::Ready;
             continue;
         }
 
@@ -422,7 +421,8 @@ void app_main() {
             }
         }
 
-        // Put the AFE into diagnostic mode.
+        // Put the AFE into diagnostic mode and mark the data as valid.
+        data.valid = true;
         static_cast<void>(afe_command(0u, 0b01011010u));
     }
 }
