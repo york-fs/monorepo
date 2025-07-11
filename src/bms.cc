@@ -378,6 +378,15 @@ void app_main() {
         hal::gpio_reset(s_adc_cs);
         hal::gpio_set(s_adc_cs);
 
+        // Pull the GPIO expander outputs low to avoid power draw.
+        s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        hal::i2c_init(I2C2, std::nullopt);
+        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0x00));
+        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0x00));
+        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0x00));
+        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0x00));
+
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode. Also reconfigure SDA to
         // avoid the STM driving it low and upsetting the isolator.
         for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
@@ -425,7 +434,7 @@ void app_main() {
         // Reset the RTC count as we are doing something useful.
         rtc_refresh();
 
-        // Make sure GPIO expander is in a good state.
+        // Make sure GPIO expander is in a good state for thermistor sensing.
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0xff));
         static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort0, 0x00));
