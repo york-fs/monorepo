@@ -38,6 +38,9 @@ constexpr std::uint32_t k_thermistor_range_threshold = 3000;
 // Hard-coded value of the on-board precision voltage reference in 100 uV resolution.
 constexpr std::uint16_t k_reference_voltage = 45000;
 
+// State reset timeout in seconds.
+constexpr std::uint16_t k_rtc_timeout = 5;
+
 // MAX14920 product and die version bits.
 constexpr std::uint8_t k_afe_version_bits = 0b1010;
 
@@ -269,6 +272,68 @@ bool i2c_reply(const bms::SegmentData &data) {
     return true;
 }
 
+void rtc_enable() {
+    // Enable the LSI oscillator.
+    RCC->CSR |= RCC_CSR_LSION;
+
+    // Enable the backup domain and disable write protection.
+    RCC->APB1ENR |= RCC_APB1ENR_BKPEN;
+    PWR->CR |= PWR_CR_DBP;
+
+    // Reset the backup domain.
+    RCC->BDCR |= RCC_BDCR_BDRST;
+    RCC->BDCR &= ~RCC_BDCR_BDRST;
+
+    // Wait for LSI readiness.
+    hal::wait_equal(RCC->CSR, RCC_CSR_LSIRDY, RCC_CSR_LSIRDY, 5);
+
+    // Enable the RTC clock using the LSI oscillator.
+    RCC->BDCR |= RCC_BDCR_RTCEN | RCC_BDCR_RTCSEL_LSI;
+
+    // Wait for sync.
+    RTC->CRL &= ~RTC_CRL_RSF;
+    hal::wait_equal(RTC->CRL, RTC_CRL_RSF, RTC_CRL_RSF, 5);
+
+    // Configure the RTC registers to a 1 second period and alarm set.
+    hal::wait_equal(RTC->CRL, RTC_CRL_RTOFF, RTC_CRL_RTOFF, 5);
+    RTC->CRL |= RTC_CRL_CNF;
+    RTC->PRLH = 0;
+    RTC->PRLL = 39999;
+    RTC->ALRH = 0;
+    RTC->ALRL = k_rtc_timeout - 1;
+    RTC->CRL &= ~RTC_CRL_CNF;
+    hal::wait_equal(RTC->CRL, RTC_CRL_RTOFF, RTC_CRL_RTOFF, 5);
+
+    // Enable RTC alarm external interrupt (EXTI17).
+    EXTI->EMR |= EXTI_EMR_MR17;
+    EXTI->RTSR |= EXTI_RTSR_TR17;
+}
+
+void rtc_disable() {
+    // Wait for sync.
+    RTC->CRL &= ~RTC_CRL_RSF;
+    hal::wait_equal(RTC->CRL, RTC_CRL_RSF, RTC_CRL_RSF, 5);
+
+    // Disable the RTC clock and APB1 access to the backup domain.
+    RCC->BDCR &= ~RCC_BDCR_RTCEN;
+    RCC->APB1ENR &= ~RCC_APB1ENR_BKPEN;
+
+    // Disable the LSI oscillator.
+    RCC->CSR &= ~RCC_CSR_LSION;
+    hal::wait_equal(RCC->CSR, RCC_CSR_LSIRDY, 0, 10);
+}
+
+void rtc_refresh() {
+    if (!hal::wait_equal(RTC->CRL, RTC_CRL_RTOFF, RTC_CRL_RTOFF, 10)) {
+        return;
+    }
+    RTC->CRL |= RTC_CRL_CNF;
+    RTC->CNTH = 0;
+    RTC->CNTL = 0;
+    RTC->CRL &= ~RTC_CRL_CNF;
+    hal::wait_equal(RTC->CRL, RTC_CRL_RTOFF, RTC_CRL_RTOFF, 10);
+}
+
 } // namespace
 
 bool hal_low_power() {
@@ -320,6 +385,17 @@ void app_main() {
         }
         hal::enter_stop_mode();
 
+        // Check for RTC alarm.
+        if ((RTC->CRL & RTC_CRL_ALRF) != 0) {
+            RTC->CRL &= ~RTC_CRL_ALRF;
+            rtc_disable();
+
+            // Reset state.
+            hal::gpio_reset(s_afe_en, s_ref_en, s_led);
+            state = State::Offline;
+            continue;
+        }
+
         // Configure SCL and SDA for use with the I2C peripheral.
         for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
             pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
@@ -342,13 +418,16 @@ void app_main() {
         // Conservatively unset the data validity flag.
         data.valid = false;
 
-        // TODO: Start a timer to depower the AFE and reference.
         if (state == State::Offline) {
-            // Power the AFE and reference.
+            // Power the AFE and reference, and enable the RTC.
             hal::gpio_set(s_afe_en, s_ref_en, s_led);
+            rtc_enable();
             state = State::ReadyRailVoltage;
             continue;
         }
+
+        // Reset the RTC count as we are doing something useful.
+        rtc_refresh();
 
         // Make sure GPIO expander is in a good state.
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
