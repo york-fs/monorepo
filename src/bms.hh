@@ -1,9 +1,21 @@
 #pragma once
 
+#include <util.hh>
+
 #include <array>
 #include <cstdint>
 
 namespace bms {
+
+enum class Error : std::uint32_t {
+    BadCan = 0,
+    BadConfig,
+    BadEeprom,
+    BadSensor,
+    SegmentCount,
+};
+
+using ErrorFlags = util::FlagBitset<Error>;
 
 struct SegmentData {
     // For a given thermistor index, the bit corresponding to that index is:
