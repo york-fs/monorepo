@@ -9,7 +9,41 @@
 namespace util {
 
 template <typename T>
+concept enum_concept = std::is_enum_v<T>;
+
+template <typename T>
 concept trivially_copyable = std::is_trivially_copyable_v<T>;
+
+template <enum_concept E>
+constexpr auto to_underlying(E value) {
+    return static_cast<std::underlying_type_t<E>>(value);
+}
+
+template <enum_concept T>
+class FlagBitset {
+    using type_t = std::underlying_type_t<T>;
+    static_assert(std::is_integral_v<type_t> && std::is_unsigned_v<type_t>);
+
+private:
+    type_t m_value;
+
+    constexpr FlagBitset(type_t value) : m_value(value) {}
+    constexpr type_t flag_bit(T flag) const { return type_t(type_t(1) << util::to_underlying(flag)); }
+
+public:
+    constexpr FlagBitset() : m_value(0) {}
+
+    template <typename... U>
+    constexpr FlagBitset(U... flag)
+        requires(std::is_same_v<T, U> && ...)
+        : m_value((flag_bit(flag) | ...)) {}
+
+    constexpr operator type_t() const { return m_value; }
+    constexpr void set(T flag) { m_value |= flag_bit(flag); }
+    constexpr void unset(T flag) { m_value &= ~flag_bit(flag); }
+    constexpr bool is_set(T flag) const { return (m_value & flag_bit(flag)) != 0; }
+    constexpr bool any_set() const { return m_value != 0; }
+};
 
 template <typename Callback>
 class ScopeGuard {
