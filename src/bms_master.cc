@@ -10,7 +10,6 @@
 #include <array>
 #include <bit>
 #include <cstdint>
-#include <limits>
 
 namespace {
 
@@ -33,13 +32,9 @@ constexpr std::uint16_t k_reference_voltage = 40960;
 // Configuration header magic number.
 constexpr std::uint32_t k_config_magic = 0x6c72d132;
 
-struct Configuration {
-    std::uint32_t value;
-};
-
 struct StoredConfig {
     std::uint32_t magic;
-    Configuration config;
+    bms::Config config;
     std::uint32_t crc;
 };
 
@@ -50,15 +45,17 @@ enum class CurrentSensor {
 
 enum class LedState : std::uint32_t {
     Off = 0u,
-    SafetyShutdown,
     BadCan,
     BadConfig,
     BadPeripheral,
+
+    // Special cases.
     Solid,
+    SafetyShutdown,
 };
 
 class Segment {
-    bms::SegmentData m_data;
+    bms::SegmentData m_data{};
     std::uint8_t m_address{};
 
 public:
@@ -159,6 +156,13 @@ void set_led_state(LedState state) {
         DMA1_Channel7->CCR |= DMA_CCR_EN;
         return;
     }
+    if (state == LedState::SafetyShutdown) {
+        s_led_dma[0] = 1u << 5u;
+        s_led_dma[1] = 1u << 21u;
+        DMA1_Channel7->CNDTR = 2;
+        DMA1_Channel7->CCR |= DMA_CCR_EN;
+        return;
+    }
 
     const auto count = static_cast<std::uint32_t>(state);
     for (std::uint32_t i = 0; i < count; i++) {
@@ -173,7 +177,7 @@ void set_led_state(LedState state) {
     DMA1_Channel7->CCR |= DMA_CCR_EN;
 }
 
-void read_config(Configuration &config, bms::ErrorFlags &error_flags) {
+void read_config(bms::Config &config, bms::ErrorFlags &error_flags) {
     Eeprom eeprom(I2C2, s_eeprom_wc, k_eeprom_address);
     StoredConfig stored_config{};
     if (eeprom.read(0, stored_config) != hal::I2cStatus::Ok) {
@@ -195,7 +199,7 @@ void read_config(Configuration &config, bms::ErrorFlags &error_flags) {
     config = stored_config.config;
 }
 
-bool write_config(const Configuration &config) {
+bool write_config(const bms::Config &config) {
     Eeprom eeprom(I2C2, s_eeprom_wc, k_eeprom_address);
     StoredConfig stored_config{
         .magic = k_config_magic,
@@ -240,10 +244,11 @@ std::optional<std::pair<std::uint16_t, std::uint32_t>> sample_current(CurrentSen
 }
 
 std::uint32_t sample_segments(std::span<Segment> segments) {
-    // Wakeup segments by effectively pulling SDA low.
+    // Wakeup segments by effectively pulling SCL low.
     I2C1->CR1 &= ~I2C_CR1_PE;
-    s_sda_1.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    s_sda_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_scl_1.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
+    s_scl_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    hal::delay_us(200);
 
     // Reinitialise the I2C peripheral.
     hal::i2c_init(I2C1, std::nullopt);
@@ -315,7 +320,7 @@ void app_main() {
     DMA1_Channel7->CCR = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_DIR;
 
     // State variables.
-    Configuration config{};
+    bms::Config config{};
     bms::ErrorFlags error_flags;
 
     // Attempt to initialise the CAN peripheral on PB8 (RX) and PB9 (TX).
@@ -379,27 +384,14 @@ void app_main() {
             }
 
             const auto &data = segment.data();
-            std::uint16_t min_voltage = std::numeric_limits<std::uint16_t>::max();
-            std::uint16_t max_voltage = 0;
-            for (std::size_t j = 0; j < data.voltages.size(); j++) {
-                if ((data.cell_tap_bitset & (1u << j)) != 0u) {
-                    min_voltage = std::min(min_voltage, data.voltages[j]);
-                    max_voltage = std::max(max_voltage, data.voltages[j]);
-                }
-            }
-
-            std::int8_t min_temperature = std::numeric_limits<std::int8_t>::max();
-            std::int8_t max_temperature = std::numeric_limits<std::int8_t>::min();
-            for (std::size_t j = 0; j < data.temperatures.size(); j++) {
-                if ((data.thermistor_bitset & (1u << j)) != 0u) {
-                    min_temperature = std::min(min_temperature, data.temperatures[j]);
-                    max_temperature = std::max(max_temperature, data.temperatures[j]);
-                }
-            }
-
+            const auto [min_voltage, max_voltage] = bms::min_max_voltage(data);
+            const auto [min_temperature, max_temperature] = bms::min_max_temperature(data);
             hal::swd_printf("Segment %u: [%u, %u] [%d, %d] 0x%x 0x%x 0x%x \n", i, min_voltage, max_voltage,
                             min_temperature, max_temperature, data.thermistor_bitset, data.cell_tap_bitset,
                             data.degraded_bitset);
+
+            const auto segment_flags = bms::check_segment(config, data);
+            error_flags.set_all(segment_flags);
         }
 
         // Sample current sensors.
@@ -415,7 +407,5 @@ void app_main() {
             hal::swd_printf("CUR+: %u %u\n", positive_sensor_sample->first, positive_sensor_sample->second);
             hal::swd_printf("CUR-: %u %u\n", negative_sensor_sample->first, negative_sensor_sample->second);
         }
-
-        hal::delay_us(500000);
     }
 }
