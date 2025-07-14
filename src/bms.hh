@@ -7,12 +7,30 @@
 
 namespace bms {
 
+struct Config {
+    std::uint16_t minimum_cell_voltage;
+    std::uint16_t maximum_cell_voltage;
+    std::int8_t minimum_temperature;
+    std::int8_t maximum_temperature;
+    std::uint8_t expected_cell_count;
+    std::uint8_t minimum_thermistor_count;
+};
+
 enum class Error : std::uint32_t {
+    // Applies only to the master.
     BadCan = 0,
     BadConfig,
     BadEeprom,
     BadSensor,
     SegmentCount,
+
+    // Applies to the master and per-segment.
+    CellCount,
+    ThermistorCount,
+    Undervoltage,
+    Overvoltage,
+    Undertemperature,
+    Overtemperature,
 };
 
 using ErrorFlags = util::FlagBitset<Error>;
@@ -45,5 +63,9 @@ struct SegmentData {
     // True if the segment is ready and the data is valid.
     bool valid;
 };
+
+std::pair<std::uint16_t, std::uint16_t> min_max_voltage(const SegmentData &data);
+std::pair<std::int8_t, std::int8_t> min_max_temperature(const SegmentData &data);
+ErrorFlags check_segment(const Config &config, const SegmentData &data);
 
 } // namespace bms
