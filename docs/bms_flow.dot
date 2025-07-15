@@ -1,0 +1,108 @@
+digraph {
+    bgcolor="#f9fafb";
+    node [shape=box, style=filled, fillcolor="#e0f2fe", fontcolor="#1f2937", penwidth=0.75];
+    
+    start [label="Start", shape=oval, fillcolor="#90ee90"];
+    gpio [label="Configure GPIOs"];
+    loop [label="Main loop", fillcolor="#87ceeb"];
+    adc_shutdown [label="Put ADC into shutdown"];
+    stop_mode [label="Enter stop mode (low power)", fillcolor="#ffb6c1"];
+    scl_wakeup [label="Wait for SCL falling edge"];
+    check_rtc [label="Shutdown timer triggered?", shape=diamond, height=1.5];
+    rtc_shutdown [label="Disable AFE and reference"];
+    i2c_init [label="Initialise I2C peripherals"];
+    master_wants_data [label="Master wants data?", shape=diamond, height=1.5];
+    send_data [label="Send data over I2C"];
+    afe_enabled [label="Is AFE enabled?", shape=diamond, height=1.5];
+    afe_enable [label="Enable AFE and reference"];
+    adc_enable [label="Enable the ADC"];
+    afe_wait [label="Wait for AFE readiness"];
+    rail_sampled [label="Rail voltage sampled?", shape=diamond, height=1.5];
+    rail_sample [label="Sample and store rail voltage"];
+    
+    start -> gpio;
+    gpio -> loop;
+    loop -> adc_shutdown;
+    adc_shutdown -> stop_mode;
+    stop_mode -> scl_wakeup;
+    scl_wakeup -> check_rtc;
+    check_rtc -> rtc_shutdown [label="Yes"];
+    rtc_shutdown -> loop;
+    check_rtc -> i2c_init [label="No"];
+    i2c_init -> master_wants_data;
+    master_wants_data -> loop [label="No"];
+    master_wants_data -> send_data [label="Yes"];
+    send_data -> afe_enabled;
+    afe_enabled -> afe_enable [label="No"];
+    afe_enable -> loop;
+    afe_enabled -> adc_enable [label="Yes"];
+    adc_enable -> afe_wait;
+    afe_wait -> rail_sampled;
+    rail_sampled -> rail_sample [label="No"];
+    rail_sample -> loop;
+    rail_sampled -> thermistor_loop [label="Yes"];
+
+    subgraph cluster_thermistor {
+        label="Thermistor Sampling";
+        labeljust="l";
+        fontsize=20;
+        thermistor_loop [label="For each thermistor", fillcolor="#87ceeb"];
+        thermistor_enable [label="Enable the thermistor"];
+        thermistor_sample [label="Sample the ADC"];
+        thermistor_viable [label="Is the voltage viable?", shape=diamond, height=1.5];
+        {
+            rank = same;
+            thermistor_disconnected [label="Mark thermistor as disconnected"];
+            thermistor_calculate [label="Calculate temperature"];
+        }
+        thermistor_connected [label="Store temperature and set connected bit"];
+        more_thermistors [label="More thermistors?", shape=diamond, height=1.5];
+        
+        thermistor_loop -> thermistor_enable;
+        thermistor_enable -> thermistor_sample;
+        thermistor_sample -> thermistor_viable;
+        thermistor_viable -> thermistor_disconnected [label="No"];
+        thermistor_disconnected -> more_thermistors;
+        thermistor_viable -> thermistor_calculate [label="Yes"];
+        thermistor_calculate -> thermistor_connected;
+        thermistor_connected -> more_thermistors;
+        more_thermistors -> thermistor_loop [label="Yes"];
+    }
+
+    subgraph cluster_voltage {
+        label="Voltage Sampling";
+        labeljust="l";
+        fontsize=20;
+        voltage_settle [label="Wait 1 ms to allow capacitor charge"];
+        cell_loop [label="For each cell", fillcolor="#87ceeb"];
+        afe_set_cell [label="Select the cell in the AFE"];
+        afe_error [label="AFE error?", shape=diamond, height=1.5];
+        cell_disconnected [label="Mark cell as disconnected"];
+        cell_sample [label="Sample the ADC"];
+        cell_range [label="Voltage in range", shape=diamond, height=1.5];
+        cell_connected [label="Store voltage and set connected bit"];
+        cell_threshold [label="Is ADC range above threshold?", shape=diamond, height=1.5];
+        cell_degraded [label="Set cell degraded bit"];
+        more_cells [label="More cells?", shape=diamond, height=1.5];
+        
+        more_thermistors -> voltage_settle [label="No"];
+        voltage_settle -> cell_loop;
+        cell_loop -> afe_set_cell;
+        afe_set_cell -> afe_error;
+        afe_error -> cell_disconnected [label="Yes"];
+        cell_disconnected -> more_cells;
+        afe_error -> cell_sample [label="No"];
+        cell_sample -> cell_range;
+        cell_range -> cell_disconnected [label="No"];
+        cell_range -> cell_connected [label="Yes"];
+        cell_connected -> cell_threshold;
+        cell_threshold -> more_cells [label="No"];
+        cell_threshold -> cell_degraded [label="Yes"];
+        cell_degraded -> more_cells;
+        more_cells -> cell_loop [xlabel="Yes"];
+    }
+
+    afe_diagnostic [label="Set AFE to drain capacitors slightly"];
+    more_cells -> afe_diagnostic [label="No"];
+    afe_diagnostic -> loop[constraint=false];
+}
