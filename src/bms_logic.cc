@@ -1,5 +1,6 @@
 #include <bms.hh>
 
+#include <bit>
 #include <cstdint>
 #include <limits>
 #include <utility>
