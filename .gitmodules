@@ -1,3 +1,6 @@
 [submodule "protodef"]
 	path = protodef
 	url = https://github.com/york-fs/protodef.git
+[submodule "nanopb"]
+	path = nanopb
+	url = https://github.com/nanopb/nanopb
