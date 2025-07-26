@@ -16,6 +16,7 @@ RUN apt-get update \
     ninja-build \
     plantuml \
     protobuf-compiler \
+    python3-protobuf \
     texlive \
     texlive-latex-extra \
     texlive-luatex \
