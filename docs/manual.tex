@@ -1,31 +1,56 @@
-\documentclass[12pt]{article}
+\documentclass[12pt, a4paper]{article}
 \usepackage[utf8]{inputenc}
 
 \usepackage[UKenglish]{babel}
 \usepackage{csquotes}
 \usepackage{enumitem}
+\usepackage{fancyhdr}
 \usepackage{float}
+\usepackage{lastpage}
+\usepackage{mathtools}
 \usepackage{graphicx}
+\usepackage{xcolor}
+
+% Set image directory.
+\usepackage{graphicx}
+\graphicspath{{images/}}
+
+% Replace paragraph indenting with newlines.
 \usepackage{parskip}
+
+% Document version history.
 \usepackage[tablegrid, tocentry]{vhistory}
 
-% Use sans-serif font for main text.
-\renewcommand{\familydefault}{\sfdefault}
+% Set main font first.
+\usepackage[no-math]{fontspec}
+\setmainfont{TeX Gyre Heros}
+
+% Load unicode-math after fontspec.
+\usepackage{unicode-math}
+\setmathfont{Latin Modern Math}
 
 % Load after babel and after fonts have been selected.
 \usepackage[babel]{microtype}
 
 % Load after most things.
-\usepackage{hyperref}
+\usepackage[pdfusetitle]{hyperref}
 
 % Load after hyperref.
 \usepackage{cleveref}
 \usepackage[margin=2cm]{geometry}
 
-% Set image directory.
-\graphicspath{{images/}}
+\makeatletter
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{main}{%
+  \fancyhf{}
+  \fancyfoot[L]{\small\color{gray} \@title\ --- York Formula Student --- v\vhCurrentVersion}
+  \fancyfoot[R]{\small\color{gray} Page \thepage\ of \pageref*{LastPage}}
+}
+\makeatother
+\pagestyle{main}
 
-\title{York Formula Student Electronics Manual (v\vhCurrentVersion)}
+\title{Electronics Manual}
 \date{\vhCurrentDate}
 \author{
   Owen Smith\\
@@ -36,8 +61,29 @@
 
 \linespread{1.1}
 \begin{document}
-\maketitle
+
+\makeatletter
+\begin{titlepage}
+  \vspace*{\fill}
+  \centering
+  {\fontsize{50}{60}\selectfont \bfseries \@title}\\[4ex]
+  {\Huge York Formula Student}\\[4ex]
+  \includegraphics[width=0.3\textwidth]{yfs-logo.png}
+  \hspace{5mm}
+  \includegraphics[width=0.3\textwidth]{uoy-logo.png}\\[4ex]
+  {\Large v\vhCurrentVersion}\\[2ex]
+  {\large
+    \begin{tabular}[t]{c}%
+      \@author
+    \end{tabular}\par
+  }
+  \vspace*{\fill}
+\end{titlepage}
+\makeatother
+
+\newpage
 \tableofcontents
+\newpage
 
 \section{Accumulator Design}
 
@@ -193,7 +239,7 @@ The following table describes the possible scenarios.
 \end{itemize}
 
 \begin{versionhistory}
-  \vhEntry{1.0}{06/04/2025}{OS}{Initial version}
+  \vhEntry{0.1}{\today}{OS}{Development version}
 \end{versionhistory}
 
 \end{document}
