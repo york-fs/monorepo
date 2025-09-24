@@ -27,6 +27,23 @@ void UART_send_bytes(std::span <uint8_t>bytes) {
 
 }
 
+struct TelemetryFrame {
+    static constexpr uint8_t START_DELIMITER = 0xAA; COBS start marker //  start marker set at compile time
+    static constexpr uint8_t END_DELIMITER = 0xBB; COBS end marker // end marker set at compile time
+
+    uint8_t start_delimiter;
+    uint8_t message_type;     // Message type identifier
+    uint16_t payload_length;  // Length of protobuf payload
+    uint8_t payload['hello']; // Encoded protobuf data
+    uint32_t crc32;           // CRC of type + length + payload
+    uint8_t end_delimiter;
+
+};
+
+
+
+
+
 void app_main() {
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
