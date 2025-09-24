@@ -90,24 +90,46 @@ std::vector<uint8_t> cobs_decode(std::span<const uint8_t> encoded_data) {
 }
 
 std::vector<uint8_t> create_telemetry_frame(uint8_t message_type, std::span<const uint8_t> payload) {
-    // Create frame data structure
-    FrameData = frame_data{
+    // 1. Create frame data structure
+    FrameData frame_data{
         .message_type = message_type,
-        .payload_length, static_cast<uint8_t>(payload.size()),
-        .crc32 = 0;
+        .payload_length = static_cast<uint16_t>(payload.size()),
+        .crc32 = 0, // Will calculate this
         .payload = {payload.begin(), payload.end()}
     };
-
-    // Calculate CRC over type + length + payload
+    
+    // 2. Calculate CRC over type + length + payload
     std::vector<uint8_t> crc_data;
     crc_data.push_back(message_type);
-    crc_data.push_back(static_cast<uint8_t>(payload.size() >> 8) & 0xFF));
+    crc_data.push_back(static_cast<uint8_t>(payload.size() & 0xFF));
+    crc_data.push_back(static_cast<uint8_t>((payload.size() >> 8) & 0xFF));
     crc_data.insert(crc_data.end(), payload.begin(), payload.end());
-
+    
     frame_data.crc32 = hal::crc_compute(crc_data);
-
-    // Serialize frame data to bytes
+    
+    // 3. Serialize frame data to bytes
     std::vector<uint8_t> frame_bytes;
-    frame_bytes.push_back(frame_data)
+    frame_bytes.push_back(frame_data.message_type);
+    frame_bytes.push_back(static_cast<uint8_t>(frame_data.payload_length & 0xFF));
+    frame_bytes.push_back(static_cast<uint8_t>((frame_data.payload_length >> 8) & 0xFF));
+    frame_bytes.insert(frame_bytes.end(), frame_data.payload.begin(), frame_data.payload.end());
+    
+    // Add CRC as 4 bytes (little endian)
+    frame_bytes.push_back(static_cast<uint8_t>(frame_data.crc32 & 0xFF));
+    frame_bytes.push_back(static_cast<uint8_t>((frame_data.crc32 >> 8) & 0xFF));
+    frame_bytes.push_back(static_cast<uint8_t>((frame_data.crc32 >> 16) & 0xFF));
+    frame_bytes.push_back(static_cast<uint8_t>((frame_data.crc32 >> 24) & 0xFF));
+    
+    // 4. COBS encode the frame data
+    std::vector<uint8_t> encoded_frame = cobs_encode(frame_bytes);
+        
+    // 5. Add delimiters
+    std::vector<uint8_t> complete_frame;
+    complete_frame.push_back(TelemetryFrame::START_DELIMITER);
+    complete_frame.insert(complete_frame.end(), encoded_frame.begin(), encoded_frame.end());
+    complete_frame.push_back(TelemetryFrame::END_DELIMITER);
+    
+    return complete_frame;
+}
 
 } // namespace telemetry
