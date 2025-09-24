@@ -5,6 +5,27 @@
 
 namespace telemetry {
 
+struct TelemetryFrame {
+static constexpr uint8_t START_DELIMITER = 0xAA; COBS start marker //  start marker set at compile time
+static constexpr uint8_t END_DELIMITER = 0xBB; COBS end marker // end marker set at compile time
+
+uint8_t start_delimiter;
+uint8_t message_type;     // Message type identifier
+uint16_t payload_length;  // Length of protobuf payload
+uint8_t payload['hello']; // Encoded protobuf data
+uint32_t crc32;           // CRC of type + length + payload
+uint8_t end_delimiter;
+
+};
+
+struct FrameData {
+    uint8_t message_type;
+    uint16_t payload_length;
+    uint32_t ccrc32;
+    std::vector<uint8_t> payload;
+};
+
+
 std::vector<uint8_t> cobs_encode(std::span<const uint8_t> data) {
     std::vector<uint8_t> encoded;
     encoded.reserve(data.size() + data.size() / 254 + 2); // Conservative estimate
@@ -67,5 +88,26 @@ std::vector<uint8_t> cobs_decode(std::span<const uint8_t> encoded_data) {
     
     return decoded;
 }
+
+std::vector<uint8_t> create_telemetry_frame(uint8_t message_type, std::span<const uint8_t> payload) {
+    // Create frame data structure
+    FrameData = frame_data{
+        .message_type = message_type,
+        .payload_length, static_cast<uint8_t>(payload.size()),
+        .crc32 = 0;
+        .payload = {payload.begin(), payload.end()}
+    };
+
+    // Calculate CRC over type + length + payload
+    std::vector<uint8_t> crc_data;
+    crc_data.push_back(message_type);
+    crc_data.push_back(static_cast<uint8_t>(payload.size() >> 8) & 0xFF));
+    crc_data.insert(crc_data.end(), payload.begin(), payload.end());
+
+    frame_data.crc32 = hal::crc_compute(crc_data);
+
+    // Serialize frame data to bytes
+    std::vector<uint8_t> frame_bytes;
+    frame_bytes.push_back(frame_data)
 
 } // namespace telemetry
