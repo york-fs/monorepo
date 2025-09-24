@@ -11,3 +11,8 @@
 /docs/*.pdf
 /docs/*.toc
 /docs/*.ver
+
+# Cursor Commands and Rules
+.cursor/commands/
+.cursor/rules/
+
