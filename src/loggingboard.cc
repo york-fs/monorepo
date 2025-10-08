@@ -27,6 +27,30 @@ void UART_send_bytes(std::span <uint8_t>bytes) {
 
 }
 
+void queue_message(std::span<std::uint8_t> input_data)  {
+    std::array<std::uint8_t, 256> stuffed{}; // Creates a fixed 256-byte output buffer
+
+    std::uint8_t code_index = 0;  // Position of current byte
+    std::uint8_t write_index = 0; // Next write position
+
+    stuffed[write_index++] = 1; // Initialise first code byte
+    for (const std::uint8_t byte : input_data) {
+        if (byte != 0) {
+            // Non-zero data byte - write it directly and increase the non-zero count.
+
+            stuffed[write_index++] = byte; // Copy non-zero byte
+            stuffed[code_index]++;  // Increment count at code position
+        } else {
+            code_index = write_index;
+            stuffed[write_index++] = 1;
+        }
+        }
+
+        stuffed[write_index] = 0; // Final delimiter
+
+        UART_send_bytes(stuffed);
+}
+
 void app_main() {
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
@@ -51,13 +75,13 @@ void app_main() {
 
 
     while (true) {
-       // hal::gpio_set(s_led);
-       // hal::delay_us(100000);
-       // hal::gpio_reset(s_led);
-       // hal::delay_us(100000);
+       hal::gpio_set(s_led);
+       hal::delay_us(100000);
+       hal::gpio_reset(s_led);
+       hal::delay_us(100000);
 
         // UART_send_string("Hello World\r\n");
-        UART_send_bytes(buffer);
+        queue_message(buffer);
 
     }
 
