@@ -1,12 +1,15 @@
 #include <hal.hh>
 #include <string_view>
 #include <pb_encode.h>
+#include "bms.hh"
 #include "vehicle_data.pb.h"
 
 
 
 
 hal:: Gpio s_led(hal::GpioPort::B, 12);
+hal::Gpio s_cts(hal::GpioPort::A, 0);
+hal::Gpio s_rts(hal::GpioPort::A, 1);
 hal:: Gpio tx(hal::GpioPort::A, 2);
 hal:: Gpio rx(hal::GpioPort::A, 3);
 
@@ -48,16 +51,18 @@ void queue_message(std::span<std::uint8_t> input_data)  {
 
         stuffed[write_index] = 0; // Final delimiter
 
-        UART_send_bytes(stuffed);
+        UART_send_bytes(std::span(stuffed).subspan(0, write_index + 1));
 }
 
 void app_main() {
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
     rx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
+
+    hal::delay_us(100000);
     RCC -> APB1ENR |= RCC_APB1ENR_USART2EN;
     USART2 -> CR1 |= USART_CR1_UE;
-    USART2 -> BRR = 484;     
+    USART2 -> BRR = 484;
     USART2 -> CR1 |= USART_CR1_RE;
     USART2 -> CR1 |= USART_CR1_TE;
 
@@ -65,8 +70,10 @@ void app_main() {
     std::array <uint8_t, Test_size> buffer{}; // angle brackets mean its done duing compile time
 
     // Creating an output stream with the byte buffer
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size()); 
-    bool encoded = pb_encode(&stream, Test_fields, &example); 
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    bool encoded = pb_encode(&stream, Test_fields, &example);
+
+    std::array<std::uint8_t, 4> test_data{0x11, 0x22, 0x00, 0x44};
 
     if (encoded) {
         hal::gpio_set(s_led);
@@ -76,13 +83,12 @@ void app_main() {
 
     while (true) {
        hal::gpio_set(s_led);
-       hal::delay_us(100000);
+       hal::delay_us(500000);
        hal::gpio_reset(s_led);
        hal::delay_us(100000);
 
         // UART_send_string("Hello World\r\n");
-        queue_message(buffer);
-
+        queue_message(test_data);
     }
 
 }
