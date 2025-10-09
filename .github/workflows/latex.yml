@@ -9,7 +9,7 @@ jobs:
   latex:
     name: Build LaTeX Document
     runs-on: ubuntu-latest
-    container: ghcr.io/york-fs/stm-can:master
+    container: ghcr.io/york-fs/monorepo:master
     steps:
       - name: Checkout
         uses: actions/checkout@v4

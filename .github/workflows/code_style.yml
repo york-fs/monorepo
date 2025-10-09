@@ -5,7 +5,7 @@ jobs:
   clang-format:
     name: Clang Format
     runs-on: ubuntu-latest
-    container: ghcr.io/york-fs/stm-can:master
+    container: ghcr.io/york-fs/monorepo:master
     steps:
       - uses: actions/checkout@v4
 
