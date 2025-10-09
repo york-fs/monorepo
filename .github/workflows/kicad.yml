@@ -1,0 +1,140 @@
+name: KiCad Build
+on:
+  workflow_call:
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+jobs:
+  kicad:
+    name: Build KiCad Project
+    runs-on: ubuntu-latest
+    container: ubuntu:noble
+    steps:
+      - run: apt-get update && apt-get install -y software-properties-common
+
+      - name: Add KiCad repository
+        run: apt-add-repository --yes ppa:kicad/kicad-9.0-releases && apt-get update
+
+      - name: Install packages
+        run: >-
+          DEBIAN_FRONTEND=noninteractive
+          apt-get install -y
+          git
+          jq
+          kicad
+          kicad-packages3d
+          kicad-symbols
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install fonts
+        run: cp kicad-library/fonts/* /usr/share/fonts/ && fc-cache -fv
+
+      - name: Get root name
+        run: echo "PROJECT_NAME=$(basename -s .kicad_pro *.kicad_pro)" >> "$GITHUB_ENV"
+
+      - name: Copy symbol table
+        run: |
+          kicad-cli sch erc --output /dev/null "${PROJECT_NAME}.kicad_sch"
+          cp /usr/share/kicad/template/sym-lib-table ~/.config/kicad/9.0/
+
+      - name: Run schematic ERC check
+        shell: bash
+        run: |
+          set +e
+          kicad-cli sch erc --output /dev/stdout "${PROJECT_NAME}.kicad_sch" | tee /dev/stderr | grep -qP 'Errors\s+[1-9]\d*'
+          exit $(( ! $? ))
+
+      - name: Run PCB DRC check
+        shell: bash
+        run: |
+          kicad-cli pcb drc --output drc.json --format json --schematic-parity "${PROJECT_NAME}.kicad_pcb"
+          jq '.violations + .unconnected_items + .schematic_parity' drc.json > violations.json
+          cat violations.json
+          [[ $(jq 'del(.[] | select(.severity == "warning")) | length' violations.json) -eq 0 ]]
+
+      - name: Export BOM
+        run: >-
+          kicad-cli sch export bom
+          --output bom.csv
+          --fields 'Reference,Value,Footprint,${QUANTITY},Mfr,Mfr #,Dist,Dist #,${DNP}'
+          --labels 'Refs,Value,Footprint,Qty,Mfr,Mfr #,Dist,Dist #,DNP'
+          --group-by 'Reference,Value,Mfr,Mfr #'
+          "${PROJECT_NAME}.kicad_sch"
+
+      - name: Export schematic PDF
+        run: >-
+          kicad-cli sch export pdf
+          --output schematic.pdf
+          "${PROJECT_NAME}.kicad_sch"
+
+      - name: Export positions
+        run: >-
+          kicad-cli pcb export pos
+          --output positions.csv
+          --format csv
+          "${PROJECT_NAME}.kicad_pcb"
+
+      - name: Export gerbers
+        run: >-
+          kicad-cli pcb export gerbers
+          --output gerbers
+          --cdnp
+          --no-x2
+          --no-netlist
+          --subtract-soldermask
+          "${PROJECT_NAME}.kicad_pcb"
+
+      - name: Export drill file
+        run: >-
+          kicad-cli pcb export drill
+          --output gerbers
+          --format excellon
+          --drill-origin absolute
+          --excellon-zeros-format decimal
+          --excellon-oval-format alternate
+          --excellon-units mm
+          --generate-map
+          --map-format gerberx2
+          "${PROJECT_NAME}.kicad_pcb"
+
+      - name: Export preview render
+        run: >-
+          kicad-cli pcb render
+          --output preview.jpg
+          --side top
+          "${PROJECT_NAME}.kicad_pcb"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}
+          path: |
+            bom.csv
+            schematic.pdf
+            positions.csv
+            gerbers/
+            preview.jpg
+
+      - name: Upload gerbers
+        uses: actions/upload-artifact@v4
+        with:
+          name: gerbers
+          path: gerbers/*
+
+      - name: Extract PCB stats
+        run: |
+          PAD_COUNT=$(grep -c '(pad' "${PROJECT_NAME}.kicad_pcb")
+          VIA_COUNT=$(grep -c '(via' "${PROJECT_NAME}.kicad_pcb")
+          mkdir site
+          printf "{\"pad_count\": %s, \"via_count\": %s}\n" "$PAD_COUNT" "$VIA_COUNT" > site/info.json
+          cp preview.jpg site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'site'
+      - uses: actions/deploy-pages@v4
