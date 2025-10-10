@@ -1,0 +1,20 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    image: stm-firmware-builder:dev
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    # Uncomment below if you want to try USB passthrough for flashing
+    # Note: This is complex on macOS and may not work reliably
+    # privileged: true
+    # devices:
+    #   - /dev/bus/usb:/dev/bus/usb
+

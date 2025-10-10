@@ -1,1 +1,35 @@
-*
+# Build directories
+build-*
+.cache
+
+# Version control
+.git
+.gitignore
+.gitmodules
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Hardware design files (not needed for firmware builds)
+kicad/
+
+# Documentation build artifacts
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.out
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+
+# Docker files themselves
+Dockerfile*
+docker-compose.yml
+.dockerignore
