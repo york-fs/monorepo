@@ -47,11 +47,12 @@ void queue_message(std::span<std::uint8_t> input_data)  {
             code_index = write_index;
             stuffed[write_index++] = 1;
         }
-        }
+    }
 
-        stuffed[write_index] = 0; // Final delimiter
+    stuffed[write_index] = 0; // Final delimiter
 
-        UART_send_bytes(std::span(stuffed).subspan(0, write_index + 1));
+    // Send the stuffed data over UART.
+    UART_send_bytes(std::span(stuffed).subspan(0, write_index + 1));
 }
 
 void app_main() {
@@ -73,13 +74,11 @@ void app_main() {
     pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
     bool encoded = pb_encode(&stream, Test_fields, &example);
 
-    std::array<std::uint8_t, 4> test_data{0x11, 0x22, 0x00, 0x44};
+    // std::array<std::uint8_t, 4> test_data{0x11, 0x22, 0x00, 0x44};
 
     if (encoded) {
         hal::gpio_set(s_led);
     }
-
-
 
     while (true) {
        hal::gpio_set(s_led);
@@ -88,7 +87,7 @@ void app_main() {
        hal::delay_us(100000);
 
         // UART_send_string("Hello World\r\n");
-        queue_message(test_data);
+        queue_message(buffer);
     }
 
 }
