@@ -13,7 +13,7 @@ STM32 firmware for York Formula Student.
 
 ## Building the firmware
 
-### Using Docker (Recommended for macOS/Linux)
+### Using Docker (Recommended for macOS/Windows)
 
 The easiest way to build the firmware is using the provided Docker environment, which includes all necessary dependencies:
 
