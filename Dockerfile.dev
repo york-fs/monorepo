@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+
+FROM ubuntu:24.04
+
+# Install all build dependencies
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y \
+    clang-format \
+    cmake \
+    g++ \
+    gcc \
+    gcc-arm-none-eabi \
+    git \
+    libgtest-dev \
+    ninja-build \
+    protobuf-compiler \
+    python3 \
+    python3-pip \
+    python3-protobuf \
+    stlink-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages for nanopb
+RUN pip3 install --no-cache-dir protobuf grpcio-tools --break-system-packages
+
+# Create a non-root user for development
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN if ! getent group ${GROUP_ID} > /dev/null 2>&1; then \
+        groupadd -g ${GROUP_ID} developer; \
+    fi && \
+    if ! getent passwd ${USER_ID} > /dev/null 2>&1; then \
+        useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash developer; \
+    fi
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to the user with the specified UID
+USER ${USER_ID}:${GROUP_ID}
+
+# Default command opens a bash shell
+CMD ["/bin/bash"]
+
