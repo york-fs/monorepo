@@ -6,9 +6,9 @@ a specific tag which matches the firmware and documentation versions.
 
 ## Project structure
 
-* `docs` - Manuals, flowcharts, block diagrams, etc.
-* `kicad` - KiCad PCB projects
-* `src` - STM32 firmware
+* `docs/` - Manuals, flowcharts, block diagrams, etc.
+* `kicad/` - KiCad PCB projects
+* `src/` - STM32 firmware
 * `system/` - CMSIS and startup code for Cortex-M3
 * `test/` - Host-runnable unit tests for the platform independent code
 
@@ -29,3 +29,22 @@ example, `flash-apps`.
     cmake --preset host -GNinja
     cmake --build build-host
     ./build-host/tests
+
+## Building in docker
+
+    docker run --rm -u $(id -u) -v $(pwd):/src ghcr.io/york-fs/monorepo:master cmake \
+     --preset release \
+     -B/src/build-release \
+     -GNinja \
+     /src
+    docker run --rm -u $(id -u) -v $(pwd):/src ghcr.io/york-fs/monorepo:master cmake --build /src/build-release
+
+
+## Building in podman
+
+    podman run --rm -v $(pwd):/src ghcr.io/york-fs/monorepo:master cmake \
+     --preset release \
+     -B/src/build-release \
+     -GNinja \
+     /src
+    podman run --rm -v $(pwd):/src ghcr.io/york-fs/monorepo:master cmake --build /src/build-release
