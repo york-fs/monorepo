@@ -1,24 +1,38 @@
 [submodule "protodef"]
 	path = protodef
 	url = https://github.com/york-fs/protodef.git
+	branch = main
 [submodule "nanopb"]
 	path = nanopb
 	url = https://github.com/nanopb/nanopb.git
+	branch = master
 [submodule "kicad/apps"]
 	path = kicad/apps
 	url = https://github.com/york-fs/apps.git
+	update = rebase
+	branch = master
 [submodule "kicad/bms"]
 	path = kicad/bms
 	url = https://github.com/york-fs/bms.git
+	update = rebase
+	branch = master
 [submodule "kicad/bms-master"]
 	path = kicad/bms-master
 	url = https://github.com/york-fs/bms-master.git
+	update = rebase
+	branch = master
 [submodule "kicad/data-logger"]
 	path = kicad/data-logger
 	url = https://github.com/york-fs/data-logger.git
+	update = rebase
+	branch = main
 [submodule "kicad/dashboard"]
 	path = kicad/dashboard
 	url = https://github.com/york-fs/dashboard-pcb.git
+	update = rebase
+	branch = main
 [submodule "kicad/steering-wheel"]
 	path = kicad/steering-wheel
 	url = https://github.com/york-fs/steering-wheel.git
+	update = rebase
+	branch = main
