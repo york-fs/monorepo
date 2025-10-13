@@ -11,9 +11,9 @@
 	url = https://github.com/york-fs/apps.git
 	update = rebase
 	branch = master
-[submodule "kicad/bms"]
-	path = kicad/bms
-	url = https://github.com/york-fs/bms.git
+[submodule "kicad/bms-segment"]
+	path = kicad/bms-segment
+	url = https://github.com/york-fs/bms-segment.git
 	update = rebase
 	branch = master
 [submodule "kicad/bms-master"]
