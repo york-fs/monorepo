@@ -108,6 +108,10 @@ void queue_message(std::span<std::uint8_t> input_data) {
 
 // main app: init gpio/usart, encode nanopb message, blink and transmit
 void app_main() {
+    // Drive RTS high. This works around a missing hardware pull-up.
+    s_rts.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    hal::gpio_set(s_rts);
+
     // GPIO config.
     s_radio_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
