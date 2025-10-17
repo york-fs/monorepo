@@ -7,12 +7,23 @@
 #include <span>
 #include <string_view>
 
-// gpio for status led and usart2 pins (and optional rts/cts)
-hal::Gpio s_led(hal::GpioPort::B, 12);
+namespace {
+
+hal::Gpio s_sd_detect(hal::GpioPort::A, 4);
+hal::Gpio s_radio_led(hal::GpioPort::B, 12);
+hal::Gpio s_sd_led(hal::GpioPort::B, 13);
+
+// SPI pins.
+hal::Gpio s_sd_cs(hal::GpioPort::B, 0);
+hal::Gpio s_sck(hal::GpioPort::A, 5);
+hal::Gpio s_miso(hal::GpioPort::A, 6);
+hal::Gpio s_mosi(hal::GpioPort::A, 7);
+
+// UART pins.
 hal::Gpio s_cts(hal::GpioPort::A, 0);
 hal::Gpio s_rts(hal::GpioPort::A, 1);
-hal::Gpio tx(hal::GpioPort::A, 2);
-hal::Gpio rx(hal::GpioPort::A, 3);
+hal::Gpio s_tx(hal::GpioPort::A, 2);
+hal::Gpio s_rx(hal::GpioPort::A, 3);
 
 // crc-16-ccitt (poly 0x1021, init 0xffff, no reflect, no final xor)
 static uint16_t crc16_ccitt(std::span<const uint8_t> data) {
@@ -93,13 +104,14 @@ void queue_message(std::span<std::uint8_t> input_data) {
     UART_send_bytes(std::span<const uint8_t>(stuffed.data(), write_index));
 }
 
+} // namespace
+
 // main app: init gpio/usart, encode nanopb message, blink and transmit
 void app_main() {
-    // gpio config
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
-    rx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
-    // note: rts/cts declared but not used
+    // GPIO config.
+    s_radio_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
+    s_rx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
 
     hal::delay_us(100000); // small delay
 
@@ -119,14 +131,10 @@ void app_main() {
     bool encoded = pb_encode(&stream, Test_fields, &example);
     // stream.bytes_written holds valid length when encoded == true
 
-    if (encoded) {
-        hal::gpio_set(s_led); // indicate successful encode
-    }
-
     while (true) {
-        hal::gpio_set(s_led);
-        hal::delay_us(500000);
-        hal::gpio_reset(s_led);
+        hal::gpio_set(s_radio_led);
+        hal::delay_us(100000);
+        hal::gpio_reset(s_radio_led);
         hal::delay_us(100000);
 
         // send only the bytes actually written by nanopb
