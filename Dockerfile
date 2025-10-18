@@ -5,6 +5,7 @@ FROM ubuntu:24.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive \
     apt-get install -y \
+    biber \
     clang-format \
     cmake \
     g++ \
@@ -18,6 +19,7 @@ RUN apt-get update \
     protobuf-compiler \
     python3-protobuf \
     texlive \
+    texlive-bibtex-extra \
     texlive-latex-extra \
     texlive-luatex \
  && rm -rf /var/lib/apt/lists/*
