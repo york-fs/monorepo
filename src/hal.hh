@@ -153,6 +153,21 @@ public:
      */
     void configure(GpioOutputMode mode, GpioOutputSpeed speed) const;
 
+    /**
+     * @brief Reads the state of the pin. Only valid if configured in an input mode.
+     *
+     * @return true if the pin is logic high; false if logic low
+     */
+    bool read() const;
+
+    /**
+     * @brief Sets or resets the state of the pin depending on the given value. Only valid if configured in an output
+     * mode.
+     *
+     * @param value true for logic high; false for logic low
+     */
+    void write(bool value) const;
+
     GPIO_TypeDef *port() const { return m_port; }
     std::uint8_t pin() const { return m_pin; }
 };

@@ -71,6 +71,18 @@ void Gpio::configure(GpioOutputMode mode, GpioOutputSpeed speed) const {
     hal::gpio_reset(*this);
 }
 
+bool Gpio::read() const {
+    return (m_port->IDR & (1u << m_pin)) != 0u;
+}
+
+void Gpio::write(bool value) const {
+    if (value) {
+        hal::gpio_set(*this);
+    } else {
+        hal::gpio_reset(*this);
+    }
+}
+
 void enable_irq(IRQn_Type irq, std::uint32_t priority) {
     NVIC_SetPriority(irq, priority);
     NVIC_EnableIRQ(irq);
