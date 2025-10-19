@@ -386,7 +386,6 @@ void i2c_stop(I2C_TypeDef *i2c) {
 }
 
 I2cStatus i2c_wait_idle(I2C_TypeDef *i2c, std::uint32_t timeout) {
-    // Allow 25 ms for bus idle.
     return hal::wait_equal(i2c->SR2, I2C_SR2_BUSY, 0, timeout) ? I2cStatus::Ok : I2cStatus::Timeout;
 }
 
