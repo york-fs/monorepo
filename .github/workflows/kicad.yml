@@ -1,6 +1,5 @@
 name: KiCad Build
-on:
-  workflow_call:
+on: workflow_call
 permissions:
   contents: read
   id-token: write
@@ -9,22 +8,21 @@ jobs:
   kicad:
     name: Build KiCad Project
     runs-on: ubuntu-latest
-    container: ubuntu:noble
+    container: ghcr.io/york-fs/monorepo:master
     steps:
-      - run: apt-get update && apt-get install -y software-properties-common
-
-      - name: Add KiCad repository
-        run: apt-add-repository --yes ppa:kicad/kicad-9.0-releases && apt-get update
-
-      - name: Install packages
-        run: >-
-          DEBIAN_FRONTEND=noninteractive
-          apt-get install -y
-          git
-          jq
-          kicad
-          kicad-packages3d
-          kicad-symbols
+      - name: Install KiCad dependencies
+        run: |
+          apt-get update
+          apt-get install -y software-properties-common
+          apt-add-repository --yes ppa:kicad/kicad-9.0-releases
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git \
+            jq \
+            kicad \
+            kicad-packages3d \
+            kicad-symbols
+          rm -rf /var/lib/apt/lists/*
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,5 +134,5 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: 'site'
+          path: "site"
       - uses: actions/deploy-pages@v4
