@@ -9,6 +9,8 @@
 
 namespace {
 
+auto *const s_sd_spi = SPI1;
+
 hal::Gpio s_sd_detect(hal::GpioPort::A, 4);
 hal::Gpio s_radio_led(hal::GpioPort::B, 12);
 hal::Gpio s_sd_led(hal::GpioPort::B, 13);
@@ -104,6 +106,132 @@ void queue_message(std::span<std::uint8_t> input_data) {
     UART_send_bytes(std::span<const uint8_t>(stuffed.data(), write_index));
 }
 
+std::uint8_t sd_crc7(std::span<const std::uint8_t> data) {
+    std::uint8_t crc = 0;
+    for (std::uint8_t byte : data) {
+        crc ^= byte;
+        for (std::uint8_t bit = 0; bit < 8; bit++) {
+            if ((crc & 0x80) != 0) {
+                crc ^= 0x89;
+            }
+            crc <<= 1;
+        }
+    }
+    return crc >> 1;
+}
+
+void sd_send_command(std::uint8_t command_index, std::uint32_t argument) {
+    std::array<std::uint8_t, 32> bytes;
+    std::fill(bytes.begin(), bytes.end(), 0xff);
+
+    // First byte is the start bit (0), transmission bit (1), and 6 bits of command index.
+    bytes[0] = (1u << 6) | command_index;
+
+    // Copy argument MSB first.
+    bytes[1] = (argument >> 24) & 0xffu;
+    bytes[2] = (argument >> 16) & 0xffu;
+    bytes[3] = (argument >> 8) & 0xffu;
+    bytes[4] = (argument >> 0) & 0xffu;
+
+    // CRC7 is in the top 7 bits followed by the stop bit.
+    bytes[5] = (sd_crc7(std::span(bytes).subspan(0, 5)) << 1) | 1u;
+
+    // TODO: Check for errors.
+    hal::spi_transfer(s_sd_spi, s_sd_cs, bytes, 10);
+}
+
+void sd_init() {
+    // Deactivate CS driving whilst doing the wake-up routine.
+    s_sd_cs.configure(hal::GpioInputMode::Floating);
+
+    // Wake-up the SD card. Spec mandates 74 clock cycles, so round up to 80 (10 bytes * 8 bits).
+    std::array<std::uint8_t, 10> wake_up_bytes;
+    std::fill(wake_up_bytes.begin(), wake_up_bytes.end(), 0xff);
+    hal::spi_transfer(s_sd_spi, s_sd_cs, wake_up_bytes, 10);
+
+    // Re-enable CS.
+    s_sd_cs.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
+
+    // TODO: Check for responses for commands below.
+
+    // Send GO_IDLE_STATE.
+    sd_send_command(0, 0);
+
+    // Send SEND_IF_COND with 3V3 supply voltage.
+    sd_send_command(8, 0x1aa);
+
+    while (true) {
+        std::array<std::uint8_t, 32> app_cmd{0x77, 0x00, 0x00, 0x00, 0x00, 0xff};
+        std::fill(app_cmd.begin() + 6, app_cmd.end(), 0xff);
+        hal::spi_transfer(SPI1, s_sd_cs, app_cmd, 100);
+        for (std::uint8_t byte : app_cmd) {
+            hal::swd_printf("received app_cmd byte: 0x%x\n", byte);
+        }
+
+        std::array<std::uint8_t, 32> send_op_cond{0x69, 0x40, 0x00, 0x00, 0x00, 0xff};
+        std::fill(send_op_cond.begin() + 6, send_op_cond.end(), 0xff);
+        hal::spi_transfer(SPI1, s_sd_cs, send_op_cond, 100);
+        for (std::uint8_t byte : send_op_cond) {
+            hal::swd_printf("received send_op_cond byte: 0x%x\n", byte);
+        }
+
+        std::uint8_t response = 0xff;
+        for (int i = 6; i < 14; i++) {
+            if (send_op_cond[i] != 0xff) {
+                response = send_op_cond[i];
+                break;
+            }
+        }
+
+        hal::swd_printf("response: 0x%x\n", response);
+
+        if (response == 0) {
+            break;
+        }
+
+        hal::delay_us(100000);
+    }
+
+    std::array<std::uint8_t, 36> cid_info{0x4a, 0x00, 0x00, 0x00, 0x00, 0xff};
+    std::fill(cid_info.begin() + 6, cid_info.end(), 0xff);
+    hal::spi_transfer(SPI1, s_sd_cs, cid_info, 10);
+
+    for (std::uint8_t byte : cid_info) {
+        hal::swd_printf("received CID info byte: 0x%x %c\n", byte, byte);
+    }
+
+    auto cid_data = std::span(cid_info).subspan(11);
+
+    const std::uint8_t manufacturer_id = cid_data[0];
+    std::array<char, 3> oem_id{
+        cid_data[1],
+        cid_data[2],
+        '\0',
+    };
+    std::array<char, 6> product_name{
+        cid_data[3], cid_data[4], cid_data[5], cid_data[6], cid_data[7], '\0',
+    };
+    std::uint8_t major_version = (cid_data[8] >> 4) & 0xfu;
+    std::uint8_t minor_version = cid_data[8] & 0xfu;
+    std::uint32_t serial_number =
+        (static_cast<std::uint32_t>(cid_data[9]) << 24) | (static_cast<std::uint32_t>(cid_data[10]) << 16) |
+        (static_cast<std::uint32_t>(cid_data[11]) << 8) | static_cast<std::uint32_t>(cid_data[12]);
+    std::uint16_t manufacture_date = (static_cast<std::uint16_t>(cid_data[13] & 0xfu) << 8) | cid_data[14];
+    std::uint8_t crc = (cid_data[15] >> 1) & 0x7fu;
+
+    std::uint16_t year = 2000 + ((manufacture_date >> 4) & 0xffu);
+    std::uint8_t month = manufacture_date & 0xfu;
+
+    hal::swd_printf("Manufacturer ID: 0x%02x\n", manufacturer_id);
+    hal::swd_printf("OEM: %s\n", oem_id.data());
+    hal::swd_printf("Product name: %s\n", product_name.data());
+    hal::swd_printf("Product version: %u.%u\n", major_version, minor_version);
+    hal::swd_printf("Serial number: 0x%08x\n", serial_number);
+    hal::swd_printf("Manufacture date: %02u/%04u\n", month, year);
+    hal::swd_printf("Given CRC: 0x%02x\n", crc);
+    hal::swd_printf("Calculated CRC: 0x%02x\n", sd_crc7(cid_data.subspan(0, 15)));
+}
+
 } // namespace
 
 // main app: init gpio/usart, encode nanopb message, blink and transmit
@@ -113,11 +241,11 @@ void app_main() {
     hal::gpio_set(s_rts);
 
     // GPIO config.
+    s_sd_detect.configure(hal::GpioInputMode::PullUp);
     s_radio_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_sd_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
     s_rx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
-
-    hal::delay_us(100000); // small delay
 
     // usart2 basic setup
     RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
@@ -135,14 +263,27 @@ void app_main() {
     bool encoded = pb_encode(&stream, Test_fields, &example);
     // stream.bytes_written holds valid length when encoded == true
 
-    while (true) {
-        hal::gpio_set(s_radio_led);
-        hal::delay_us(100000);
-        hal::gpio_reset(s_radio_led);
-        hal::delay_us(100000);
+    // Configure SPI peripheral.
+    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
+    s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
+    s_miso.configure(hal::GpioInputMode::Floating);
+    hal::spi_init_master(SPI1, SPI_CR1_BR_2 | SPI_CR1_BR_1 | SPI_CR1_BR_0);
 
-        // send only the bytes actually written by nanopb
-        std::span<uint8_t> payload_span(buffer.data(), encoded ? stream.bytes_written : 0);
-        queue_message(payload_span);
+    while (true) {
+        hal::swd_printf("Waiting for SD card\n");
+        while (s_sd_detect.read()) {
+            hal::gpio_set(s_sd_led);
+            hal::delay_us(100000);
+            hal::gpio_reset(s_sd_led);
+            hal::delay_us(100000);
+        }
+        hal::gpio_set(s_sd_led);
+
+        sd_init();
+
+        // Wait for card unplug.
+        while (!s_sd_detect.read()) {
+            __NOP();
+        }
     }
 }
