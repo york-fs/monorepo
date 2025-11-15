@@ -51,6 +51,26 @@ function(add_stm_executable name frequency)
     endif()
 endfunction()
 
+function(target_add_freertos target config)
+    configure_file(${config} ${target}-include/FreeRTOSConfig.h)
+    add_library(${target}-freertos OBJECT
+        ${CMAKE_SOURCE_DIR}/freertos/croutine.c
+        ${CMAKE_SOURCE_DIR}/freertos/event_groups.c
+        ${CMAKE_SOURCE_DIR}/freertos/list.c
+        ${CMAKE_SOURCE_DIR}/freertos/queue.c
+        ${CMAKE_SOURCE_DIR}/freertos/stream_buffer.c
+        ${CMAKE_SOURCE_DIR}/freertos/tasks.c
+        ${CMAKE_SOURCE_DIR}/freertos/timers.c
+        ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3/port.c
+        ${CMAKE_SOURCE_DIR}/freertos/portable/MemMang/heap_4.c)
+    target_compile_options(${target}-freertos PRIVATE -w)
+    target_include_directories(${target}-freertos PUBLIC
+        ${CMAKE_SOURCE_DIR}/freertos/include
+        ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3
+        ${CMAKE_CURRENT_BINARY_DIR}/${target}-include)
+    target_link_libraries(${target} PRIVATE ${target}-freertos)
+endfunction()
+
 # Create an OBJECT library for platform-independent code.
 add_library(shared OBJECT
     src/bms_logic.cc
@@ -84,7 +104,9 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     add_stm_executable(apps 56 src/apps.cc)
     add_stm_executable(bms 8 src/bms.cc)
     add_stm_executable(bms_master 56 src/bms_master.cc)
+    add_stm_executable(bms-master 56 src/bms/master.cc)
     add_stm_executable(logging_board 56 src/logging_board.cc)
+    target_add_freertos(bms-master src/bms/freertos_config.h)
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
