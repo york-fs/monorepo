@@ -17,7 +17,7 @@ std::optional<std::uint16_t> sample_raw(SPI_TypeDef *spi, const hal::Gpio &chip_
 
     // Read value over SPI.
     std::array<std::uint8_t, 2> bytes{};
-    if (!hal::spi_transfer(spi, chip_select, bytes, 1)) {
+    if (!hal::spi_transfer(spi, chip_select, bytes, 2)) {
         return std::nullopt;
     }
 

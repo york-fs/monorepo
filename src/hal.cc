@@ -34,18 +34,20 @@ GPIO_TypeDef *gpio_port(GpioPort port) {
 
 template <typename Predicate>
 bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
-    // Start SysTick with a 1 ms period.
-    SysTick->LOAD = (hal_low_power() ? 8000 : 56000) - 1;
-    SysTick->VAL = 0;
-    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+    // Start TIM2 with a 1 ms period.
+    TIM2->PSC = (hal_low_power() ? 800 : 5600) - 1;
+    TIM2->ARR = 10 - 1;
+    TIM2->CNT = 0;
+    TIM2->SR = 0;
+    TIM2->CR1 = TIM_CR1_CEN;
 
     while (timeout > 0 && !predicate()) {
-        // Reading from SysTick->CTRL clears the underflow flag.
-        if ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) != 0) {
+        if ((TIM2->SR & TIM_SR_UIF) != 0) {
+            TIM2->SR = 0;
             timeout--;
         }
     }
-    SysTick->CTRL = 0;
+    TIM2->CR1 = 0;
     return predicate();
 }
 
@@ -202,17 +204,21 @@ std::uint32_t crc_compute(std::span<const std::uint8_t> data) {
 
 void delay_us(std::size_t us) {
     // Use a 2 us tick rate on 8 MHz to mitigate the slowness of the loop.
-    SysTick->LOAD = (hal_low_power() ? 16 : 56) - 1;
-    SysTick->VAL = 0;
-    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
+    TIM2->PSC = (hal_low_power() ? 8 : 28) - 1;
+    TIM2->ARR = 1;
+    TIM2->CNT = 0;
+    TIM2->SR = 0;
+    TIM2->CR1 = TIM_CR1_CEN;
     if (hal_low_power()) {
         us /= 2;
     }
+
     for (std::size_t i = 0; i < us; i++) {
-        while ((SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk) == 0) {
+        while ((TIM2->SR & TIM_SR_UIF) == 0) {
         }
+        TIM2->SR = 0;
     }
-    SysTick->CTRL = 0;
+    TIM2->CR1 = 0;
 }
 
 void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
@@ -517,6 +523,9 @@ int main() {
         gpio->CRL = 0x88888888;
         gpio->CRH = 0x88888888;
     }
+
+    // Enable TIM2 for delay use.
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
     // Jump to user code.
     app_main();
