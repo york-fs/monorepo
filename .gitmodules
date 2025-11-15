@@ -36,3 +36,6 @@
 	url = https://github.com/york-fs/steering-wheel.git
 	update = rebase
 	branch = main
+[submodule "freertos"]
+	path = freertos
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
