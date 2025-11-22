@@ -28,17 +28,17 @@
 	path = kicad/data-logger
 	url = https://github.com/york-fs/data-logger.git
 	update = rebase
-	branch = main
+	branch = master
 [submodule "kicad/dashboard"]
 	path = kicad/dashboard
 	url = https://github.com/york-fs/dashboard-pcb.git
 	update = rebase
-	branch = main
+	branch = master
 [submodule "kicad/steering-wheel"]
 	path = kicad/steering-wheel
 	url = https://github.com/york-fs/steering-wheel.git
 	update = rebase
-	branch = main
+	branch = master
 [submodule "kicad/charge-tester"]
 	path = kicad/charge-tester
 	url = https://github.com/york-fs/charge-tester.git
@@ -73,4 +73,4 @@
 	path = kicad/bspd
 	url = https://github.com/york-fs/bspd.git
 	update = rebase
-	branch = main
+	branch = master
