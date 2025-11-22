@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1
+
+FROM ghcr.io/york-fs/monorepo:master
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y \
+    biber \
+    latexmk \
+    plantuml \
+    texlive \
+    texlive-bibtex-extra \
+    texlive-latex-extra \
+    texlive-luatex \
+ && rm -rf /var/lib/apt/lists/*

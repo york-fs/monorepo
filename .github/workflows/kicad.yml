@@ -8,22 +8,8 @@ jobs:
   kicad:
     name: Build KiCad Project
     runs-on: ubuntu-latest
-    container: ghcr.io/york-fs/monorepo:master
+    container: ghcr.io/york-fs/monorepo:kicad
     steps:
-      - name: Install KiCad dependencies
-        run: |
-          apt-get update
-          apt-get install -y software-properties-common
-          apt-add-repository --yes ppa:kicad/kicad-9.0-releases
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            git \
-            jq \
-            kicad \
-            kicad-packages3d \
-            kicad-symbols
-          rm -rf /var/lib/apt/lists/*
-
       - name: Checkout
         uses: actions/checkout@v4
         with:

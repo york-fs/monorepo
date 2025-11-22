@@ -5,6 +5,8 @@ on:
       - 'master'
     paths:
       - 'Dockerfile'
+      - 'Dockerfile.kicad'
+      - 'Dockerfile.latex'
   workflow_dispatch:
 env:
   REGISTRY: ghcr.io
@@ -30,6 +32,19 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.kicad
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:kicad
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.latex
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latex
