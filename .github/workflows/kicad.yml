@@ -104,7 +104,16 @@ jobs:
         run: >-
           kicad-cli pcb render
           --output preview.jpg
+          --width 3000
+          --height 2000
           --side top
+          --zoom 1.1
+          --perspective
+          --light-camera 0.0
+          --light-top 0.0
+          --light-bottom 0.0
+          --light-side 0.4
+          --light-side-elevation 45
           "${PROJECT_NAME}.kicad_pcb"
 
       - name: Upload artifacts
