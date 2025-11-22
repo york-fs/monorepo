@@ -125,7 +125,7 @@ jobs:
           PAD_COUNT=$(grep -c '(pad' "${PROJECT_NAME}.kicad_pcb")
           VIA_COUNT=$(grep -c '(via' "${PROJECT_NAME}.kicad_pcb")
           mkdir site
-          printf "{\"revision\": %s, \"pad_count\": %s, \"via_count\": %s}\n" "$REVISION" "$PAD_COUNT" "$VIA_COUNT" > site/info.json
+          printf "{\"revision\": \"%s\", \"pad_count\": %s, \"via_count\": %s}\n" "$REVISION" "$PAD_COUNT" "$VIA_COUNT" > site/info.json
           cp preview.jpg site/
 
       - uses: actions/upload-pages-artifact@v3
