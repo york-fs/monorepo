@@ -6,6 +6,9 @@
 	path = nanopb
 	url = https://github.com/nanopb/nanopb.git
 	branch = master
+[submodule "freertos"]
+	path = freertos
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
 [submodule "kicad/apps"]
 	path = kicad/apps
 	url = https://github.com/york-fs/apps.git
@@ -36,6 +39,38 @@
 	url = https://github.com/york-fs/steering-wheel.git
 	update = rebase
 	branch = main
-[submodule "freertos"]
-	path = freertos
-	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+[submodule "kicad/charge-tester"]
+	path = kicad/charge-tester
+	url = https://github.com/york-fs/charge-tester.git
+	update = rebase
+	branch = master
+[submodule "kicad/precharge"]
+	path = kicad/precharge
+	url = https://github.com/york-fs/precharge.git
+	update = rebase
+	branch = master
+[submodule "kicad/tsal-led"]
+	path = kicad/tsal-led
+	url = https://github.com/york-fs/tsal-led.git
+	update = rebase
+	branch = master
+[submodule "kicad/tsal-ups"]
+	path = kicad/tsal-ups
+	url = https://github.com/york-fs/tsal-ups.git
+	update = rebase
+	branch = master
+[submodule "kicad/swd-adapter"]
+	path = kicad/swd-adapter
+	url = https://github.com/york-fs/swd-adapter.git
+	update = rebase
+	branch = master
+[submodule "kicad/tsal-hv-detection"]
+	path = kicad/tsal-hv-detection
+	url = https://github.com/york-fs/tsal-hv-detection.git
+	update = rebase
+	branch = master
+[submodule "kicad/bspd"]
+	path = kicad/bspd
+	url = https://github.com/york-fs/bspd.git
+	update = rebase
+	branch = main
