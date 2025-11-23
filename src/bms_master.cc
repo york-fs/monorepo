@@ -302,6 +302,23 @@ void app_main() {
     hal::i2c_init(I2C2, std::nullopt);
     hal::spi_init_master(SPI2, SPI_CR1_BR_2);
 
+    // Initialise the ADC.
+    hal::adc_init(ADC1, 1);
+    hal::adc_sequence_channel(ADC1, 1, 16, 0b111u);
+
+    const float V_25 = 1.43f;
+    const float avg_slope = 0.0043f;
+
+    while (true) {
+        const std::uint32_t voltage = ADC1->DR & 0xffffu;
+        float V_sense = (voltage / 4095.0f) * 3.3f;
+        float temperature = (V_25 - V_sense) / avg_slope + 25.0f;
+        
+        hal::swd_printf("ADC data: %u %u %u\n", voltage, (voltage * 3300) >> 12, (uint32_t) temperature);
+        hal::adc_start(ADC1);
+        hal::delay_us(500000);
+    }
+
     // Set segment addresses.
     std::array<Segment, k_max_segment_count> segments;
     for (std::uint8_t i = 0; i < segments.size(); i++) {

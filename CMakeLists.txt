@@ -84,6 +84,7 @@ if(BUILD_TARGET STREQUAL "host")
     enable_testing()
 
     add_executable(tests
+        test/bms_test.cc
         test/dti_test.cc
         test/util_test.cc)
     target_link_libraries(tests PRIVATE GTest::Main shared)

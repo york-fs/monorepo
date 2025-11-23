@@ -361,6 +361,78 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
+    // Configure SCK and MOSI for use with the SPI peripheral.
+    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+
+    // Enable SPI2 in master mode at 2 MHz (4x divider).
+    hal::spi_init_master(SPI2, SPI_CR1_BR_0);
+
+    hal::gpio_set(s_afe_en, s_ref_en);
+
+    // Wait for AFE startup to complete. Route T2 (buffered) by default to measure thermistors.
+    while (afe_command(0, 0b00111000u) == AfeStatus::NotReady) {
+        __NOP();
+    }
+
+    hal::delay_us(1000000);
+
+    // for (std::size_t cell = 12; cell > 0; cell--) {
+    //     static_cast<void>(afe_command(0, 0b01011010u));
+    //     hal::delay_us(1000000);
+        
+    //     const auto index = static_cast<std::uint8_t>(cell - 1);
+    //     const auto sample_emf = sample_cell_voltage(index);
+
+    //     static_cast<void>(afe_command(1u << ((11 - index) + 4), 0b01011000u));
+    //     hal::delay_us(2000000);
+
+    //     const auto sample_load = sample_cell_voltage(index);
+    //     float emf = static_cast<float>(sample_emf->first) / 10000.0f;
+    //     float load = static_cast<float>(sample_load->first) / 10000.0f;
+    //     float ir = 10.0f * ((emf - load) / load);
+
+    //     hal::swd_printf("cell %u: [%u, %u, %u]\n", cell, sample_emf->first, sample_load->first,
+    //                     static_cast<std::uint32_t>(ir * 1000.0f));
+    // }
+    // static_cast<void>(afe_command(0, 0b00111000));
+
+    // while (true) {
+    //     __NOP();
+    // }
+
+    // hal::delay_us(1000000);
+    // static_cast<void>(afe_command(0xf00f, 0b00111000u));
+    // hal::delay_us(1000000);
+    // static_cast<void>(afe_command(0b0, 0b00111000u));
+
+    static_cast<void>(afe_command(0, 0b00111000));
+
+    // std::uint16_t balance_bits = 0xf;
+    bool side = false;
+    int foo = 10;
+    while (true) {
+        const auto t0 = sample_thermistor(33000, 0).value_or(0xffff);
+        const auto t1 = sample_thermistor(33000, 1).value_or(0xffff);
+        const auto t2 = sample_thermistor(33000, 2).value_or(0xffff);
+        hal::swd_printf("[%u, %u, %u]\n", t0, t1, t2);
+
+        if (side) {
+            static_cast<void>(afe_command(0xfc00, 0b00111000u));
+        } else {
+            static_cast<void>(afe_command(0x3f0, 0b00111000u));
+        }
+        if (--foo == 0) {
+            side = !side;
+            foo = 10;
+        }
+
+        // static_cast<void>(afe_command(balance_bits, 0b00111000u));
+        // balance_bits = std::rotr(balance_bits, 4);
+
+        hal::delay_us(1000000);
+    }
+
     // Enable external interrupt on SCL (PB6).
     AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
     EXTI->EMR |= EXTI_EMR_MR6;
