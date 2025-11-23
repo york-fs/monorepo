@@ -119,8 +119,8 @@ jobs:
         shell: bash
         run: |
           REVISION=$(jq -r '.text_variables.REVISION' "${PROJECT_NAME}.kicad_pro")
-          PAD_COUNT=$(grep -c '(pad' "${PROJECT_NAME}.kicad_pcb")
-          VIA_COUNT=$(grep -c '(via' "${PROJECT_NAME}.kicad_pcb")
+          PAD_COUNT=$(grep -c '(pad' "${PROJECT_NAME}.kicad_pcb" || :)
+          VIA_COUNT=$(grep -c '(via' "${PROJECT_NAME}.kicad_pcb" || :)
           mkdir site
           printf '{"revision": "%s", "pad_count": %u, "via_count": %u, "drc_pass": %s, "erc_pass": %s}\n' \
             "$REVISION" "$PAD_COUNT" "$VIA_COUNT" "$DRC_PASS" "$ERC_PASS" > site/info.json
