@@ -28,18 +28,14 @@ jobs:
 
       - name: Run schematic ERC check
         shell: bash
-        run: |
-          set +e
-          kicad-cli sch erc --output /dev/stdout "${PROJECT_NAME}.kicad_sch" | tee /dev/stderr | grep -qP 'Errors\s+[1-9]\d*'
-          exit $(( ! $? ))
+        run: echo ERC_PASS=$(kicad-cli sch erc --output /dev/stdout "${PROJECT_NAME}.kicad_sch" | tee /dev/stderr | grep -qP 'Errors\s+[1-9]\d*' && echo 'false' || echo 'true') >> "$GITHUB_ENV"
 
       - name: Run PCB DRC check
         shell: bash
         run: |
           kicad-cli pcb drc --output drc.json --format json --schematic-parity "${PROJECT_NAME}.kicad_pcb"
-          jq '.violations + .unconnected_items + .schematic_parity' drc.json > violations.json
-          cat violations.json
-          [[ $(jq 'del(.[] | select(.severity == "warning")) | length' violations.json) -eq 0 ]]
+          jq '.violations + .unconnected_items + .schematic_parity' drc.json | tee violations.json
+          echo DRC_PASS=$([[ $(jq 'del(.[] | select(.severity == "warning")) | length' violations.json) -eq 0 ]] && echo 'true' || echo 'false') >> "$GITHUB_ENV"
 
       - name: Export BOM
         run: >-
@@ -120,12 +116,20 @@ jobs:
           path: gerbers/*
 
       - name: Extract PCB stats
+        shell: bash
         run: |
           REVISION=$(jq -r '.text_variables.REVISION' "${PROJECT_NAME}.kicad_pro")
           PAD_COUNT=$(grep -c '(pad' "${PROJECT_NAME}.kicad_pcb")
           VIA_COUNT=$(grep -c '(via' "${PROJECT_NAME}.kicad_pcb")
           mkdir site
-          printf "{\"revision\": \"%s\", \"pad_count\": %s, \"via_count\": %s}\n" "$REVISION" "$PAD_COUNT" "$VIA_COUNT" > site/info.json
+          printf '{"revision": "%s", "pad_count": %u, "via_count": %u, "drc_pass": %s, "erc_pass": %s}\n' \
+            "$REVISION" "$PAD_COUNT" "$VIA_COUNT" "$DRC_PASS" "$ERC_PASS" > site/info.json
+          printf '{"schemaVersion": 1, "label": "ERC", "message": "%s", "color": "%s"}\n' \
+            $([[ "$ERC_PASS" = 'true' ]] && echo 'passing' || echo 'failing') \
+            $([[ "$ERC_PASS" = 'true' ]] && echo 'green' || echo 'red') > site/erc.json
+          printf '{"schemaVersion": 1, "label": "DRC", "message": "%s", "color": "%s"}\n' \
+            $([[ "$DRC_PASS" = 'true' ]] && echo 'passing' || echo 'failing') \
+            $([[ "$DRC_PASS" = 'true' ]] && echo 'green' || echo 'red') > site/drc.json
           cp preview.jpg site/
 
       - uses: actions/upload-pages-artifact@v3
