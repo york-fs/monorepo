@@ -86,6 +86,7 @@ void Gpio::write(bool value) const {
 }
 
 void enable_irq(IRQn_Type irq, std::uint32_t priority) {
+    // TODO: This is wrong?
     NVIC_SetPriority(irq, priority);
     NVIC_EnableIRQ(irq);
 }

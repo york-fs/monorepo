@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bms/error.hh>
 #include <util.hh>
 
 #include <array>
@@ -22,11 +23,12 @@ enum class Error : std::uint32_t {
     BadConfig,
     BadEeprom,
     BadSensor,
-    SegmentCount,
+    BadSegmentCount,
+    DeadlineOverrun,
 
     // Applies to the master and per-segment.
-    CellCount,
-    ThermistorCount,
+    BadCellCount,
+    BadThermistorCount,
     Undervoltage,
     Overvoltage,
     Undertemperature,

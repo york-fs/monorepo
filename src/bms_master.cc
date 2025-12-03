@@ -328,6 +328,20 @@ void app_main() {
         error_flags.set(bms::Error::BadCan);
     }
 
+    // config.minimum_cell_voltage = 32000;
+    // config.maximum_cell_voltage = 42000;
+    // config.minimum_temperature = 0;
+    // config.maximum_temperature = 60;
+    // config.expected_cell_count = 12;
+    // config.minimum_thermistor_count = 3;
+    // write_config(config);
+    // while (true) {}
+
+    // while (true) {
+    //     s_led.write(!s_led.read());
+    //     hal::wait_equal(I2C1->SR1, 0, 1, 500);
+    // }
+
     // Try to read the config from the EEPROM.
     read_config(config, error_flags);
 
