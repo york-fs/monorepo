@@ -16,7 +16,7 @@ namespace {
 
 // Number of ADC samples to perform for rail voltage, cell voltage, and thermistor measurements respectively.
 constexpr std::size_t k_rail_sample_count = 1024;
-constexpr std::size_t k_cell_sample_count = 64;
+constexpr std::size_t k_cell_sample_count = 16;
 constexpr std::size_t k_thermistor_sample_count = 8;
 
 // Cell degraded threshold in ADC counts.
