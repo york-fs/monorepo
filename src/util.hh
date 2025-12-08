@@ -39,12 +39,14 @@ public:
         : m_value((flag_bit(flag) | ...)) {}
 
     constexpr operator type_t() const { return m_value; }
+    constexpr void clear() { m_value = 0; }
     constexpr void set(T flag) { m_value |= flag_bit(flag); }
     constexpr void set_all(FlagBitset other) { m_value |= other.m_value; }
     constexpr void unset(T flag) { m_value &= ~flag_bit(flag); }
     constexpr void unset_all(FlagBitset other) { m_value &= ~other.m_value; }
     constexpr bool is_set(T flag) const { return (m_value & flag_bit(flag)) != 0; }
     constexpr bool any_set() const { return m_value != 0; }
+    constexpr type_t value() const { return m_value; }
 };
 
 template <typename Callback>
