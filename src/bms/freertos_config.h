@@ -25,5 +25,7 @@
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY (5 << 4)
 
 // Extras configuration.
+#define configUSE_MUTEXES 1
 #define INCLUDE_vTaskDelay 1
 #define INCLUDE_xTaskDelayUntil 1
+#define INCLUDE_vTaskSuspend 1
