@@ -133,7 +133,7 @@ class Segment {
     std::array<std::optional<std::int8_t>, k_max_temperature_count> m_temperatures;
     std::uint16_t m_degraded_bitset{};
     std::uint16_t m_rail_voltage{};
-    bms::SegmentErrorFlags m_error_flags{bms::SegmentError::Disconnected};
+    bms::SegmentErrorFlags m_error_flags{};
     TickType_t m_last_update_time{};
 
 public:
@@ -552,6 +552,12 @@ void app_main() {
 
     // Todo: Configure OC_P and OC_N pins as interrupts for immediate shutdown.
     // TODO: Lock GPIO configurations.
+
+    // Initialise segment data.
+    for (auto &segment : s_segments) {
+        util::Stream stream({});
+        segment.update(stream);
+    }
 
     s_segments_mutex = xSemaphoreCreateMutex();
     s_mcu_mutex = xSemaphoreCreateMutex();
