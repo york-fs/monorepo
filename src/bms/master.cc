@@ -18,6 +18,8 @@
 // TODO: Receive CAN ready to drive and config update messages.
 // TODO: Implement inverter shutdown.
 // TODO: Control LED via DMA.
+// TODO: Charger control.
+// TODO: SOC estimation.
 
 namespace {
 
@@ -551,7 +553,9 @@ void app_main() {
     hal::spi_init_master(SPI2, SPI_CR1_BR_2);
 
     // Todo: Configure OC_P and OC_N pins as interrupts for immediate shutdown.
-    // TODO: Lock GPIO configurations.
+
+    // Lock pins whose configurations don't need to change.
+    hal::gpio_lock(s_lvs_reading, s_shutdown, s_led);
 
     // Initialise segment data.
     for (auto &segment : s_segments) {
