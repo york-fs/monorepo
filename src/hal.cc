@@ -85,6 +85,13 @@ void Gpio::write(bool value) const {
     }
 }
 
+void gpio_lock(GPIO_TypeDef *port, std::uint16_t bitset) {
+    port->LCKR = GPIO_LCKR_LCKK | bitset;
+    port->LCKR = static_cast<std::uint32_t>(bitset);
+    port->LCKR = GPIO_LCKR_LCKK | bitset;
+    port->LCKR;
+}
+
 void enable_irq(IRQn_Type irq, std::uint32_t priority) {
     NVIC_SetPriority(irq, priority);
     NVIC_EnableIRQ(irq);

@@ -221,6 +221,37 @@ void gpio_reset(Ts... list) {
 }
 
 /**
+ * @brief Performs the GPIO lock routine for the given pins on the given port.
+ *
+ * @param port the GPIO port to act on
+ * @param bitset the bitset of pins to lock
+ */
+void gpio_lock(GPIO_TypeDef *port, std::uint16_t bitset);
+
+/**
+ * @brief Locks the pin configurations of the given GPIO pins.
+ *
+ * @param list the list of GPIOs to lock
+ */
+template <typename... Ts>
+void gpio_lock(Ts... list) {
+    GPIO_TypeDef *port = nullptr;
+    std::uint16_t bitset = 0;
+    for (const auto gpio : {list...}) {
+        if (port != gpio.port()) {
+            if (port != nullptr) {
+                hal::gpio_lock(port, std::exchange(bitset, 0));
+            }
+            port = gpio.port();
+        }
+        bitset |= 1u << gpio.pin();
+    }
+    if (port != nullptr) {
+        hal::gpio_lock(port, bitset);
+    }
+}
+
+/**
  * @brief Unmasks the given IRQ in the NVIC interrupt controller with the given priority. A lower priority number result
  * in a higher priority, i.e. 0 is the highest priority.
  *
