@@ -20,7 +20,10 @@
 #define configTOTAL_HEAP_SIZE (8 * 1024)
 #define configUSE_MALLOC_FAILED_HOOK 0
 
-// Interrupt configuration. The kernel gets the lowest priority, which is the highest numerical value.
+// Interrupt configuration. The kernel gets the lowest priority, which is the highest numerical value. This applies to
+// the SysTick and PendSV interrupts, meaning other interrupts can interrupt them. Interrupts with a higher priority
+// (lower numerical value) than the max syscall priority cannot call any FreeRTOS functions, but they have the benefit
+// of being able to interrupt critical sections.
 #define configKERNEL_INTERRUPT_PRIORITY (15 << 4)
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY (5 << 4)
 

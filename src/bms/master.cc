@@ -178,6 +178,16 @@ hal::Gpio s_scl_2(hal::GpioPort::B, 10);
 hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 
 /**
+ * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
+ */
+std::uint32_t uptime_ms() {
+    // This conditional should be compiled out since the tick type is atomic so no critical section or interrupt masking
+    // is needed. This code also ignores the possibility of tick overflow.
+    const auto tick_count = xPortIsInsideInterrupt() ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
+    return pdTICKS_TO_MS(tick_count);
+}
+
+/**
  * @brief The supervisor task for the BMS which is responsible for the shutdown output and watchdog feeding.
  *
  * This task has the highest priority and oversees deadlines for all of the other tasks. If any other task stops being
@@ -477,6 +487,7 @@ void swd_task(void *) {
     while (true) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Shutdown activated: %s\n", !s_shutdown.read() ? "yes" : "no");
+        hal::swd_printf("Uptime: %u\n", pdTICKS_TO_MS(xTaskGetTickCount()) / 1000);
 
         xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
