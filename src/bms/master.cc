@@ -530,6 +530,12 @@ void swd_task(void *) {
 
 } // namespace
 
+void vApplicationIdleHook() {
+    // TODO: Could disable some peripherals like I2C.
+    // TODO: Test power consumption of this and verify that it doesn't affect timing.
+    hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
+}
+
 void app_main() {
     s_lvs_reading.configure(hal::GpioInputMode::Analog);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
