@@ -395,7 +395,7 @@ void app_main() {
         for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
             pin.configure(hal::GpioInputMode::Floating);
         }
-        hal::enter_stop_mode();
+        hal::enter_stop_mode(hal::WakeupSource::Event);
 
         // Check for RTC alarm.
         if ((RTC->CRL & RTC_CRL_ALRF) != 0) {

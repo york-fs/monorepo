@@ -101,23 +101,40 @@ void disable_irq(IRQn_Type irq) {
     NVIC_DisableIRQ(irq);
 }
 
+void enter_sleep_mode(WakeupSource source) {
+    // Clear the SLEEPDEEP bit to set sleep mode rather than stop mode.
+    SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+    if (source == WakeupSource::Interrupt) {
+        __WFI();
+    } else {
+        // Set event and invoke WFE twice to clear any stale events.
+        __SEV();
+        __WFE();
+        __WFE();
+    }
+}
+
 // Workaround for STM32F103 erratum affecting stop debug mode.
 [[gnu::noinline]] static void wfe() {
     __WFE();
     __NOP();
 }
 
-void enter_stop_mode() {
+void enter_stop_mode(WakeupSource source) {
     // Clear the PDDS bit to ensure stop mode, not standby mode, is selected.
     PWR->CR &= ~PWR_CR_PDDS;
 
     // Set the SLEEPDEEP bit to set stop mode rather than sleep mode.
     SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
 
-    // Set event and invoke WFE twice to clear any stale events.
-    __SEV();
-    wfe();
-    wfe();
+    if (source == WakeupSource::Interrupt) {
+        __WFI();
+    } else {
+        // Set event and invoke WFE twice to clear any stale events.
+        __SEV();
+        wfe();
+        wfe();
+    }
 
     // Clear the SLEEPDEEP bit.
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;

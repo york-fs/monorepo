@@ -128,6 +128,11 @@ enum class GpioPort {
     E,
 };
 
+enum class WakeupSource {
+    Interrupt,
+    Event,
+};
+
 /**
  * @brief A helper class for defining GPIO pins.
  */
@@ -268,10 +273,20 @@ void enable_irq(IRQn_Type irq, std::uint32_t priority);
 void disable_irq(IRQn_Type irq);
 
 /**
- * @brief Places the MCU into stop mode. In this mode, all clocks are stopped but register, RAM, and GPIO states are
- * saved. The MCU will wake up on an event.
+ * @brief Places the MCU into sleep mode. In this mode, only the core clock is stopped. The MCU will wake up on either
+ * an interrupt or an event, depending on the passed parameter.
+ *
+ * @param source whether to wakeup on an interrupt or an event
  */
-void enter_stop_mode();
+void enter_sleep_mode(WakeupSource source);
+
+/**
+ * @brief Places the MCU into stop mode. In this mode, all clocks are stopped but register, RAM, and GPIO states are
+ * saved. The MCU will wake up on either an interrupt or an event, depending on the passed parameter.
+ *
+ * @param source whether to wakeup on an interrupt or an event
+ */
+void enter_stop_mode(WakeupSource source);
 
 /**
  * @brief Enables and calibrates the given ADC.
