@@ -10,6 +10,8 @@
 namespace can {
 namespace {
 
+// TODO: Check more status bits.
+
 // Allow 10 milliseconds for synchronising with the bus.
 constexpr std::uint32_t k_init_timeout = 10;
 
@@ -37,7 +39,7 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
     const auto pending_count = (fifo_reg & CAN_RF0R_FMP0_Msk) >> CAN_RF0R_FMP0_Pos;
     for (std::uint32_t i = 0; i < pending_count; i++) {
         // Read data from mailbox.
-        Message message{
+        Frame frame{
             .identifier = decode_identifier(mailbox.RIR),
             .data{
                 static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
@@ -52,7 +54,7 @@ void fifo_interrupt(const std::uint8_t fifo_index) {
             .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
         };
         if (callback != nullptr) {
-            callback(message);
+            callback(frame);
         }
 
         // Release FIFO.
@@ -198,7 +200,7 @@ void set_fifo_callback(std::uint8_t index, fifo_callback_t callback) {
     s_fifo_callbacks[index] = callback;
 }
 
-bool transmit(const Message &message) {
+bool transmit(const Frame &frame) {
     if ((CAN1->TSR & CAN_TSR_TME) == 0u) {
         // All mailboxes full.
         return false;
@@ -207,18 +209,18 @@ bool transmit(const Message &message) {
     // Fill mailbox data.
     const auto mailbox_index = (CAN1->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos;
     auto &mailbox = CAN1->sTxMailBox[mailbox_index];
-    if (auto *standard = std::get_if<StandardIdentifier>(&message.identifier)) {
+    if (auto *standard = std::get_if<StandardIdentifier>(&frame.identifier)) {
         mailbox.TIR = *standard << CAN_TI0R_STID_Pos;
     } else {
-        mailbox.TIR = (message.extended_id() << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
+        mailbox.TIR = (frame.extended_id() << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
     }
-    mailbox.TDTR = message.length & 0xfu;
-    mailbox.TDLR = (static_cast<std::uint32_t>(message.data[3]) << 24u) |
-                   (static_cast<std::uint32_t>(message.data[2]) << 16u) |
-                   (static_cast<std::uint32_t>(message.data[1]) << 8u) | message.data[0];
-    mailbox.TDHR = (static_cast<std::uint32_t>(message.data[7]) << 24u) |
-                   (static_cast<std::uint32_t>(message.data[6]) << 16u) |
-                   (static_cast<std::uint32_t>(message.data[5]) << 8u) | message.data[4];
+    mailbox.TDTR = frame.length & 0xfu;
+    mailbox.TDLR = (static_cast<std::uint32_t>(frame.data[3]) << 24u) |
+                   (static_cast<std::uint32_t>(frame.data[2]) << 16u) |
+                   (static_cast<std::uint32_t>(frame.data[1]) << 8u) | frame.data[0];
+    mailbox.TDHR = (static_cast<std::uint32_t>(frame.data[7]) << 24u) |
+                   (static_cast<std::uint32_t>(frame.data[6]) << 16u) |
+                   (static_cast<std::uint32_t>(frame.data[5]) << 8u) | frame.data[4];
 
     // Request transmission.
     mailbox.TIR |= CAN_TI0R_TXRQ;

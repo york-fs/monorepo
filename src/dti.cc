@@ -16,45 +16,45 @@ constexpr std::uint32_t k_general_data_5_id = 0x24;
 
 } // namespace
 
-can::Message build_set_current(std::uint8_t node_id, std::int16_t current) {
+can::Frame build_set_current(std::uint8_t node_id, std::int16_t current) {
     current = util::clamp(current, -10000, 10000);
     return can::build_extended((0x01u << 8u) | node_id, util::write_be(current));
 }
 
-can::Message build_set_brake_current(std::uint8_t node_id, std::uint16_t current) {
+can::Frame build_set_brake_current(std::uint8_t node_id, std::uint16_t current) {
     current = util::clamp(current, 0, 10000);
     return can::build_extended((0x02u << 8u) | node_id, util::write_be(current));
 }
 
-can::Message build_set_erpm(std::uint8_t node_id, std::int32_t erpm) {
+can::Frame build_set_erpm(std::uint8_t node_id, std::int32_t erpm) {
     return can::build_extended((0x03u << 8u) | node_id, util::write_be(erpm));
 }
 
-can::Message build_set_position(std::uint8_t node_id, std::int16_t position) {
+can::Frame build_set_position(std::uint8_t node_id, std::int16_t position) {
     return can::build_extended((0x04u << 8u) | node_id, util::write_be(position));
 }
 
-can::Message build_set_relative_current(std::uint8_t node_id, std::int16_t percentage) {
+can::Frame build_set_relative_current(std::uint8_t node_id, std::int16_t percentage) {
     percentage = util::clamp(percentage, -1000, 1000);
     return can::build_extended((0x05u << 8u) | node_id, util::write_be(percentage));
 }
 
-can::Message build_set_relative_brake_current(std::uint8_t node_id, std::uint16_t percentage) {
+can::Frame build_set_relative_brake_current(std::uint8_t node_id, std::uint16_t percentage) {
     percentage = util::clamp(percentage, 0, 1000);
     return can::build_extended((0x06u << 8u) | node_id, util::write_be(percentage));
 }
 
-can::Message build_set_drive_enabled(std::uint8_t node_id, bool drive_enabled) {
+can::Frame build_set_drive_enabled(std::uint8_t node_id, bool drive_enabled) {
     std::array<std::uint8_t, 1> data{static_cast<std::uint8_t>(drive_enabled ? 1 : 0)};
     return can::build_extended((0x0cu << 8u) | node_id, data);
 }
 
-Packet parse_packet(const can::Message &message) {
+Packet parse_packet(const can::Frame &frame) {
     // Extract packet ID (upper 21 bits) from extended CAN ID.
-    const auto packet_id = (message.extended_id() >> 8u) & 0x1fffffu;
-    std::span<const std::uint8_t> span = message.data;
+    const auto packet_id = (frame.extended_id() >> 8u) & 0x1fffffu;
+    std::span<const std::uint8_t> span = frame.data;
 
-    // TODO: Should probably check message.length.
+    // TODO: Should probably check frame.length.
     switch (packet_id) {
     case k_general_data_1_id:
         return GeneralData1{

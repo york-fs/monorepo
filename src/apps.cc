@@ -218,8 +218,8 @@ extern "C" void TIM3_IRQHandler() {
             can::route_filter(0, 0, 0x7feu, (config::k_dti_can_id << 3u) | 0b100u);
 
             // Install FIFO message pending callback and enable IRQ with a high priority.
-            can::set_fifo_callback(0, [](const can::Message &message) {
-                std::visit(s_dti_state, dti::parse_packet(message));
+            can::set_fifo_callback(0, [](const can::Frame &frame) {
+                std::visit(s_dti_state, dti::parse_packet(frame));
             });
             hal::enable_irq(CAN1_RX0_IRQn, 2);
 
