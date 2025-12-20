@@ -108,6 +108,24 @@ constexpr bool k_allow_shutdown_cancellation = true;
 constexpr std::uint32_t k_shutdown_delay = 200;
 
 /**
+ * @brief The amount of time to wait in milliseconds before reclosing the shutdown circuit after all error flags have
+ * gone.
+ */
+constexpr std::uint32_t k_shutdown_deactivate_delay = 1000;
+
+/**
+ * @brief The amount of time to wait in milliseconds before closing the shutdown circuit after startup, providing that
+ * there are no error flags.
+ */
+constexpr std::uint32_t k_shutdown_start_delay = 100;
+
+// The shutdown disarm delay must be at least double the shutdown activation delay to allow for hysteresis.
+static_assert(k_shutdown_deactivate_delay >= k_shutdown_delay * 2);
+
+// The shutdown start delay cannot be higher than the regular deactivation delay.
+static_assert(k_shutdown_start_delay <= k_shutdown_deactivate_delay);
+
+/**
  * @brief The maximum time the BMS has to react to a fault in milliseconds before it must react before opening the
  * shutdown circuit.
  */
@@ -162,6 +180,9 @@ std::uint16_t s_lvs_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
 SemaphoreHandle_t s_mcu_mutex;
 
+// Time of shutdown activation. Presence indicates whether shutdown is active.
+std::optional<TickType_t> s_shutdown_time;
+
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
 TickType_t s_last_mcu_sample_time = 0;
@@ -188,6 +209,17 @@ std::uint32_t uptime_ms() {
 }
 
 /**
+ * @brief Returns true if at least the specified duration of time has passed since the given start time.
+ *
+ * @param start the period start time in FreeRTOS tick units
+ * @param duration the period duration in milliseconds
+ */
+bool has_elapsed(TickType_t start, std::uint32_t duration) {
+    // TODO: This probably needs to round up the duration to work with tick rates < 1000 Hz?
+    return xTaskGetTickCount() - start >= pdMS_TO_TICKS(duration);
+}
+
+/**
  * @brief The supervisor task for the BMS which is responsible for the shutdown output and watchdog feeding.
  *
  * This task has the highest priority and oversees deadlines for all of the other tasks. If any other task stops being
@@ -196,15 +228,18 @@ std::uint32_t uptime_ms() {
  * cause it to timeout, open the shutdown output, and reset the MCU.
  */
 void supervisor_task(void *) {
-    // Come out of shutdown.
-    // TODO: Do this after a grace period.
-    hal::gpio_set(s_shutdown);
-
-    TickType_t last_schedule_time = xTaskGetTickCount();
     std::optional<std::size_t> expected_segment_count;
     std::optional<TickType_t> shutdown_request_time;
+    std::optional<TickType_t> fault_cleared_time;
+
+    // Start with shutdown active and set fault_cleared_time such that shutdown will be deactivated after the start
+    // delay. If an error is flagged during this window, then fault_cleared_time will be reset.
+    s_shutdown_time.emplace(0);
+    fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deactivate_delay);
+
+    TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        // We calculate the latest master flags based on the most recent master state and segment data.
+        // Calculate the latest master flags based on the most recent master state and segment data.
         bms::MasterErrorFlags master_flags;
 
         // Check for missed deadlines for all of the other tasks.
@@ -241,21 +276,76 @@ void supervisor_task(void *) {
 
         // TODO: Check MCU values.
 
+        // The following section of code handles the shutdown activation and delay logic. There are five categories of
+        // cases the code needs to handle:
+        // 1) non-immediate fault, clears after a period of k_shutdown_delay
+        // 2) non-immediate fault, clears within a period of k_shutdown_delay (cancellation allowed)
+        // 3) non-immediate fault, clears within a period of k_shutdown_delay (cancellation disallowed)
+        // 4) immediate fault, clears after a period of k_shutdown_delay
+        // 5) immediate fault, clears within a period of k_shutdown_delay
+
         // Tentatively start a shutdown if any error flags are set.
         const bool should_shutdown = master_flags.any_set();
         if (should_shutdown && !shutdown_request_time) {
-            // New shutdown request.
+            // Start a new shutdown request.
             shutdown_request_time.emplace(xTaskGetTickCount());
-        } else if (!should_shutdown && k_allow_shutdown_cancellation) {
-            // Cancel the request.
+            if constexpr (k_enable_debug_logs) {
+                hal::swd_printf("%u: Started shutdown request with flags 0x%x\n", *shutdown_request_time,
+                                master_flags.value());
+            }
+        } else if (!should_shutdown && !s_shutdown_time && k_allow_shutdown_cancellation) {
+            // Cancel the request if it hasn't been fulfilled already.
+            if constexpr (k_enable_debug_logs) {
+                if (shutdown_request_time) {
+                    hal::swd_printf("%u: Cancelling request made at time %u\n", xTaskGetTickCount(),
+                                    *shutdown_request_time);
+                }
+            }
             shutdown_request_time.reset();
         }
 
-        // Actually open the shutdown circuit when the grace period is over. The shutdown state can currently not be
-        // left.
-        if (shutdown_request_time && xTaskGetTickCount() - *shutdown_request_time >= pdMS_TO_TICKS(k_shutdown_delay)) {
-            hal::gpio_reset(s_shutdown);
+        // Check if we should open the shutdown circuit now either from a shutdown request whose grace period has
+        // expired, or from any flags which cause immediate shutdown.
+        bool should_shutdown_now = false;
+
+        // Check if a shutdown request has reached the end of its delay period.
+        should_shutdown_now |= shutdown_request_time && has_elapsed(*shutdown_request_time, k_shutdown_delay);
+
+        // Activate shutdown if we should and haven't already.
+        if (!s_shutdown_time && should_shutdown_now) {
+            s_shutdown_time.emplace(xTaskGetTickCount());
+            if constexpr (k_enable_debug_logs) {
+                hal::swd_printf("%u: Activated shutdown\n", *s_shutdown_time);
+            }
         }
+
+        // Keep track of the time a fault cleared.
+        if (!fault_cleared_time && s_shutdown_time && !should_shutdown) {
+            fault_cleared_time.emplace(xTaskGetTickCount());
+            if constexpr (k_enable_debug_logs) {
+                hal::swd_printf("%u: Fault cleared\n", *fault_cleared_time);
+            }
+        } else if (fault_cleared_time && should_shutdown) {
+            // A fault has reappeared.
+            fault_cleared_time.reset();
+            if constexpr (k_enable_debug_logs) {
+                hal::swd_printf("%u: Fault reappeared\n", xTaskGetTickCount());
+            }
+        }
+
+        // Deactivate shutdown if the previous fault has cleared and there are no current error flags.
+        if (!should_shutdown && fault_cleared_time && has_elapsed(*fault_cleared_time, k_shutdown_deactivate_delay)) {
+            shutdown_request_time.reset();
+            fault_cleared_time.reset();
+            s_shutdown_time.reset();
+            if constexpr (k_enable_debug_logs) {
+                hal::swd_printf("%u: Deactivated shutdown\n", xTaskGetTickCount());
+            }
+        }
+
+        // The shutdown pin is inverted since active-high represents the good signal.
+        s_shutdown.write(!s_shutdown_time.has_value());
+        s_led.write(s_shutdown_time.has_value());
 
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
     }
@@ -487,7 +577,11 @@ void swd_task(void *) {
     while (true) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Shutdown activated: %s\n", !s_shutdown.read() ? "yes" : "no");
-        hal::swd_printf("Uptime: %u\n", pdTICKS_TO_MS(xTaskGetTickCount()) / 1000);
+        if (s_shutdown_time) {
+            const auto time_since_activation = pdTICKS_TO_MS(xTaskGetTickCount() - *s_shutdown_time);
+            hal::swd_printf("Time since shutdown activation: %u\n", time_since_activation);
+        }
+        hal::swd_printf("Uptime: %u\n", uptime_ms() / 1000);
 
         xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
