@@ -84,6 +84,7 @@ public:
     bool write_be(T value);
 
     bool empty() const { return m_span.empty(); }
+    std::size_t head() const { return m_head; }
 };
 
 /**
