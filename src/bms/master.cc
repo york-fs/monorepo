@@ -94,50 +94,53 @@ constexpr std::uint32_t k_segment_sample_period = 50;
 constexpr std::uint32_t k_mcu_sample_period = 200;
 
 /**
- * @brief Whether shutdowns can be cancelled if the fault clears within the delay grace period.
+ * @brief Whether shutdown assertion requests can be cancelled if the fault clears within the delay grace period.
  */
 constexpr bool k_allow_shutdown_cancellation = true;
 
 /**
- * @brief The amount of time to wait in milliseconds before opening the shutdown circuit in the event of a controlled
- * shutdown event.
+ * @brief The amount of time to wait in milliseconds before asserting shutdown in the event of a controlled shutdown
+ * event.
  *
  * This includes most battery parameter shutdowns (overvoltage, overtemperature, etc.), but not watchdog triggers, MCU
- * resets, or extreme overcurrent events.
+ * resets, or extreme overcurrent events. The benefit of this parameter is that it allows the external load, such as an
+ * inverter, to gracefully reduce power before the contactors open.
  */
-constexpr std::uint32_t k_shutdown_delay = 200;
+constexpr std::uint32_t k_shutdown_assert_delay = 200;
 
 /**
- * @brief The amount of time to wait in milliseconds before reclosing the shutdown circuit after all error flags have
- * gone.
+ * @brief The amount of time to wait in milliseconds before deasserting shutdown after all error flags are no longer
+ * present.
  */
-constexpr std::uint32_t k_shutdown_deactivate_delay = 1000;
+constexpr std::uint32_t k_shutdown_deassert_delay = 1000;
 
 /**
- * @brief The amount of time to wait in milliseconds before closing the shutdown circuit after startup, providing that
+ * @brief The amount of time to wait in milliseconds before deasserting shutdown after startup, provided that
  * there are no error flags.
+ *
+ * The BMS starts with shutdown asserted in order to allow for a delay period in the event of a watchdog trigger, power
+ * failure, or other MCU resets. This parameter defines the time to wait before deasserting.
  */
 constexpr std::uint32_t k_shutdown_start_delay = 100;
 
-// The shutdown disarm delay must be at least double the shutdown activation delay to allow for hysteresis.
-static_assert(k_shutdown_deactivate_delay >= k_shutdown_delay * 2);
+// The shutdown deassert delay must be at least double the shutdown assert delay to allow for some hysteresis.
+static_assert(k_shutdown_deassert_delay >= k_shutdown_assert_delay * 2);
 
-// The shutdown start delay cannot be higher than the regular deactivation delay.
-static_assert(k_shutdown_start_delay <= k_shutdown_deactivate_delay);
+// The shutdown start delay cannot be higher than the regular deassert delay.
+static_assert(k_shutdown_start_delay <= k_shutdown_deassert_delay);
 
 /**
- * @brief The maximum time the BMS has to react to a fault in milliseconds before it must react before opening the
- * shutdown circuit.
+ * @brief The maximum time in milliseconds that the BMS has to react to a fault before it must assert shutdown.
  */
 constexpr std::uint32_t k_maximum_reaction_time = 450;
 
 // The supervisor task must have enough time to run after a shutdown has been started.
-static_assert(k_maximum_reaction_time > k_shutdown_delay + k_supervisor_period * 2);
+static_assert(k_maximum_reaction_time > k_shutdown_assert_delay + k_supervisor_period * 2);
 
 /**
  * @brief The calculated upper limit in milliseconds of task deadline overrun.
  */
-constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_time - k_shutdown_delay);
+constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_time - k_shutdown_assert_delay);
 
 struct Config {
     std::uint16_t undervoltage_threshold;
@@ -180,7 +183,7 @@ std::uint16_t s_lvs_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
 SemaphoreHandle_t s_mcu_mutex;
 
-// Time of shutdown activation. Presence indicates whether shutdown is active.
+// Time of shutdown assertion. Presence indicates whether shutdown is asserted.
 std::optional<TickType_t> s_shutdown_time;
 
 // Task timing.
@@ -225,17 +228,17 @@ bool has_elapsed(TickType_t start, std::uint32_t duration) {
  * This task has the highest priority and oversees deadlines for all of the other tasks. If any other task stops being
  * scheduled (and therefore stops monitoring the battery properly), this task will notice and open the shutdown output.
  * If this task stops being scheduled, or the whole MCU locks up, this task will stop feeding the watchdog which will
- * cause it to timeout, open the shutdown output, and reset the MCU.
+ * cause it to timeout, assert shutdown, and reset the MCU.
  */
 void supervisor_task(void *) {
     std::optional<std::size_t> expected_segment_count;
     std::optional<TickType_t> shutdown_request_time;
     std::optional<TickType_t> fault_cleared_time;
 
-    // Start with shutdown active and set fault_cleared_time such that shutdown will be deactivated after the start
+    // Start with shutdown asserted and set fault_cleared_time such that shutdown will be deasserted after the start
     // delay. If an error is flagged during this window, then fault_cleared_time will be reset.
     s_shutdown_time.emplace(0);
-    fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deactivate_delay);
+    fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deassert_delay);
 
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
@@ -276,13 +279,13 @@ void supervisor_task(void *) {
 
         // TODO: Check MCU values.
 
-        // The following section of code handles the shutdown activation and delay logic. There are five categories of
+        // The following section of code handles the shutdown assertion and delay logic. There are five categories of
         // cases the code needs to handle:
-        // 1) non-immediate fault, clears after a period of k_shutdown_delay
-        // 2) non-immediate fault, clears within a period of k_shutdown_delay (cancellation allowed)
-        // 3) non-immediate fault, clears within a period of k_shutdown_delay (cancellation disallowed)
-        // 4) immediate fault, clears after a period of k_shutdown_delay
-        // 5) immediate fault, clears within a period of k_shutdown_delay
+        // 1) non-immediate fault, clears after a period of k_shutdown_assert_delay
+        // 2) non-immediate fault, clears within a period of k_shutdown_assert_delay (cancellation allowed)
+        // 3) non-immediate fault, clears within a period of k_shutdown_assert_delay (cancellation disallowed)
+        // 4) immediate fault, clears after a period of k_shutdown_assert_delay
+        // 5) immediate fault, clears within a period of k_shutdown_assert_delay
 
         // Tentatively start a shutdown if any error flags are set.
         const bool should_shutdown = master_flags.any_set();
@@ -304,22 +307,22 @@ void supervisor_task(void *) {
             shutdown_request_time.reset();
         }
 
-        // Check if we should open the shutdown circuit now either from a shutdown request whose grace period has
+        // Check if we should assert shutdown now either from a shutdown request whose grace period has
         // expired, or from any flags which cause immediate shutdown.
         bool should_shutdown_now = false;
 
         // Check if a shutdown request has reached the end of its delay period.
-        should_shutdown_now |= shutdown_request_time && has_elapsed(*shutdown_request_time, k_shutdown_delay);
+        should_shutdown_now |= shutdown_request_time && has_elapsed(*shutdown_request_time, k_shutdown_assert_delay);
 
-        // Activate shutdown if we should and haven't already.
+        // Assert shutdown if we should and haven't already.
         if (!s_shutdown_time && should_shutdown_now) {
             s_shutdown_time.emplace(xTaskGetTickCount());
             if constexpr (k_enable_debug_logs) {
-                hal::swd_printf("%u: Activated shutdown\n", *s_shutdown_time);
+                hal::swd_printf("%u: Asserted shutdown\n", *s_shutdown_time);
             }
         }
 
-        // Keep track of the time a fault cleared.
+        // Keep track of the time elapsed since all faults have cleared.
         if (!fault_cleared_time && s_shutdown_time && !should_shutdown) {
             fault_cleared_time.emplace(xTaskGetTickCount());
             if constexpr (k_enable_debug_logs) {
@@ -333,13 +336,13 @@ void supervisor_task(void *) {
             }
         }
 
-        // Deactivate shutdown if the previous fault has cleared and there are no current error flags.
-        if (!should_shutdown && fault_cleared_time && has_elapsed(*fault_cleared_time, k_shutdown_deactivate_delay)) {
+        // Deassert shutdown if the previous fault has cleared and there are no current error flags.
+        if (!should_shutdown && fault_cleared_time && has_elapsed(*fault_cleared_time, k_shutdown_deassert_delay)) {
             shutdown_request_time.reset();
             fault_cleared_time.reset();
             s_shutdown_time.reset();
             if constexpr (k_enable_debug_logs) {
-                hal::swd_printf("%u: Deactivated shutdown\n", xTaskGetTickCount());
+                hal::swd_printf("%u: Deasserted shutdown\n", xTaskGetTickCount());
             }
         }
 
@@ -576,10 +579,10 @@ void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         hal::swd_printf("--------------------------------\n");
-        hal::swd_printf("Shutdown activated: %s\n", !s_shutdown.read() ? "yes" : "no");
+        hal::swd_printf("Shutdown asserted: %s\n", !s_shutdown.read() ? "yes" : "no");
         if (s_shutdown_time) {
-            const auto time_since_activation = pdTICKS_TO_MS(xTaskGetTickCount() - *s_shutdown_time);
-            hal::swd_printf("Time since shutdown activation: %u\n", time_since_activation);
+            const auto time_since_assertion = pdTICKS_TO_MS(xTaskGetTickCount() - *s_shutdown_time);
+            hal::swd_printf("Time since shutdown assertion: %u\n", time_since_assertion);
         }
         hal::swd_printf("Uptime: %u\n", uptime_ms() / 1000);
 
