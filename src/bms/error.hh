@@ -9,7 +9,7 @@ namespace bms {
 /**
  * @brief Flags that specify an error condition on the BMS master.
  */
-enum class MasterError : std::uint32_t {
+enum class MasterError : std::uint16_t {
     /**
      * @brief Specifies that the CAN bus is unavailable or unreliable.
      */
@@ -40,6 +40,16 @@ enum class MasterError : std::uint32_t {
      * @brief Specifies that one or more segments have one or more errors.
      */
     SegmentError,
+
+    /**
+     * @brief Specifies that an overcurrent has been measured by one or both of the current sensors.
+     */
+    OvercurrentMeasured,
+
+    /**
+     * @brief Specifies that an overcurrent has been detected by one or both of the current sensors' overcurrent pins.
+     */
+    OvercurrentThreshold,
 };
 
 using MasterErrorFlags = util::FlagBitset<MasterError>;

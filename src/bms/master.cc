@@ -191,6 +191,8 @@ TickType_t s_last_segment_sample_time = 0;
 TickType_t s_last_mcu_sample_time = 0;
 
 hal::Gpio s_lvs_reading(hal::GpioPort::A, 1);
+hal::Gpio s_oc_n(hal::GpioPort::A, 11);
+hal::Gpio s_oc_p(hal::GpioPort::A, 12);
 
 hal::Gpio s_shutdown(hal::GpioPort::B, 1);
 hal::Gpio s_led(hal::GpioPort::B, 5);
@@ -279,6 +281,11 @@ void supervisor_task(void *) {
 
         // TODO: Check MCU values.
 
+        // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
+        if (!s_oc_n.read() || !s_oc_p.read()) {
+            master_flags.set(bms::MasterError::OvercurrentThreshold);
+        }
+
         // The following section of code handles the shutdown assertion and delay logic. There are five categories of
         // cases the code needs to handle:
         // 1) non-immediate fault, clears after a period of k_shutdown_assert_delay
@@ -313,6 +320,9 @@ void supervisor_task(void *) {
 
         // Check if a shutdown request has reached the end of its delay period.
         should_shutdown_now |= shutdown_request_time && has_elapsed(*shutdown_request_time, k_shutdown_assert_delay);
+
+        // Hard overcurrents are an immediate shutdown since they indicate a large short circuit or a faulty sensor.
+        should_shutdown_now |= master_flags.is_set(bms::MasterError::OvercurrentThreshold);
 
         // Assert shutdown if we should and haven't already.
         if (!s_shutdown_time && should_shutdown_now) {
@@ -648,6 +658,10 @@ void app_main() {
     s_lvs_reading.configure(hal::GpioInputMode::Analog);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
+    // The overcurrent pins have external pull-ups.
+    s_oc_n.configure(hal::GpioInputMode::Floating);
+    s_oc_p.configure(hal::GpioInputMode::Floating);
+
     // Configure I2C pins for peripheral use.
     for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
         pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
@@ -666,10 +680,8 @@ void app_main() {
     hal::i2c_init(I2C2, std::nullopt);
     hal::spi_init_master(SPI2, SPI_CR1_BR_2);
 
-    // Todo: Configure OC_P and OC_N pins as interrupts for immediate shutdown.
-
     // Lock pins whose configurations don't need to change.
-    hal::gpio_lock(s_lvs_reading, s_shutdown, s_led);
+    hal::gpio_lock(s_lvs_reading, s_oc_n, s_oc_p, s_shutdown, s_led);
 
     // Initialise segment data.
     for (auto &segment : s_segments) {
