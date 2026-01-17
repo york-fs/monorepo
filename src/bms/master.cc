@@ -358,9 +358,8 @@ void supervisor_task(void *) {
             }
         }
 
-        // The shutdown pin is inverted since active-high represents the good signal.
+        // The shutdown pin is inverted since active-high signals no fault.
         s_shutdown.write(!s_shutdown_time.has_value());
-        s_led.write(s_shutdown_time.has_value());
 
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
     }
