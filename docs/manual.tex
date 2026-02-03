@@ -1,4 +1,4 @@
-\documentclass[12pt, a4paper]{article}
+\documentclass[11pt, a4paper]{article}
 \usepackage[utf8]{inputenc}
 
 \usepackage[UKenglish]{babel}
@@ -23,10 +23,18 @@
 
 % Set main font first.
 \usepackage[no-math]{fontspec}
-\setmainfont{TeX Gyre Heros}
+\setmainfont{OpenSans}[
+  Path = ./fonts/,
+  Extension = .ttf,
+  UprightFont = *-Regular,
+  BoldFont = *-Bold,
+  ItalicFont = *-Italic,
+  BoldItalicFont = *-BoldItalic,
+  Ligatures = TeX
+]
 
 % Load unicode-math after fontspec.
-\usepackage{unicode-math}
+\usepackage[mathrm=sym]{unicode-math}
 \setmathfont{Latin Modern Math}
 
 % Load after babel and after fonts have been selected.
@@ -38,6 +46,10 @@
 % Load after hyperref.
 \usepackage{cleveref}
 \usepackage[margin=2cm]{geometry}
+
+% Increase line spread.
+\usepackage{setspace}
+\setstretch{1.1}
 
 \makeatletter
 \renewcommand{\headrulewidth}{0pt}
@@ -59,7 +71,6 @@
 
 \newcommand{\iic}{I\textsuperscript{2}C}
 
-\linespread{1.1}
 \begin{document}
 
 \makeatletter
