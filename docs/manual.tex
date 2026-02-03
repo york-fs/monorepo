@@ -1,4 +1,4 @@
-\documentclass[11pt, a4paper]{article}
+\documentclass[11pt, a4paper]{report}
 \usepackage[utf8]{inputenc}
 
 \usepackage[UKenglish]{babel}
@@ -19,7 +19,7 @@
 \usepackage{parskip}
 
 % Document version history.
-\usepackage[tablegrid, tocentry]{vhistory}
+\usepackage[nochapter, tablegrid]{vhistory}
 
 % Set main font first.
 \usepackage[no-math]{fontspec}
@@ -51,16 +51,20 @@
 \usepackage{setspace}
 \setstretch{1.1}
 
+\usepackage{titlesec}
+\titleformat{\chapter}{\normalfont\huge\bfseries}{\thechapter}{1em}{}
+\titlespacing*{\chapter}{0pt}{50pt plus 10pt minus 5pt}{15pt plus 5pt}
+
 \makeatletter
-\renewcommand{\headrulewidth}{0pt}
-\renewcommand{\footrulewidth}{0pt}
-\fancypagestyle{main}{%
-  \fancyhf{}
-  \fancyfoot[L]{\small\color{gray} \@title\ --- York Formula Student --- v\vhCurrentVersion}
-  \fancyfoot[R]{\small\color{gray} Page \thepage\ of \pageref*{LastPage}}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[L]{\small\color{gray} \@title\ --- York Formula Student --- v\vhCurrentVersion}%
+  \fancyfoot[R]{\small\color{gray} Page \thepage\ of \pageref*{LastPage}}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}%
 }
 \makeatother
-\pagestyle{main}
+\pagestyle{plain}
 
 \title{Electronics Manual}
 \date{\vhCurrentDate}
@@ -72,6 +76,7 @@
 \newcommand{\iic}{I\textsuperscript{2}C}
 
 \begin{document}
+\pagenumbering{roman}
 
 \makeatletter
 \begin{titlepage}
@@ -92,12 +97,26 @@
 \end{titlepage}
 \makeatother
 
-\newpage
+\clearpage
 \tableofcontents
-\newpage
 
-\section{Accumulator Design}
+\chapter*{Acronyms}
+\addcontentsline{toc}{chapter}{Acronyms}
+\label{cha:acronyms}
+\printacronyms[heading=none, template=tabular]
 
+\chapter*{Version History}
+\addcontentsline{toc}{chapter}{Version History}
+\label{cha:versions}
+\begin{versionhistory}
+  \vhEntry{0.1}{\today}{OS}{Development version}
+\end{versionhistory}
+
+% Switch back to arabic numerals for main content.
+\clearpage
+\pagenumbering{arabic}
+
+\chapter{Accumulator Design}
 \begin{itemize}
 \item Uses Molicel-P30B 18650 3 Ah cells
 \item Subdivided into five segments
@@ -105,11 +124,11 @@
 \item Which results in a maximum segment voltage of 100.8 volts and segment energy of around 4.3 MJ, which is compliant with EV5.3.2
 \end{itemize}
 
-\section{Battery Management System}
+\chapter{Battery Management System}
 The Battery Management System (BMS) is an integral part of the overall accumulator design of the YFS car, which implements a distributed design.
 The primary job of the BMS is to monitor cell voltages and temperatures and provide cell balancing capability during charging.
 
-\subsection{Applicable Rules}
+\section{Applicable Rules}
 As per the FSUK 2025 rules, the BMS must:
 \begin{itemize}
 \item\textbf{EV5.8.1:} Be monitoring whenever the low-voltage system or charging is active.
@@ -137,7 +156,7 @@ In general, the BMS does not need to concern itself with rule \textbf{EV1.2.2}:
 Since no significant current, other than cell balance current which is under one amp, flows through the BMS.
 In particular, this means that the BMS connections are not required to be positively locking.
 
-\subsection{High-Level Design}
+\section{High-Level Design}
 Although the accumulator is physically divided into five segments, from the perspective of the BMS, there are ten segments.
 This design choice was made for two primary reasons:
 \begin{enumerate}[label=(\arabic*)]
@@ -159,7 +178,7 @@ Current measurement is also performed by the master BMS, through the use of Hall
 A connection to the car's CAN bus allows measurement logging and configuration of the BMS.
 This CAN connection is non-critical, since the shutdown mechanism is implemented through a dedicated digital output.
 
-\subsection{Segment-Level Design}
+\section{Segment-Level Design}
 This section covers the distributed segment design of the BMS.
 
 \begin{figure}[H]
@@ -243,14 +262,10 @@ The following table describes the possible scenarios.
   \label{tbl:segment-bms-scs-compliance}
 \end{table}
 
-\subsection{Current Unknowns}
+\section{Current Unknowns}
 \begin{itemize}
 \item How to power the main BMS board.
 \item How EV3.2.5 fits in with the current measurement of the master BMS.
 \end{itemize}
-
-\begin{versionhistory}
-  \vhEntry{0.1}{\today}{OS}{Development version}
-\end{versionhistory}
 
 \end{document}
