@@ -12,4 +12,5 @@ RUN apt-get update \
     texlive-bibtex-extra \
     texlive-latex-extra \
     texlive-luatex \
+    texlive-science \
  && rm -rf /var/lib/apt/lists/*
