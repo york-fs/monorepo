@@ -9,6 +9,7 @@
 \usepackage{lastpage}
 \usepackage{mathtools}
 \usepackage{graphicx}
+\usepackage{siunitx}
 \usepackage{xcolor}
 
 % Set image directory.
@@ -47,9 +48,17 @@
 \usepackage{cleveref}
 \usepackage[margin=2cm]{geometry}
 
+% Acronym management.
+\usepackage{array}
+\usepackage{acro}
+\acsetup{make-links}
+
 % Increase line spread.
 \usepackage{setspace}
 \setstretch{1.1}
+
+% Increase table and other array vertical padding.
+\renewcommand{\arraystretch}{1.25}
 
 \usepackage{titlesec}
 \titleformat{\chapter}{\normalfont\huge\bfseries}{\thechapter}{1em}{}
@@ -73,7 +82,24 @@
   \texttt{ldp520@york.ac.uk}
 }
 
+\newcommand{\todo}[1]{\textit{#1}}
+\newenvironment{todoblock}{\itshape}{}
 \newcommand{\iic}{I\textsuperscript{2}C}
+
+% Possessive acronym forms.
+\DeclareAcroEnding{possessive}{'s}{'s}
+\NewAcroCommand\acg{m}{\acropossessive\UseAcroTemplate{first}{#1}}
+\NewAcroCommand\acsg{m}{\acropossessive\UseAcroTemplate{short}{#1}}
+\NewAcroCommand\aclg{m}{\acropossessive\UseAcroTemplate{long}{#1}}
+
+\DeclareAcronym{air}{
+  short = AIR,
+  long = accumulator isolation relay
+}
+\DeclareAcronym{tsal}{
+  short = TSAL,
+  long = tractive system active light
+}
 
 \begin{document}
 \pagenumbering{roman}
@@ -123,6 +149,39 @@
 \item Each segment is made up of a cell configuration of 24s4p
 \item Which results in a maximum segment voltage of 100.8 volts and segment energy of around 4.3 MJ, which is compliant with EV5.3.2
 \end{itemize}
+
+\chapter{Precharge}
+The precharge is a circuit responsible for charging the large capacitance of the inverter through a large precharge resistor in order to avoid a large current spike when the main \acp{air} close.
+It has a secondary function of sensing and outputting the \ac{air} and precharge relay intended and actual (mechanical) states to the \acg{tsal} logic.
+The key specifications of the precharge circuit are as follows:
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|}
+    \hline
+    \textbf{Specification} & \textbf{Value} \\
+    \hline
+    Low voltage input & \SI{12}{\volt} \\
+    \hline
+    High voltage input range & \SI{0}{\volt} -- \SI{500}{\volt} \\
+    \hline
+    Precharge resistance & \SI{1}{\kilo\ohm} \\
+    \hline
+    Precharge time to 95\% @ \SI{300}{\volt} \& \SI{200}{\micro\farad} & \SI{600}{\milli\second} \\
+    \hline
+  \end{tabular}
+  \caption{Precharge Specifications}
+  \label{tbl:precharge-specs}
+\end{table}
+
+\section{Voltage Sensing}
+
+\section{Relay Control}
+
+\section{TSAL Integration}
+
+\section{State Machine}
+
+\section{CAN Communication}
 
 \chapter{Battery Management System}
 The Battery Management System (BMS) is an integral part of the overall accumulator design of the YFS car, which implements a distributed design.
