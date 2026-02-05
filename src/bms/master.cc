@@ -708,7 +708,7 @@ void app_main() {
         // Activate the watchdog and don't feed it to force a reset.
         hal::gpio_set(s_wds, s_led);
         while (true) {
-            __WFI();
+            hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
         }
     }
 
