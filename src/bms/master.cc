@@ -191,6 +191,10 @@ std::optional<TickType_t> s_shutdown_time;
 TickType_t s_last_segment_sample_time = 0;
 TickType_t s_last_mcu_sample_time = 0;
 
+// Watchdog pins.
+hal::Gpio s_wdi(hal::GpioPort::A, 3);
+hal::Gpio s_wds(hal::GpioPort::A, 4);
+
 hal::Gpio s_lvs_sample(hal::GpioPort::A, 1);
 hal::Gpio s_ref_sample(hal::GpioPort::A, 7);
 hal::Gpio s_oc_n(hal::GpioPort::A, 11);
@@ -243,6 +247,9 @@ void supervisor_task(void *) {
     // delay. If an error is flagged during this window, then fault_cleared_time will be reset.
     s_shutdown_time.emplace(0);
     fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deassert_delay);
+
+    // Enable the external TPS3851 watchdog.
+    hal::gpio_set(s_wds);
 
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
@@ -361,6 +368,11 @@ void supervisor_task(void *) {
         // The shutdown pin is inverted since active-high signals no fault.
         s_shutdown.write(!s_shutdown_time.has_value());
 
+        // Feed the watchdog and wait until next supervision period. The TPS3851 is extremely fast and only needs a 50
+        // ns pulse, so we don't need any delays here. A longer pulse is fine since it is still orders of magnitude
+        // before the timeout period.
+        hal::gpio_reset(s_wdi);
+        hal::gpio_set(s_wdi);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
     }
 }
@@ -585,6 +597,7 @@ void sample_mcu_task(void *) {
         s_mcu_temperature = temperature;
         xSemaphoreGive(s_mcu_mutex);
 
+        // Start next ADC sample.
         hal::adc_start(ADC1);
         xTaskDelayUntil(&s_last_mcu_sample_time, pdMS_TO_TICKS(k_mcu_sample_period));
     }
@@ -661,21 +674,49 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
+    // Configure ADC inputs.
     s_lvs_sample.configure(hal::GpioInputMode::Analog);
     s_ref_sample.configure(hal::GpioInputMode::Analog);
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    // Configure watchdog input (feed) and set pins. Default WDI to high since the watchdog feeds on a falling edge.
+    s_wdi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_wds.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    hal::gpio_set(s_wdi);
 
     // The overcurrent pins have external pull-ups.
     s_oc_n.configure(hal::GpioInputMode::Floating);
     s_oc_p.configure(hal::GpioInputMode::Floating);
+
+    // Shutdown output is push-pull but also has an external pull-down in case of MCU failure.
+    s_shutdown.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
     // Configure I2C pins for peripheral use.
     for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
         pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
     }
 
-    // Shutdown output is push-pull but also has an external pull-down in case of MCU failure.
-    s_shutdown.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    // Lock pins whose configurations don't need to change.
+    hal::gpio_lock(s_lvs_sample, s_ref_sample, s_wdi, s_wds, s_oc_n, s_oc_p, s_shutdown, s_led);
+
+    // Enable the backup domain and disable write protection.
+    RCC->APB1ENR |= RCC_APB1ENR_BKPEN;
+    PWR->CR |= PWR_CR_DBP;
+
+    // Perform watchdog self-test if needed.
+    if (std::exchange(BKP->DR1, 0xaaaa) != 0xaaaa) {
+        // Activate the watchdog and don't feed it to force a reset.
+        hal::gpio_set(s_wds, s_led);
+        while (true) {
+            __WFI();
+        }
+    }
+
+    // Reset the backup domain and disable it.
+    RCC->BDCR |= RCC_BDCR_BDRST;
+    RCC->BDCR &= ~RCC_BDCR_BDRST;
+    PWR->CR &= ~PWR_CR_DBP;
+    RCC->APB1ENR &= ~RCC_APB1ENR_BKPEN;
 
     // TODO: Read config from EEPROM.
     s_config = {
@@ -686,9 +727,6 @@ void app_main() {
     hal::i2c_init(I2C1, std::nullopt);
     hal::i2c_init(I2C2, std::nullopt);
     hal::spi_init_master(SPI2, SPI_CR1_BR_2);
-
-    // Lock pins whose configurations don't need to change.
-    hal::gpio_lock(s_lvs_sample, s_ref_sample, s_oc_n, s_oc_p, s_shutdown, s_led);
 
     // Initialise segment data.
     for (auto &segment : s_segments) {
