@@ -12,9 +12,15 @@
 \usepackage{siunitx}
 \usepackage{xcolor}
 
+\RequirePackage[backend=biber, style=ieee]{biblatex}
+\addbibresource{manual.bib}
+
 % Set image directory.
 \usepackage{graphicx}
 \graphicspath{{images/}}
+
+% Additional keys for graphics scaling, rotating, clipping, etc. exported to \includegraphics.
+\usepackage[export]{adjustbox}
 
 % Replace paragraph indenting with newlines.
 \usepackage{parskip}
@@ -45,7 +51,7 @@
 \usepackage[pdfusetitle]{hyperref}
 
 % Load after hyperref.
-\usepackage{cleveref}
+\usepackage[noabbrev]{cleveref}
 \usepackage[margin=2cm]{geometry}
 
 % Acronym management.
@@ -82,6 +88,15 @@
   \texttt{ldp520@york.ac.uk}
 }
 
+\newcommand{\addschematic}[3][1.0]{%
+  \begin{figure}[H]%
+    \centering%
+    \includegraphics[fbox, width=#1\textwidth]{figures/#2.pdf}%
+    \caption{#3}%
+    \label{fig:#2}%
+  \end{figure}%
+}
+
 \newcommand{\todo}[1]{\textit{#1}}
 \newenvironment{todoblock}{\itshape}{}
 \newcommand{\iic}{I\textsuperscript{2}C}
@@ -95,6 +110,15 @@
 \DeclareAcronym{air}{
   short = AIR,
   long = accumulator isolation relay
+}
+\DeclareAcronym{bms}{
+  short = BMS,
+  long = battery management system,
+  short-plural = es
+}
+\DeclareAcronym{can}{
+  short = CAN,
+  long = controller area network
 }
 \DeclareAcronym{tsal}{
   short = TSAL,
@@ -125,6 +149,8 @@
 
 \clearpage
 \tableofcontents
+\listoffigures
+\listoftables
 
 \chapter*{Acronyms}
 \addcontentsline{toc}{chapter}{Acronyms}
@@ -151,7 +177,7 @@
 \end{itemize}
 
 \chapter{Precharge}
-The precharge is a circuit responsible for charging the large capacitance of the inverter through a large precharge resistor in order to avoid a large current spike when the main \acp{air} close.
+The precharge is a circuit responsible for charging the large capacitance of the inverter through a precharge resistor in order to avoid a large current spike when the \acp{air} close, which could weld or otherwise damage them.
 It has a secondary function of sensing and outputting the \ac{air} and precharge relay intended and actual (mechanical) states to the \acg{tsal} logic.
 The key specifications of the precharge circuit are as follows:
 \begin{table}[H]
@@ -160,22 +186,94 @@ The key specifications of the precharge circuit are as follows:
     \hline
     \textbf{Specification} & \textbf{Value} \\
     \hline
-    Low voltage input & \SI{12}{\volt} \\
+    Low voltage input & \qty{12}{\V} \\
     \hline
-    High voltage input range & \SI{0}{\volt} -- \SI{500}{\volt} \\
+    High voltage input range & \qtyrange{36}{480}{\V} \\
     \hline
-    Precharge resistance & \SI{1}{\kilo\ohm} \\
+    Precharge resistance & \qty{1}{\kohm} \\
     \hline
-    Precharge time to 95\% @ \SI{300}{\volt} \& \SI{200}{\micro\farad} & \SI{600}{\milli\second} \\
+    Precharge time to 95\% @ \qty{300}{\V} \& \qty{200}{\uF} & \qty{600}{\ms} \\
     \hline
   \end{tabular}
   \caption{Precharge Specifications}
   \label{tbl:precharge-specs}
 \end{table}
 
-\section{Voltage Sensing}
+The main precharge operation is summarised in \cref{fig:precharge-hl}.
+Voltage from the battery goes through fuse \texttt{F1} and into one contact of the precharge relay \texttt{K1}, which is a dedicated relay for precharging -- rated for high inrush and high voltage, but (relatively) low continuous current \cite{omron:G9EJH}.
+When the relay closes, current flows from the battery to the tractive system (inverter) which allows its capacitance to be charged in a controlled manner via the precharge resistor \texttt{R1}, which is an anti-pulse resistor rated to withstand the initial high inrush power of precharging \cite{alpr1000}.
 
-\section{Relay Control}
+\addschematic[0.4]{precharge-hl}{High Level Precharge Operation}
+
+\section{Voltage Sensing}
+In order to ensure correct precharge operation, the precharge circuit must monitor the voltage before and after the precharge resistor, which are \texttt{SENSE1} and \texttt{SENSE2} in \cref{fig:precharge-hl}.
+This allows detection of any errors such as bad connections and welded relays, and ensures that the precharge completes to the correct voltage in a suitable timeframe.
+Since the \ac{bms} already monitors the battery voltage (net \texttt{ACC} in \cref{fig:precharge-hl}), the precharge circuit senses the input voltage just after the precharge relay, which doubles as the method of calculating the precharge relay's actual (mechanical) state (see \cref{sec:precharge-actual-state}).
+Whilst voltage on each side could be retrieved from the \ac{bms} and the inverter over \ac{can} bus, the precharge circuit monitors them both independently in order to to make its operation non-reliant on the \ac{can} network (other than the start command, which could be changed if desired), as well as to be in complete control of the sensing period and ensure that sampling of both voltages is performed at the same instant.
+
+\addschematic{precharge-voltage-sensing}{Precharge Voltage Sensing}
+
+\Cref{fig:precharge-voltage-sensing} shows the voltage sensing circuit based around the \texttt{AMC1351} isolated amplifier.
+The input high voltage enters a potential divider which divides the voltage by a ratio of:
+\begin{equation}
+  \frac{V_{in}}{V_{scaled}} = \frac{6 \cdot \qty{750}{\kohm} + \qty{47}{\kohm}}{\qty{47}{\kohm}} \approx 96.7
+\end{equation}
+The resistors of the potential divider are in a \texttt{1206} package to ensure they have a high voltage rating headroom.
+Since the \texttt{AMC1351} has a maximum operating input voltage of \qty{5}{\V}, this sets the upper limit on the high voltage input:
+\begin{equation}
+  V_{max} = \qty{5}{\V} \cdot 96.7 \approx \qty{483.5}{\V}
+\end{equation}
+The \texttt{AMC1351} has a linear transfer function with a gain of \qty[per-mode=symbol]{0.4}{\V\per\V}, meaning the input to output voltage relationship after single-ended conversion with the \texttt{TLV6002} op-amp is described by:
+\begin{equation}
+  V_{out} = \left(\frac{V_{in}}{96.7} \cdot 0.4 \right) + \qty{1.65}{\V}
+\end{equation}
+Since the \texttt{STM32F103} has 12 bits of ADC resolution up to \qty{3.3}{\V}, there are \(\frac{4096}{2} = 2048\) ADC counts in the output range of \qtyrange{1.65}{3.3}{\V}.
+Hence there is a high voltage resolution of:
+\begin{equation}
+  V_{res} = \frac{\qty{480}{\V}}{2048} \approx \qty{234}{\mV}
+\end{equation}
+
+Note that input side and output side power supplies of the \texttt{AMC1351} are completely isolated with separate grounds and a separate \texttt{+5VA} supply which comes from an on-board DC-DC switching converter.
+This keeps the high voltage input section separate from the logic.
+
+\section{Relay Control and States}
+\label{sec:precharge-actual-state}
+A comparator tapped from the divided input at \texttt{SENSE1} is used to provide the precharge relay's actual state using hardware only.
+\Cref{fig:precharge-actual-state} shows this circuit using a comparator on the high voltage side which feeds an optocoupler.
+The potential divider formed by \texttt{R1} and \texttt{R2} sets the threshold to:
+\begin{equation}
+  V = \frac{\qty{1.2}{\kohm}}{\qty{1.2}{\kohm} + \qty{18}{\kohm}} \cdot \qty{5}{\V} \cdot 96.7 \approx \qty{30.2}{\V}
+\end{equation}
+This defines the lower limit of the high voltage input as specified in \cref{tbl:precharge-specs}.
+The circuit is designed so that a low output indicates that the relay is closed, and a high output indicates that the relay is open.
+If the precharge relay is open, then \(- > +\) and the \texttt{LM393} pulls its output to ground, activating the optocoupler's LED and pulling the output high through the optotransistor.
+Otherwise if the relay is closed, or if the comparator or optocoupler are unpowered or otherwise not functioning, then the comparator's output is floating, the LED and transistor remain off, and \texttt{R5} pulls the output low.
+
+\addschematic{precharge-actual-state}{Precharge Relay Actual State Sensing}
+
+Diode \texttt{D3} shown in \cref{fig:precharge-hl} is used to ensure that any tractive system voltage doesn't affect the precharge relay actual state detection.
+At first, a Schottky diode looks attractive since a lower forward voltage causes less error when precharging.
+However the diode must be able to withstand the full reverse voltage of the tractive system (up to \qty{480}{\V}).
+In addition, the reverse leakage current must be low to avoiding introducing error in the accumulator side voltage measurement.
+Hence a \texttt{BYG20J} diode is used, which has a worst-case reverse leakage current of \qty{10}{\uA} \cite{vishay:BYG20J}.
+Using the Thévenin equivalent resistance of the high voltage input divider, calculated as:
+\begin{equation}
+  R_{th} = \frac{6 \cdot \qty{750}{\kohm} \cdot \qty{47}{\kohm}}{6 \cdot \qty{750}{\kohm} + \qty{47}{\kohm}} \approx \qty{46.51}{\kohm}
+\end{equation}
+The maximum voltage measurement error induced by the reverse leakage can then be calculated with:
+\begin{equation}
+  V_{error} = I_R R_{th} = \qty{10}{\uA} \cdot \qty{46.51}{\kohm} \approx \qty{465}{\mV}
+\end{equation}
+The maximum power dissipation of the diode can be calculated assuming maximum precharge current (from the highest allowed input voltage), and a reasonable estimate of the diode's forward voltage:
+\begin{equation}
+  P_{max} = \frac{\qty{480}{\V}}{\qty{1}{\kohm}} \cdot \qty{1.3}{\V} = \qty{624}{\mW}
+\end{equation}
+Which are both well within acceptable limits.
+
+\todo{Talk about isolated DC-DC and why it's powered from TSAL.}
+
+Actual state detection for the \acp{air} is much simpler since the secondary contacts can be used to infer the primary contact state.
+\todo{Add AIR driving circuit.}
 
 \section{TSAL Integration}
 
@@ -327,4 +425,5 @@ The following table describes the possible scenarios.
 \item How EV3.2.5 fits in with the current measurement of the master BMS.
 \end{itemize}
 
+\printbibliography
 \end{document}
