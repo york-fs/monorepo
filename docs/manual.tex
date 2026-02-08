@@ -8,16 +8,20 @@
 \usepackage{float}
 \usepackage{lastpage}
 \usepackage{mathtools}
-\usepackage{graphicx}
 \usepackage{siunitx}
 \usepackage{xcolor}
 
-\RequirePackage[backend=biber, style=ieee]{biblatex}
+% Bibliography and references.
+\usepackage[backend=biber, style=ieee]{biblatex}
 \addbibresource{manual.bib}
 
 % Set image directory.
 \usepackage{graphicx}
 \graphicspath{{images/}}
+
+% Diagrams.
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
 
 % Additional keys for graphics scaling, rotating, clipping, etc. exported to \includegraphics.
 \usepackage[export]{adjustbox}
@@ -65,6 +69,37 @@
 
 % Increase table and other array vertical padding.
 \renewcommand{\arraystretch}{1.25}
+
+% Tikz styles for flowcharts.
+\tikzset{
+  startstop/.style={
+    rectangle, rounded corners,
+    minimum width=3cm, minimum height=1cm,
+    align=center, draw=black, fill=green!30
+  },
+  process/.style={
+    rectangle,
+    minimum width=3cm, minimum height=1cm,
+    align=center, draw=black, fill=blue!15
+  },
+  decision/.style={
+    diamond, aspect=1.5,
+    minimum width=3cm, minimum height=1cm,
+    text width=3cm,
+    align=center, draw=black, fill=orange!30
+  },
+  note/.style={
+    rectangle, rounded corners, dashed,
+    text width=5cm, font=\footnotesize,
+    align=left, draw=black, fill=gray!10
+  },
+  arrow/.style={
+    thick, ->, >=stealth
+  },
+  note arrow/.style={
+    dashed, -, thin
+  }
+}
 
 \usepackage{titlesec}
 \titleformat{\chapter}{\normalfont\huge\bfseries}{\thechapter}{1em}{}
@@ -119,6 +154,10 @@
 \DeclareAcronym{can}{
   short = CAN,
   long = controller area network
+}
+\DeclareAcronym{ts}{
+  short = TS,
+  long = tractive system
 }
 \DeclareAcronym{tsal}{
   short = TSAL,
@@ -182,7 +221,7 @@ It has a secondary function of sensing and outputting the \ac{air} and precharge
 The key specifications of the precharge circuit are as follows:
 \begin{table}[H]
   \centering
-  \begin{tabular}{|l|l|}
+  \begin{tabular}{|l|c|}
     \hline
     \textbf{Specification} & \textbf{Value} \\
     \hline
@@ -209,7 +248,7 @@ When the relay closes, current flows from the battery to the tractive system (in
 In order to ensure correct precharge operation, the precharge circuit must monitor the voltage before and after the precharge resistor, which are \texttt{SENSE1} and \texttt{SENSE2} in \cref{fig:precharge-hl}.
 This allows detection of any errors such as bad connections and welded relays, and ensures that the precharge completes to the correct voltage in a suitable timeframe.
 Since the \ac{bms} already monitors the battery voltage (net \texttt{ACC} in \cref{fig:precharge-hl}), the precharge circuit senses the input voltage just after the precharge relay, which doubles as the method of calculating the precharge relay's actual (mechanical) state (see \cref{sec:precharge-actual-state}).
-Whilst voltage on each side could be retrieved from the \ac{bms} and the inverter over \ac{can} bus, the precharge circuit monitors them both independently in order to to make its operation non-reliant on the \ac{can} network (other than the start command, which could be changed if desired), as well as to be in complete control of the sensing period and ensure that sampling of both voltages is performed at the same instant.
+Whilst voltage on each side could be retrieved from the \ac{bms} and the inverter over \ac{can} bus, the precharge circuit monitors them both independently in order to to make its operation non-reliant on the \ac{can} network (other than the start procedure, which could be changed if desired), as well as to be in complete control of the sensing period and ensure that sampling of both voltages is performed at the same instant.
 
 \addschematic{precharge-voltage-sensing}{Precharge Voltage Sensing}
 
@@ -275,9 +314,189 @@ Which are both well within acceptable limits.
 Actual state detection for the \acp{air} is much simpler since the secondary contacts can be used to infer the primary contact state.
 \todo{Add AIR driving circuit.}
 
-\section{TSAL Integration}
-
 \section{State Machine}
+The precharge software uses a finite state machine.
+\Cref{fig:precharge-states} shows an overview of the various states.
+The error state is currently non-leavable and the process must be reset by cycling low voltage power.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=1cm]
+    \begin{scope}[local bounding box=Main]
+      \node (precheck) [startstop] at (0, 0) {Precheck};
+      \node (standby) [process, below=of precheck] {Standby};
+      \node (precharge) [process, below=of standby] {Precharge};
+      \node (precharge-hold) [process, below=of precharge] {Precharge Hold};
+      \node (active) [process, below=of precharge-hold] {Active};
+    \end{scope}
+    \useasboundingbox (Main.north west) rectangle (Main.south east);
+    \node (error) [process, left=1cm of precharge, fill=red!30] {Error};
+
+    \draw [arrow] (precheck) -- (standby);
+    \draw [arrow] (standby) -- (precharge);
+    \draw [arrow] (precharge) -- (precharge-hold);
+    \draw [arrow] (precharge-hold) -- (active);
+    % \draw [arrow] (active.east) to[out=0, in=0] (precheck.east);
+    \draw [arrow] (precheck.west) to[out=180, in=90] (error.north);
+    \draw [arrow] (precharge.west) -- (error.east);
+    \draw [arrow] (active.west) to[out=180, in=270] (error.south);
+  \end{tikzpicture}
+  \caption{Precharge State Machine}
+  \label{fig:precharge-states}
+\end{figure}
+
+\Cref{tbl:precharge-relay-states} shows the intended relay states for each of the states.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    \textbf{State} & \textbf{Discharge} & \textbf{AIR-} & \textbf{AIR+} & \textbf{Precharge} \\
+    \hline
+    Precheck/Standby/Error & Closed & Open & Open & Open \\
+    \hline
+    Precharge & Open & Closed & Open & Closed \\
+    \hline
+    Precharge Hold & Open & Closed & Closed & Closed \\
+    \hline
+    Active & Open & Closed & Closed & Open \\
+    \hline
+  \end{tabular}
+  \caption{Precharge Relay States}
+  \label{tbl:precharge-relay-states}
+\end{table}
+
+\subsection{Precheck}
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm]
+    \begin{scope}[local bounding box=Main]
+      \node (start) [startstop] {Precheck};
+      \node (open-all) [process, below=of start] {Open all relays};
+      \node (check-actual) [decision, below=of open-all, font=\footnotesize, minimum width=5cm] {Are all relay actual states open?};
+      \node (check-acc) [decision, below=of check-actual, minimum width=5cm] {Is \(V_{acc} = \qty{0}{\V}\)?};
+      \node (wait-discharge) [process, below=of check-acc] {Wait for discharge (\(V_{ts} = \qty{0}{\V}\))};
+      \node (move-standby) [process, below=of wait-discharge] {Move to standby state};
+    \end{scope}
+    \useasboundingbox (Main.north west) rectangle (Main.south east);
+    \node (open-all-note) [note, right=of open-all] {This ensures the discharge relay is closed by opening the MCU shutdown relay};
+    \node (check-actual-error) [process, left=1cm of check-actual, fill=red!30] {Move to error state};
+    \node (check-acc-error) [process, left=1cm of check-acc, fill=red!30] {Move to error state};
+    \draw [arrow] (start) -- (open-all);
+    \draw [note arrow] (open-all) -- (open-all-note);
+    \draw [arrow] (open-all) -- (check-actual);
+    \draw [arrow] (check-actual) -- node[anchor=south] {no} (check-actual-error);
+    \draw [arrow] (check-actual) -- node[anchor=west] {yes} (check-acc);
+    \draw [arrow] (check-acc) -- node[anchor=south] {no} (check-acc-error);
+    \draw [arrow] (check-acc) -- node[anchor=west] {yes} (wait-discharge);
+    \draw [arrow] (wait-discharge) -- (move-standby);
+  \end{tikzpicture}
+  \caption{Precheck Flow}
+  \label{fig:precheck-flow}
+\end{figure}
+
+\subsection{Standby}
+The standby state currently just waits for established communication with the \ac{bms} in order to crosscheck precharge voltage (\(V_{acc}\)) against the battery voltage.
+In the future, this could be extended to wait for a start request over \ac{can}, along with a non-latching error state.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm]
+    \node (start) [startstop] {Standby};
+    \node (wait-can) [process, below=of start] {Wait for \ac{bms} voltage over \ac{can}};
+    \node (move) [process, below=of wait-can] {Move to precharge state};
+    \draw [arrow] (start) -- (wait-can);
+    \draw [arrow] (wait-can) -- (move);
+  \end{tikzpicture}
+  \caption{Standby Flow}
+  \label{fig:standby-flow}
+\end{figure}
+
+\subsection{Precharge}
+The precharge state is responsible for monitoring the tractive system voltage as the precharge relay is closed.
+Note that the relay actual states are not checked here since that is deemed the job of the \ac{tsal} for the most part.
+Any relay failure should be detected by the voltage measurement.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm]
+    \begin{scope}[local bounding box=Main]
+      \node (start) [startstop] {Precharge};
+      \node (close-mcu) [process, below=of start] {Close MCU shutdown relay};
+      \node (check-shutdown) [decision, below=of close-mcu, font=\footnotesize] {Is shutdown ready?};
+      \node (close-precharge) [process, below=of check-shutdown] {Close AIR- and precharge};
+      \node (wait-precharge) [process, below=of close-precharge] {Wait \qty{30}{\ms} for relay close};
+      \node (check-acc) [decision, below=of wait-precharge, font=\small] {Is \(V_{acc}\) in range?};
+      \node (calculate) [process, below=of check-acc] {Calculate the expected \(V_{ts}\) for\\ the current instant};
+      \node (check-ts) [decision, below=of calculate, font=\small] {Is \(V_{ts}\) in range?};
+      \node (check-done) [decision, below=of check-ts, font=\small] {Is precharge done?};
+      \node (move-hold) [process, below=of check-done] {Move to precharge hold state};
+    \end{scope}
+    \useasboundingbox (Main.north west) rectangle (Main.south east);
+    \node (check-shutdown-error) [process, left=1cm of check-shutdown, fill=red!30] {Move to error state};
+    \node (check-acc-error) [process, left=1cm of check-acc, fill=red!30] {Move to error state};
+    \node (check-ts-error) [process, left=1cm of check-ts, fill=red!30] {Move to error state};
+    \draw [arrow] (start) -- (close-mcu);
+    \draw [arrow] (close-mcu) -- (check-shutdown);
+    \draw [arrow] (check-shutdown) -- node[anchor=south] {no} (check-shutdown-error);
+    \draw [arrow] (check-shutdown) -- node[anchor=west] {yes} (close-precharge);
+    \draw [arrow] (close-precharge) -- (wait-precharge);
+    \draw [arrow] (wait-precharge) -- (check-acc);
+    \draw [arrow] (check-acc) -- node[anchor=south] {no} (check-acc-error);
+    \draw [arrow] (check-acc) -- node[anchor=west] {yes} (calculate);
+    \draw [arrow] (calculate) -- (check-ts);
+    \draw [arrow] (check-ts) -- node[anchor=south] {no} (check-ts-error);
+    \draw [arrow] (check-ts) -- node[anchor=west] {yes} (check-done);
+    \draw [arrow] (check-done.east) to[out=0, in=0] node[anchor=west] {no} (check-acc.east);
+    \draw [arrow] (check-done) -- node[anchor=west] {yes} (move-hold);
+  \end{tikzpicture}
+  \caption{Precharge Flow}
+  \label{fig:precharge-flow}
+\end{figure}
+
+\subsection{Precharge Hold}
+The precharge hold state ensures a smooth transition between the precharge relay opening and the positive AIR closing, by adding a period of overlap between them.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm]
+    \node (start) [startstop] {Precharge Hold};
+    \node (close) [process, below=of start] {Close AIR+};
+    \node (delay) [process, below=of close] {Wait for \qty{500}{\ms}};
+    \node (open) [process, below=of delay] {Open precharge};
+    \node (move-active) [process, below=of open] {Move to active state};
+    \draw [arrow] (start) -- (close);
+    \draw [arrow] (close) -- (delay);
+    \draw [arrow] (delay) -- (open);
+    \draw [arrow] (open) -- (move-active);
+  \end{tikzpicture}
+  \caption{Precharge Hold Flow}
+  \label{fig:precharge-hold-flow}
+\end{figure}
+
+\subsection{Active}
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm]
+    \begin{scope}[local bounding box=Main]
+      \node (start) [startstop] {Active};
+      \node (check) [decision, below=of start, font=\footnotesize] {Is shutdown still ok?};
+      \node (move-error) [process, below=of check, fill=red!30] {Move to error state};
+    \end{scope}
+    \useasboundingbox (Main.north west) rectangle (Main.south east);
+    \draw [arrow] (start) -- (check);
+    \draw [arrow] (check) -- node[anchor=west] {no} (move-error);
+    \draw [arrow] (check.west) to[out=180, in=180] node[anchor=east] {yes} (start.west);
+  \end{tikzpicture}
+  \caption{Active Flow}
+  \label{fig:active-flow}
+\end{figure}
+
+\section{Precharge Operation}
+
+\subsection{Normal Operation}
+
+\section{Failure Modes}
 
 \section{CAN Communication}
 

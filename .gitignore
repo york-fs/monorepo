@@ -3,12 +3,18 @@
 
 # Latex.
 /docs/*.aux
+/docs/*.bbl
+/docs/*.bcf
+/docs/*.blg
 /docs/*.fdb_latexmk
 /docs/*.fls
 /docs/*.hst
+/docs/*.lof
 /docs/*.log
+/docs/*.lot
 /docs/*.out
 /docs/*.pdf
+/docs/*.run.xml
 /docs/*.toc
 /docs/*.ver
 
