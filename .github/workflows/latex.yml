@@ -2,6 +2,9 @@ name: LaTeX
 on:
   workflow_call:
     inputs:
+      directory:
+        required: true
+        type: string
       name:
         required: true
         type: string
@@ -15,11 +18,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run latexmk
-        working-directory: ./docs
+        working-directory: ${{ inputs.directory }}
         run: latexmk -pdflua -silent ${{ inputs.name }}
 
       - name: Upload PDF
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}
-          path: docs/${{ inputs.name }}.pdf
+          path: ${{ inputs.directory }}/${{ inputs.name }}.pdf

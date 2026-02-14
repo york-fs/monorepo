@@ -29,4 +29,5 @@ jobs:
     name: Build LaTeX Manual
     uses: ./.github/workflows/latex.yml
     with:
+      directory: manual
       name: manual
