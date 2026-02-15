@@ -9,6 +9,7 @@
 \usepackage{lastpage}
 \usepackage{mathtools}
 \usepackage{siunitx}
+\usepackage{tabularx}
 \usepackage{xcolor}
 
 % Bibliography and references.
@@ -146,6 +147,10 @@
   short = AIR,
   long = accumulator isolation relay
 }
+\DeclareAcronym{bspd}{
+  short = BSPD,
+  long = brake system plausibility device
+}
 \DeclareAcronym{bms}{
   short = BMS,
   long = battery management system,
@@ -163,6 +168,9 @@
   short = TSAL,
   long = tractive system active light
 }
+
+% Amp-hour unit.
+\DeclareSIUnit{\Ah}{Ah}
 
 \begin{document}
 \pagenumbering{roman}
@@ -207,15 +215,53 @@
 \clearpage
 \pagenumbering{arabic}
 
-\chapter{Accumulator Design}
-\begin{itemize}
-\item Uses Molicel-P30B 18650 3 Ah cells
-\item Subdivided into five segments
-\item Each segment is made up of a cell configuration of 24s4p
-\item Which results in a maximum segment voltage of 100.8 volts and segment energy of around 4.3 MJ, which is compliant with EV5.3.2
-\end{itemize}
+\chapter{System Overview}
+\todo{Short description of the system's concept.}
+\todo{Block diagram of major components.}
+\todo{Motor and inverter.}
 
-\chapter{Precharge}
+\begin{table}[H]
+  \centering
+  \begin{tabularx}{\textwidth}{|X|X|X|X|X|X|X|X|}
+    \hline
+    \textbf{LVS voltage} & \textbf{Battery configuration} & \textbf{Battery capacity} & \textbf{Nominal TS voltage} & \textbf{Maximum \acs{ts} voltage} & \textbf{Maximum \acs{ts} current} & \textbf{Motor} & \textbf{Peak motor power} \\
+    \hline
+    \qty{12}{\V} & 14s5p NMC & \qty{22.5}{\Ah} & \qty{302.4}{\V} & \qty{352.8}{\V} & \qty{225}{\A} & Emrax 228 MV & \qty{79.38}{\kW} \\
+    \hline
+  \end{tabularx}
+  \caption{System Specifications}
+  \label{tbl:system-specs}
+\end{table}
+
+\section{Tractive System Activation}
+
+\section{Measurement Points}
+
+\chapter{Battery Design}
+\section{Segment Design}
+\section{Cooling}
+
+\chapter{Shutdown Circuit}
+\todo{Block diagram of the overall shutdown circuit.}
+\todo{Information on AIRs.}
+
+\section{Insulation Monitoring}
+\todo{Bender IMD specifications.}
+
+\section{Inertia Switch}
+\section{Latching}
+\todo{Talk about single-ended shutdown signal from BMS and IMD latching to a board outside the TSAC.}
+\todo{Describe reset method.}
+
+\section{Brake Over-Travel Switch}
+\section{High Voltage Disconnect}
+\section{Interlocks}
+\todo{Additional interlocks on HVD, main HV connectors, inverter.}
+
+\chapter{Brake System Plausibility Device}
+The \acf{bspd} is a major component of the shutdown circuit and gets its own chapter due its complexity.
+
+\chapter{Precharge and Discharge}
 The precharge is a circuit responsible for charging the large capacitance of the inverter through a precharge resistor in order to avoid a large current spike when the \acp{air} close, which could weld or otherwise damage them.
 It has a secondary function of sensing and outputting the \ac{air} and precharge relay intended and actual (mechanical) states to the \acg{tsal} logic.
 The key specifications of the precharge circuit are as follows:
@@ -493,12 +539,17 @@ The precharge hold state ensures a smooth transition between the precharge relay
 \end{figure}
 
 \section{Precharge Operation}
+\todo{Plots and schematics of each possible scenario.}
 
 \subsection{Normal Operation}
 
 \section{Failure Modes}
 
 \section{CAN Communication}
+
+\chapter{Tractive System Active Light}
+\todo{Schematics of LED, logic and HVD boards.}
+\todo{Describe UPS power.}
 
 \chapter{Battery Management System}
 The Battery Management System (BMS) is an integral part of the overall accumulator design of the YFS car, which implements a distributed design.
@@ -643,6 +694,10 @@ The following table describes the possible scenarios.
 \item How to power the main BMS board.
 \item How EV3.2.5 fits in with the current measurement of the master BMS.
 \end{itemize}
+
+\chapter{Charging}
+
+\chapter{Telemetry}
 
 \printbibliography
 \end{document}
