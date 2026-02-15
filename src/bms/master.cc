@@ -71,7 +71,12 @@ constexpr std::int8_t k_overtemperature_threshold_limit = 100;
 /**
  * @brief Hard-coded value of the on-board precision voltage reference in 100 uV resolution.
  */
-constexpr std::uint16_t k_reference_voltage = 40960;
+constexpr std::uint16_t k_adc_vref = 40960;
+
+/**
+ * @brief Hard-coded value of the 3V3 rail powering the STM's ADC in 1 mV resolution.
+ */
+constexpr std::uint32_t k_mcu_vref = 3300;
 
 /**
  * @brief Configuration header magic number.
@@ -178,7 +183,6 @@ std::array<Segment, k_max_segment_count> s_segments;
 SemaphoreHandle_t s_segments_mutex;
 
 // Sampled values.
-std::uint16_t s_vdd_voltage = 0;
 std::uint16_t s_lvs_voltage = 0;
 std::uint16_t s_ref_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
@@ -564,34 +568,29 @@ void sample_segments_task(void *) {
 }
 
 void sample_mcu_task(void *) {
-    // Sequence the LVS voltage reading as well as the STM's internal temperature sensor and voltage reference.
-    hal::adc_init(ADC1, 4);
+    // Sequence the LVS voltage reading, external reference voltage, and the STM's internal temperature sensor.
+    hal::adc_init(ADC1, 3);
     hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
     hal::adc_sequence_channel(ADC1, 2, 7, 0b010u);
     hal::adc_sequence_channel(ADC1, 3, 16, 0b111u);
-    hal::adc_sequence_channel(ADC1, 4, 17, 0b111u);
 
-    std::array<std::uint16_t, 4> adc_buffer{};
+    std::array<std::uint16_t, 3> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
     s_last_mcu_sample_time = xTaskGetTickCount();
     while (true) {
-        // Calculate VDD rail voltage from the STM's internal 1.2 volt band gap reference.
-        const auto vdd = (1200 * 4096) / adc_buffer[3];
-
         // Calculate LVS input voltage. The input has a 5.3x divider.
-        const auto lvs_voltage = (((vdd * adc_buffer[0]) >> 12) * 53) / 10;
+        const auto lvs_voltage = (((k_mcu_vref * adc_buffer[0]) >> 12) * 53) / 10;
 
         // Calculate REF voltage. The input has a 2x divider.
-        const auto ref_voltage = ((vdd * adc_buffer[1]) >> 12) * 2;
+        const auto ref_voltage = ((k_mcu_vref * adc_buffer[1]) >> 12) * 2;
 
         // Calculate an approximate temperature using constants from the datasheet.
-        const auto temperature_voltage = (vdd * adc_buffer[2]) >> 12;
+        const auto temperature_voltage = (k_mcu_vref * adc_buffer[2]) >> 12;
         const auto temperature = ((1430 - temperature_voltage) * 10) / 43 + 25;
 
         // Update global values.
         xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
-        s_vdd_voltage = vdd;
         s_lvs_voltage = lvs_voltage;
         s_ref_voltage = ref_voltage;
         s_mcu_temperature = temperature;
@@ -616,7 +615,6 @@ void swd_task(void *) {
 
         xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
-        hal::swd_printf("MCU voltage: %u\n", s_vdd_voltage);
         hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
         xSemaphoreGive(s_mcu_mutex);
