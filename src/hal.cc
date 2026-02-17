@@ -35,6 +35,7 @@ GPIO_TypeDef *gpio_port(GpioPort port) {
 template <typename Predicate>
 bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
     // Start TIM2 with a 1 ms period.
+    __disable_irq();
     TIM2->PSC = (hal_low_power() ? 800 : 5600) - 1;
     TIM2->ARR = 10 - 1;
     TIM2->CNT = 0;
@@ -48,6 +49,7 @@ bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
         }
     }
     TIM2->CR1 = 0;
+    __enable_irq();
     return predicate();
 }
 
@@ -228,6 +230,7 @@ std::uint32_t crc_compute(std::span<const std::uint8_t> data) {
 
 void delay_us(std::size_t us) {
     // Use a 2 us tick rate on 8 MHz to mitigate the slowness of the loop.
+    __disable_irq();
     TIM2->PSC = (hal_low_power() ? 8 : 28) - 1;
     TIM2->ARR = 1;
     TIM2->CNT = 0;
@@ -243,6 +246,7 @@ void delay_us(std::size_t us) {
         TIM2->SR = 0;
     }
     TIM2->CR1 = 0;
+    __enable_irq();
 }
 
 void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
