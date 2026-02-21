@@ -20,34 +20,56 @@ nanopb_generate_cpp(TARGET protodef "${CMAKE_SOURCE_DIR}/protodef/vehicle_data.p
 
 set(STM_LD_SCRIPT "${CMAKE_SOURCE_DIR}/system/STM32F103C8TX_FLASH.ld")
 
-function(add_stm_executable name frequency)
-    add_executable(${name} ${ARGN})
-    target_link_libraries(${name} PRIVATE protodef shared-stm)
+function(add_stm_executable target)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "CLOCK;FREERTOS" "SOURCES")
+    if(NOT DEFINED arg_CLOCK)
+        set(arg_CLOCK 56)
+    endif()
 
-    # Rebuild on any linker script changes.
-    set_target_properties(${name} PROPERTIES LINK_DEPENDS "${STM_LD_SCRIPT}")
+    add_executable(${target} "${arg_SOURCES}")
+    target_link_libraries(${target} PRIVATE stm-base)
 
     if(CMAKE_SIZE)
-        add_custom_command(TARGET ${name}
-            POST_BUILD COMMAND "${CMAKE_SIZE}" ${name})
+        add_custom_command(TARGET ${target}
+            POST_BUILD COMMAND "${CMAKE_SIZE}" ${target})
     endif()
 
     if(CMAKE_OBJCOPY)
-        add_custom_command(TARGET ${name}
-            POST_BUILD COMMAND "${CMAKE_OBJCOPY}" -O binary ${name} ${name}.bin)
+        add_custom_command(TARGET ${target}
+            POST_BUILD COMMAND "${CMAKE_OBJCOPY}" -O binary ${target} ${target}.bin)
     endif()
 
     if(CMAKE_OBJCOPY AND ST_FLASH_PROGRAM)
-        add_custom_target(flash-${name} ${ST_FLASH_PROGRAM} --reset --connect-under-reset write ${name}.bin 0x8000000)
-        add_dependencies(flash-${name} ${name})
+        add_custom_target(flash-${target} ${ST_FLASH_PROGRAM} --reset --connect-under-reset write ${target}.bin 0x8000000)
+        add_dependencies(flash-${target} ${target})
     endif()
 
     # Add a trace target for SWD output.
     if(ST_TRACE_PROGRAM)
-        add_custom_target(trace-${name}
-            ${ST_TRACE_PROGRAM} -c${frequency}
+        add_custom_target(trace-${target}
+            ${ST_TRACE_PROGRAM} -c${arg_CLOCK}
             USES_TERMINAL)
-        add_dependencies(trace-${name} flash-${name})
+        add_dependencies(trace-${target} flash-${target})
+    endif()
+
+    if(DEFINED arg_FREERTOS)
+        configure_file(${arg_FREERTOS} ${target}-include/FreeRTOSConfig.h)
+        add_library(${target}-freertos OBJECT
+            ${CMAKE_SOURCE_DIR}/freertos/croutine.c
+            ${CMAKE_SOURCE_DIR}/freertos/event_groups.c
+            ${CMAKE_SOURCE_DIR}/freertos/list.c
+            ${CMAKE_SOURCE_DIR}/freertos/queue.c
+            ${CMAKE_SOURCE_DIR}/freertos/stream_buffer.c
+            ${CMAKE_SOURCE_DIR}/freertos/tasks.c
+            ${CMAKE_SOURCE_DIR}/freertos/timers.c
+            ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3/port.c
+            ${CMAKE_SOURCE_DIR}/freertos/portable/MemMang/heap_4.c)
+        target_compile_options(${target}-freertos PRIVATE -w)
+        target_include_directories(${target}-freertos PUBLIC
+            ${CMAKE_SOURCE_DIR}/freertos/include
+            ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3
+            ${CMAKE_CURRENT_BINARY_DIR}/${target}-include)
+        target_link_libraries(${target} PRIVATE ${target}-freertos)
     endif()
 endfunction()
 
@@ -89,26 +111,27 @@ if(BUILD_TARGET STREQUAL "host")
     target_link_libraries(tests PRIVATE GTest::Main shared)
     gtest_discover_tests(tests)
 elseif(BUILD_TARGET STREQUAL "stm32")
-    # Create a library for shared STM code.
-    add_library(shared-stm STATIC
-        src/can.cc
-        src/eeprom.cc
+    # Create a library for the shared base STM code.
+    add_library(stm-base STATIC
         src/hal.cc
-        src/max_adc.cc
         src/miniprintf.c
         system/startup_stm32f103c8tx.s)
-    target_include_directories(shared-stm SYSTEM PUBLIC system)
-    target_link_libraries(shared-stm PUBLIC nanopb shared)
-    target_link_options(shared-stm PUBLIC -T "${STM_LD_SCRIPT}")
+    target_include_directories(stm-base SYSTEM PUBLIC system)
+    target_link_libraries(stm-base PUBLIC nanopb shared)
+    target_link_options(stm-base PUBLIC -T "${STM_LD_SCRIPT}")
 
-    add_stm_executable(apps 56 src/apps.cc)
-    add_stm_executable(bms 8 src/bms.cc)
-    add_stm_executable(bms_master 56 src/bms_master.cc)
-    add_stm_executable(bms-master 56 src/bms/master.cc)
-    add_stm_executable(logging_board 56 src/logging_board.cc)
-    add_stm_executable(precharge 56 src/precharge/precharge.cc)
-    target_add_freertos(bms-master src/bms/freertos_config.h)
-    target_add_freertos(precharge src/precharge/freertos_config.h)
+    add_stm_executable(bms-segment
+        SOURCES src/bms.cc src/max_adc.cc
+        CLOCK 8)
+    add_stm_executable(bms-master
+        SOURCES src/bms/master.cc src/can.cc src/max_adc.cc
+        FREERTOS src/bms/freertos_config.h)
+    add_stm_executable(logging-board
+        SOURCES src/logging_board.cc)
+    add_stm_executable(precharge
+        SOURCES src/precharge/precharge.cc
+        FREERTOS src/precharge/freertos_config.h)
+    target_link_libraries(logging-board PRIVATE protodef)
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
