@@ -1,6 +1,9 @@
 #pragma once
 
+#include <util.hh>
+
 #include <array>
+#include <cassert>
 #include <concepts>
 #include <cstdint>
 #include <optional>
@@ -8,6 +11,21 @@
 #include <variant>
 
 namespace can {
+
+template <typename T>
+concept HasId = requires {
+    { T::packet_id() } -> std::same_as<std::uint32_t>;
+} && T::packet_id() < 0x3ffff;
+
+template <typename T>
+concept Decodable = HasId<T> && requires(util::Stream &stream) {
+    { T::decode(stream) } -> std::same_as<std::optional<T>>;
+};
+
+template <typename T>
+concept Encodable = HasId<T> && requires(T message, util::Stream &stream) {
+    { message.encode(stream) } -> std::same_as<bool>;
+};
 
 /**
  * @brief The GPIO ports which can be used for the CAN lines.
@@ -74,7 +92,7 @@ using ExtendedIdentifier = BaseIdentifier<1, std::uint32_t>;
 /**
  * @brief CAN frame identifier variant.
  */
-using Identifier = std::variant<StandardIdentifier, ExtendedIdentifier>;
+using Identifier = std::variant<std::monostate, StandardIdentifier, ExtendedIdentifier>;
 
 /**
  * @brief A struct which represents an encoded CAN frame.
@@ -107,19 +125,38 @@ struct Frame {
     bool is_extended() const { return std::holds_alternative<ExtendedIdentifier>(identifier); }
 };
 
-/**
- * @brief CAN FIFO callback function type.
- */
-using fifo_callback_t = void (*)(const Frame &);
+struct Stats {
+    std::uint32_t rx_count;
+    std::uint32_t tx_count;
+    std::uint32_t lost_rx_count;
+    std::uint32_t lost_tx_count;
+};
 
 /**
- * @brief Initialises the CAN1 peripheral to the given bus speed. Assumes a 28 MHz APB1 clock.
+ * @brief CAN received frame callback function type.
+ */
+using rx_callback_t = void (*)(const Frame &);
+
+/**
+ * @brief Initialises the CAN1 peripheral to the given bus speed and starts the transmission task. Assumes a 28 MHz APB1
+ * clock.
  *
  * @param port the pin pair to use as RX and TX
  * @param speed the bus speed to use
+ * @param task_priority the priority to use for the transmission task
+ * @param tx_queue_size the size of the queue to make for holding pending transmissions
  * @return true if initialisation was successful; false otherwise
  */
-[[nodiscard]] bool init(Port port, Speed speed);
+void init(Port port, Speed speed, std::uint32_t task_priority, std::uint32_t tx_queue_size);
+
+/**
+ * @brief Sets the given callback to be called when a message is pending on the given FIFO and filter index.
+ *
+ * @param fifo the FIFO index; must be 0 or 1
+ * @param filter the filter index; must be in the range [0, 13]
+ * @param callback the callback to set
+ */
+void set_rx_callback(std::uint8_t fifo, std::uint8_t filter, rx_callback_t callback);
 
 /**
  * @brief Configures and enables the specified CAN filter to route incoming frames to the specified FIFO index. A
@@ -131,24 +168,27 @@ using fifo_callback_t = void (*)(const Frame &);
  * Incoming standard frames are structured as follows:
  *   STID[10:0] | 0[17:0] | IDE | RTR | 0
  *
- * @param filter the filter index to configure; must be in the range [0, 13]
  * @param fifo the FIFO index; must be 0 or 1
+ * @param filter the filter index to configure; must be in the range [0, 13]
  * @param mask the bitmask to be applied to the incoming frame (bitwise AND)
  * @param value the expected value to which the incoming frame is compared to, after masking
  */
-void route_filter(std::uint8_t filter, std::uint8_t fifo, std::uint32_t mask, std::uint32_t value);
-
-/**
- * @brief Sets the given callback to be called from the message pending interrupt of the specified FIFO index.
- */
-void set_fifo_callback(std::uint8_t index, fifo_callback_t callback);
+void route_filter(std::uint8_t fifo, std::uint8_t filter, std::uint32_t mask, std::uint32_t value);
 
 /**
  * @brief Queues the given frame for transmission on the CAN bus.
- *
- * @return true if the frame was successfully placed into a free FIFO; false otherwise
  */
-bool transmit(const Frame &frame);
+void queue_frame(const Frame &frame);
+
+/**
+ * @return true if the CAN peripheral is online and not in a bus off state.
+ */
+bool is_online();
+
+/**
+ * @return reception and transmission stats since boot.
+ */
+Stats get_stats();
 
 /**
  * @brief Builds a CAN frame from the given identifier and an array of data bytes. The number of bytes will be truncated
@@ -179,6 +219,95 @@ inline Frame build_standard(StandardIdentifier identifier, std::span<const std::
  */
 inline Frame build_extended(ExtendedIdentifier identifier, std::span<const std::uint8_t> data) {
     return build_raw(identifier, data);
+}
+
+/**
+ * @brief Decodes a without checking node or packet IDs.
+ *
+ * @param frame the frame to decode
+ * @return a T if successful; otherwise std::nullopt if the stream decoding failed
+ */
+template <Decodable T>
+std::optional<T> decode_fast(const Frame &frame) {
+    util::Stream stream(std::span(const_cast<Frame &>(frame).data.data(), frame.length));
+    return T::decode(stream);
+}
+
+/**
+ * @brief Decodes a frame.
+ *
+ * @param node_id the expected node ID
+ * @param frame the frame to decode
+ * @return a T if successful; otherwise std::nullopt if the node or packet ID didn't match, or stream decoding failed
+ */
+template <Decodable T>
+std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
+    if (!frame.is_extended()) {
+        return std::nullopt;
+    }
+    const auto ext_id = frame.extended_id();
+    if ((ext_id & 0xff) != node_id) {
+        return std::nullopt;
+    }
+    const auto packet_id = (ext_id >> 8) & 0x3ffff;
+    if (packet_id != T::packet_id()) {
+        return std::nullopt;
+    }
+    return decode_fast<T>(frame);
+}
+
+/**
+ * @brief Builds a CAN frame from the given encodable data object and queues it for placement into a transmission
+ * mailbox. The transmitted frame has a 29-bit extended identifier with the following format:
+ *   PRIO[2:0] | PACKET_ID[17:0] | NODE_ID[7:0]
+ *
+ * Priority is ascending, unlike in the final CAN frame format, meaning 0 has the lowest arbitration priority, and
+ * 7 has the highest priority.
+ *
+ * @param node_id 8-bit node ID
+ * @param data the data payload to encode into the frame
+ * @param priority 3-bit frame priority for arbitration
+ */
+template <Encodable T>
+void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::default_priority()) {
+    // Invert the priority direction since 0 is highest priority in CAN.
+    priority = ~priority & 0b111u;
+
+    // Build extended identifier with 3 bits of priority, 18 bits of packet ID, and 8 bits of source node ID.
+    const auto ext_id =
+        (static_cast<std::uint32_t>(priority) << 26) | (static_cast<std::uint32_t>(T::packet_id()) << 8) | node_id;
+    Frame frame{
+        .identifier{ExtendedIdentifier(ext_id)},
+    };
+
+    // Try to encode the data into the frame's data array.
+    util::Stream stream(frame.data);
+    if (data.encode(stream)) {
+        frame.length = static_cast<std::uint8_t>(stream.head());
+        queue_frame(frame);
+    } else {
+        assert(false);
+    }
+}
+
+/**
+ * @brief Sets up a reception filter to listen for the given packet in a frame with the given node ID.
+ *
+ * @param node_id the node ID to listen for
+ * @param fifo the FIFO index to route to; must be 0 or 1
+ * @param filter the filter index; must be in the range [0, 13]
+ */
+template <HasId T, void (*Callback)(const T &)>
+void listen(std::uint8_t node_id, std::uint8_t fifo, std::uint8_t filter) {
+    const auto expected =
+        (static_cast<std::uint32_t>(T::packet_id()) << 11) | (static_cast<std::uint32_t>(node_id) << 3) | 0b100u;
+    route_filter(fifo, filter, 0x1fffffff, expected);
+    set_rx_callback(
+        fifo, filter, +[](const Frame &frame) {
+            if (const auto decoded = decode_fast<T>(frame)) {
+                Callback(*decoded);
+            }
+        });
 }
 
 } // namespace can
