@@ -280,7 +280,7 @@ void i2c_init(I2C_TypeDef *i2c, std::optional<std::uint8_t> own_address) {
 }
 
 static bool i2c_wait_af(I2C_TypeDef *i2c, std::uint32_t flag) {
-    return hal::wait_until(1, [&] {
+    return hal::wait_until(2, [&] {
         return (i2c->SR1 & (I2C_SR1_AF | flag)) != 0u;
     });
 }
