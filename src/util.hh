@@ -23,17 +23,18 @@ constexpr auto to_underlying(E value) {
 
 template <enum_concept T>
 class FlagBitset {
+public:
     using type_t = std::underlying_type_t<T>;
     static_assert(std::is_integral_v<type_t> && std::is_unsigned_v<type_t>);
 
 private:
     type_t m_value;
 
-    constexpr FlagBitset(type_t value) : m_value(value) {}
     constexpr type_t flag_bit(T flag) const { return type_t(type_t(1) << util::to_underlying(flag)); }
 
 public:
     constexpr FlagBitset() : m_value(0) {}
+    constexpr explicit FlagBitset(type_t value) : m_value(value) {}
 
     template <typename... U>
     constexpr FlagBitset(U... flag)
