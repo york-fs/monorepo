@@ -96,6 +96,7 @@ endfunction()
 # Create an OBJECT library for platform-independent code.
 add_library(shared OBJECT
     src/bms_logic.cc
+    src/charger/can_messages.cc
     src/dti.cc)
 target_compile_features(shared PUBLIC cxx_std_20)
 target_include_directories(shared PUBLIC src)
@@ -126,6 +127,9 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     add_stm_executable(bms-master
         SOURCES src/bms/master.cc src/can.cc src/max_adc.cc
         FREERTOS src/bms/freertos_config.h)
+    add_stm_executable(charger
+        SOURCES src/charger/charger.cc src/can.cc
+        FREERTOS src/charger/freertos_config.h)
     add_stm_executable(logging-board
         SOURCES src/logging_board.cc)
     add_stm_executable(precharge
