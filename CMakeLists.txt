@@ -126,7 +126,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
         CLOCK 8)
     add_stm_executable(bms-master
         SOURCES src/bms/master.cc src/can.cc src/max_adc.cc
-        FREERTOS src/bms/freertos_config.h)
+        FREERTOS src/bms/master_freertos_config.h)
     add_stm_executable(charger
         SOURCES src/charger/charger.cc src/can.cc
         FREERTOS src/charger/freertos_config.h)
