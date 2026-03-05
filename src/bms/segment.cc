@@ -1,9 +1,14 @@
 #include <hal.hh>
 #include <stm32f103xb.h>
+#include <util.hh>
 
 #include <FreeRTOS.h>
+#include <message_buffer.h>
+#include <queue.h>
 #include <task.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 
 namespace {
@@ -18,7 +23,29 @@ constexpr bool k_enable_debug_logs = true;
  */
 constexpr std::uint32_t k_sleep_timeout = 2000;
 
-TaskHandle_t s_sleep_task_handle = nullptr;
+/**
+ * @brief MAX14920 AFE version bits.
+ */
+constexpr std::uint8_t k_afe_version_bits = 0b1010;
+
+enum class AfeStatus {
+    Ready,
+    NotReady,
+    BadSpi,
+    Shutdown,
+};
+
+// TaskHandle_t s_sleep_task_handle = nullptr;
+std::atomic<std::uint16_t> s_voltage_sample_period;
+std::atomic<std::uint16_t> s_temperature_sample_period;
+
+std::array<std::uint8_t, 16> s_i2c_rx_buffer;
+std::atomic<std::uint8_t> s_i2c_rx_head;
+MessageBufferHandle_t s_i2c_rx_queue;
+
+// Error tracking.
+std::atomic<std::uint32_t> s_i2c_error_count = 0;
+std::atomic<std::uint32_t> s_crc_error_count = 0;
 
 // TODO
 std::array s_address_pins{
@@ -49,17 +76,104 @@ hal::Gpio s_sda_1(hal::GpioPort::B, 7);
 hal::Gpio s_scl_2(hal::GpioPort::B, 10);
 hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 
-void sleep_task(void *) {
+[[nodiscard]] AfeStatus afe_command(std::uint16_t balance_bits, std::uint8_t control_bits) {
+    std::array<std::uint8_t, 3> data{
+        static_cast<std::uint8_t>(balance_bits >> 8u),
+        static_cast<std::uint8_t>(balance_bits),
+        control_bits,
+    };
+    if (!hal::spi_transfer(SPI2, s_afe_cs, data, 1)) {
+        return AfeStatus::BadSpi;
+    }
+
+    // Check version bits are correct.
+    if ((data[2] >> 4u) != k_afe_version_bits) {
+        return AfeStatus::BadSpi;
+    }
+
+    // Check UVLO and thermal shutdown bits.
+    if ((data[2] & 0b1101u) != 0u) {
+        return AfeStatus::Shutdown;
+    }
+
+    // Check ready bit.
+    if ((data[2] & 0b10u) != 0u) {
+        return AfeStatus::NotReady;
+    }
+    return AfeStatus::Ready;
+}
+
+void sample_voltages_task(void *) {
+    TickType_t last_schedule_time = xTaskGetTickCount();
+    while (true) {
+        // hal::swd_printf("sample voltages\n");
+
+        s_led.write(!s_led.read());
+
+        const auto period = util::clamp(s_voltage_sample_period.load(), 200, 1000);
+        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
+    }
+}
+
+void handle_command(std::span<std::uint8_t> bytes) {
+    util::Stream stream(bytes);
+    const auto voltage_sample_period = stream.read_be<std::uint16_t>();
+    if (!voltage_sample_period) {
+        ++s_i2c_error_count;
+        return;
+    }
+    const auto temperature_sample_period = stream.read_be<std::uint16_t>();
+    if (!temperature_sample_period) {
+        ++s_i2c_error_count;
+        return;
+    }
+    const auto expected_crc = stream.read_be<std::uint32_t>();
+    if (!expected_crc) {
+        ++s_i2c_error_count;
+        return;
+    }
+
+    // Compute and compare the actual CRC.
+    const auto crc = hal::crc_compute(bytes.subspan(0, bytes.size() - 4));
+    if (expected_crc != crc) {
+        ++s_crc_error_count;
+        return;
+    }
+
+    hal::swd_printf("COMMAND\n");
+
+    s_voltage_sample_period.store(*voltage_sample_period);
+    s_temperature_sample_period.store(*temperature_sample_period);
+}
+
+void cmd_task(void *) {
     // TODO
     const auto i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
 
     hal::swd_printf("Hello world 0x%x\n", i2c_address);
-    
+
     while (true) {
-        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(k_sleep_timeout)) != 0) {
-            // Notified to stay awake.
+        // if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(k_sleep_timeout)) != 0) {
+        //     // Notified to stay awake.
+        //     continue;
+        // }
+
+        // TODO: Size this array properly so that the message can't be too long.
+        std::array<std::uint8_t, 16> rx_bytes{};
+        const auto rx_length =
+            xMessageBufferReceive(s_i2c_rx_queue, rx_bytes.data(), rx_bytes.size(), pdMS_TO_TICKS(k_sleep_timeout));
+        if (rx_length != 0) {
+            // Received a master command - stay awake.
+            handle_command(std::span(rx_bytes).subspan(0, rx_length));
             continue;
         }
+
+        // MasterCommand master_command{};
+        // if (xQueueReceive(s_i2c_rx_queue, &master_command, pdMS_TO_TICKS(k_sleep_timeout)) == pdPASS) {
+        //     // Received a master command - stay awake.
+        //     handle_command(master_command);
+        //     continue;
+        // }
 
         hal::swd_printf("Sleeping\n");
 
@@ -78,19 +192,21 @@ void sleep_task(void *) {
 
         // Reconfigure SCL as a regular input for use as an external event and enter stop mode. Also reconfigure SDA to
         // avoid the STM driving it low and upsetting the isolator.
-        for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
-            pin.configure(hal::GpioInputMode::Floating);
-        }
+        // for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
+        //     pin.configure(hal::GpioInputMode::Floating);
+        // }
 
         // Enter stop mode and wait for external event on SCL (PB6).
-        AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
-        EXTI->EMR |= EXTI_EMR_MR6;
-        EXTI->FTSR |= EXTI_FTSR_TR6;
-        SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-        hal::enter_stop_mode(hal::WakeupSource::Event);
-        SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
+        // AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
+        // EXTI->EMR |= EXTI_EMR_MR6;
+        // EXTI->FTSR |= EXTI_FTSR_TR6;
+        // SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
+        // hal::enter_stop_mode(hal::WakeupSource::Event);
+        // SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
 
         hal::swd_printf("Awoken\n");
+
+        s_voltage_sample_period.store(1000);
 
         // Woken up from stop mode.
         hal::gpio_set(s_led);
@@ -101,9 +217,18 @@ void sleep_task(void *) {
 
         hal::i2c_init(I2C1, i2c_address);
 
-        I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN;
-        hal::enable_irq(I2C1_EV_IRQn, 6);
+        // TRA indicates slave TX or RX.
+        // SCL stretched until ADDR cleared and DR filled.
+        // TxE set and interrupt generated if ITEVFEN and ITBUFEN set.
+        // If TxE set and DR *not* written before the end of the transmission, BTF is set and the interface waits until
+        // BTF cleared by reading from SR1 and a write to DR. STOPF set when master sends stop condition and interrupt
+        // generated if ITEVFEN set. Cleared by a read of SR1 and a write to CR1.
 
+        I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
+        hal::enable_irq(I2C1_EV_IRQn, 6);
+        hal::enable_irq(I2C1_ER_IRQn, 1);
+
+        I2C1->CR1 |= I2C_CR1_ENGC;
         I2C1->CR1 |= I2C_CR1_ACK;
     }
 }
@@ -111,7 +236,9 @@ void sleep_task(void *) {
 void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        hal::swd_printf("SWD\n");
+        hal::swd_printf("--------------------------------\n");
+        hal::swd_printf("Voltage sample period: %u\n", s_voltage_sample_period.load());
+        hal::swd_printf("Temperature sample period: %u\n", s_temperature_sample_period.load());
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
     }
 }
@@ -120,25 +247,61 @@ void swd_task(void *) {
 
 extern "C" void I2C1_EV_IRQHandler() {
     BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(s_sleep_task_handle, 1, eIncrement, &higher_priority_task_woken);
-    
+    // xTaskNotifyFromISR(s_sleep_task_handle, 1, eIncrement, &higher_priority_task_woken);
+
     const auto sr1 = I2C1->SR1;
-    if (sr1 & I2C_SR1_ADDR) {
+    if ((sr1 & I2C_SR1_ADDR) != 0) {
+        // Clear ADDR bit by reading SR2.
         I2C1->SR2;
-        hal::swd_printf("addr matched!\n");
+
+        // Reset the receive head position and clear the buffer.
+        s_i2c_rx_head.store(0);
+        std::fill(s_i2c_rx_buffer.begin(), s_i2c_rx_buffer.end(), 0);
     }
 
-    if (sr1 & I2C_SR1_RXNE) {
+    if ((sr1 & I2C_SR1_RXNE) != 0) {
         const auto byte = I2C1->DR;
-        hal::swd_printf("received byte: 0x%x\n", byte);
+        const auto index = s_i2c_rx_head.fetch_add(1);
+        if (index + 1 >= s_i2c_rx_buffer.size()) {
+            I2C1->CR1 &= ~I2C_CR1_ACK;
+        }
+        if (index < s_i2c_rx_buffer.size()) {
+            s_i2c_rx_buffer[index] = byte;
+        }
     }
 
-    if (sr1 & I2C_SR1_STOPF) {
+    if ((sr1 & I2C_SR1_TXE) != 0) {
+        I2C1->DR = 0xaa;
+    }
+
+    if ((sr1 & I2C_SR1_STOPF) != 0) {
+        // Clear the stop flag by writing to CR1.
         I2C1->CR1 |= 0;
-        hal::swd_printf("done!\n");
+
+        // Queue message bytes.
+        if (xMessageBufferSendFromISR(s_i2c_rx_queue, s_i2c_rx_buffer.data(), s_i2c_rx_head.load(),
+                                      &higher_priority_task_woken) == 0) {
+            ++s_i2c_error_count;
+        }
+
+        // Re-enable address acknowledgement.
+        I2C1->CR1 |= I2C_CR1_ACK;
+
+        // TODO: Not needed with state machine.
+        std::fill(s_i2c_rx_buffer.begin(), s_i2c_rx_buffer.end(), 0);
     }
 
     portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
+extern "C" void I2C1_ER_IRQHandler() {
+    const auto sr1 = I2C1->SR1;
+
+    // Clear all error flags.
+    I2C1->SR1 &=
+        ~(I2C_SR1_SMBALERT | I2C_SR1_TIMEOUT | I2C_SR1_PECERR | I2C_SR1_OVR | I2C_SR1_AF | I2C_SR1_ARLO | I2C_SR1_BERR);
+
+    hal::swd_printf("error 0x%x!\n", sr1);
 }
 
 void vApplicationIdleHook() {
@@ -168,7 +331,11 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    xTaskCreate(&sleep_task, "sleep", 128, nullptr, 4, &s_sleep_task_handle);
+    s_i2c_rx_queue = xMessageBufferCreate(128);
+
+    // xTaskCreate(&sleep_task, "sleep", 128, nullptr, 4, &s_sleep_task_handle);
+    xTaskCreate(&cmd_task, "cmd", 128, nullptr, 4, nullptr);
+    xTaskCreate(&sample_voltages_task, "voltages", 128, nullptr, 3, nullptr);
     if constexpr (k_enable_debug_logs) {
         xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
     }
