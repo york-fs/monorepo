@@ -84,7 +84,7 @@ public:
     template <std::integral T>
     bool write_be(T value);
 
-    std::span<const std::uint8_t> bytes() const { return m_span.subspan(0, m_head); };
+    std::span<std::uint8_t> bytes() const { return m_span.subspan(0, m_head); };
     bool empty() const { return m_span.empty(); }
     std::size_t head() const { return m_head; }
 };

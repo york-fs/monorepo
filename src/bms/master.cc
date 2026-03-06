@@ -1,5 +1,6 @@
 #include <bms/error.hh>
 #include <hal.hh>
+#include <i2c.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
@@ -8,7 +9,7 @@
 #include <task.h>
 
 #include <algorithm>
-#include <atomic>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <optional>
@@ -155,16 +156,6 @@ static_assert(k_maximum_reaction_time > k_shutdown_assert_delay + k_supervisor_p
  */
 constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_time - k_shutdown_assert_delay);
 
-enum class I2cState {
-    Idle,
-    Start,
-    Addr,
-    Tx,
-    Stop,
-    NoAck,
-    Error,
-};
-
 struct Config {
     std::uint16_t undervoltage_threshold;
     std::uint16_t overvoltage_threshold;
@@ -210,10 +201,7 @@ SemaphoreHandle_t s_mcu_mutex;
 std::optional<TickType_t> s_shutdown_time;
 
 // Segment I2C.
-std::array<std::uint8_t, 16> s_i2c_buffer{};
-std::atomic<std::uint8_t> s_i2c_length{};
-std::atomic<std::uint8_t> s_i2c_head{};
-std::atomic<I2cState> s_i2c_state{I2cState::Idle};
+i2c::StateMachine *s_i2c1_sm;
 TaskHandle_t s_sample_segments_task_handle;
 
 // Task timing.
@@ -579,87 +567,38 @@ void sample_segment(std::size_t index) {
 void sample_segments_task(void *) {
     xTaskNotify(s_sample_segments_task_handle, 1, eSetValueWithOverwrite);
 
+    i2c::StateMachine sm(i2c::Bus::_1);
+    s_i2c1_sm = &sm;
+
     I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
     hal::enable_irq(I2C1_EV_IRQn, 7);
     hal::enable_irq(I2C1_ER_IRQn, 6);
 
+    std::array<std::uint8_t, 16> buffer{};
+
     s_last_segment_sample_time = xTaskGetTickCount();
     while (true) {
-        // Wakeup all segments by effectively pulling SCL low.
-        // I2C1->CR1 &= ~I2C_CR1_PE;
-        // I2C2->CR1 &= ~I2C_CR1_PE;
-        // for (const auto &pin : {s_scl_1, s_scl_2}) {
-        //     pin.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-        //     pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        // }
-
-        // Allow some time for segment wake-up.
-        // vTaskDelay(pdMS_TO_TICKS(1));
-
         // Wait for the last transaction to complete up to a timeout in case the state machine gets stuck.
         bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100)) == 0;
 
-        // Check state machine.
-        // error |= s_i2c_state.load() != I2cState::Idle;
-
-        // Check if the bus is stuck.
-        // error |= (I2C1->SR2 & I2C_SR2_BUSY) != 0;
-
-        const auto state = s_i2c_state.load();
-        if (timeout || (state != I2cState::Idle && state != I2cState::NoAck)) {
-            // TODO: Clear PE, perform bus recovery, toggle SWRST, and re-enable PE.
+        // Reinitialise if needed.
+        if (timeout || (sm.state() != i2c::State::Idle && sm.state() != i2c::State::NoAck)) {
+            // TODO: reinit function.
             I2C1->CR1 &= ~I2C_CR1_PE;
-            // hal::delay_us(100);
-            // I2C1->SR1 = 0;
-
-            // s_scl_1.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-            // s_sda_1.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-            // hal::gpio_set(s_scl_1, s_sda_1);
-            // GPIOB->IDR;
-            // hal::delay_us(100);
-            // hal::gpio_reset(s_scl_1, s_sda_1);
-            // GPIOB->IDR;
-            // hal::delay_us(100);
-            // hal::gpio_set(s_scl_1, s_sda_1);
-            // GPIOB->IDR;
-            // hal::delay_us(100);
-            // s_scl_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-            // s_sda_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-            // hal::gpio_reset(s_scl_1, s_sda_1);
-
-            // I2C1->CR1 |= I2C_CR1_SWRST;
-            // I2C1->CR1 &= ~I2C_CR1_SWRST;
-            // I2C1->CR1 = I2C_CR1_PE;
             hal::i2c_init(I2C1, std::nullopt);
-            I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
-            hal::swd_printf("Bus error %u %u\n", timeout, state);
         }
 
-        if (!timeout && state == I2cState::Idle) {
+        if (!timeout && sm.state() == i2c::State::Idle) {
             hal::swd_printf("success\n");
-        } else if (state == I2cState::NoAck) {
+        } else if (sm.state() == i2c::State::NoAck) {
             hal::swd_printf("no ack!\n");
         }
 
-        util::Stream stream(s_i2c_buffer);
+        util::Stream stream(buffer);
         stream.write_be<std::uint16_t>(200);
         stream.write_be<std::uint16_t>(300);
         stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
-
-        s_i2c_head.store(0);
-        s_i2c_length.store(stream.head());
-
-        s_i2c_state.store(I2cState::Start);
-        I2C1->CR1 |= I2C_CR1_START;
-
-        // (SB timeout or BERR) and START set => reset with SWRST
-        // busy => do bus recovery routine.
-
-        // Wait for task notification to advance state machine, with timeout.
-
-        // for (std::size_t index = 0; index < k_max_segment_count; index++) {
-        //     sample_segment(index);
-        // }
+        sm.start_write(0x42, stream.bytes());
 
         xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(k_segment_sample_period));
     }
@@ -764,64 +703,19 @@ void swd_task(void *) {
 } // namespace
 
 extern "C" void I2C1_EV_IRQHandler() {
-    const auto sr1 = I2C1->SR1;
-    const auto state = s_i2c_state.load();
-    if (state == I2cState::Start && (sr1 & I2C_SR1_SB) != 0) {
-        // TODO: Address with | 1 for read.
-        I2C1->DR = 0x42 << 1;
-        s_i2c_state.store(I2cState::Addr);
-        return;
+    if (s_i2c1_sm->event()) {
+        // Signal transaction completion.
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+        portYIELD_FROM_ISR(higher_priority_task_woken);
     }
-    if (state == I2cState::Addr && (sr1 & I2C_SR1_ADDR) != 0) {
-        // Clear ADDR bit by reading SR2.
-        I2C1->SR2;
-        s_i2c_state.store(I2cState::Tx);
-        return;
-    }
-    if (state == I2cState::Tx && (sr1 & I2C_SR1_TXE) != 0) {
-        if (s_i2c_head < s_i2c_length) {
-            I2C1->DR = s_i2c_buffer[s_i2c_head++];
-        } else {
-            s_i2c_state.store(I2cState::Stop);
-        }
-        return;
-    }
-    if (state == I2cState::Stop && (sr1 & I2C_SR1_BTF) != 0) {
-        I2C1->CR1 |= I2C_CR1_STOP;
-        s_i2c_state.store(I2cState::Idle);
-        xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, nullptr);
-        return;
-    }
-
-    if (state == I2cState::Idle && (sr1 & ~(I2C_SR1_TXE | I2C_SR1_BTF)) == 0) {
-        return;
-    }
-    if (state == I2cState::Stop && (sr1 & I2C_SR1_TXE) != 0) {
-        return;
-    }
-
-    // Unexpected event.
-    I2C1->CR1 |= I2C_CR1_STOP;
-    hal::swd_printf("unexpected %u 0x%x\n", state, sr1);
-    s_i2c_state.store(I2cState::Error);
-    xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, nullptr);
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
-    const auto sr1 = I2C1->SR1;
-
-    if (sr1 & I2C_SR1_AF) {
-        I2C1->CR1 |= I2C_CR1_STOP;
-        s_i2c_state.store(I2cState::NoAck);
-    } else {
-        hal::swd_printf("error 0x%x\n", sr1);
-        s_i2c_state.store(I2cState::Error);
-    }
-
-    // Clear all error flags.
-    I2C1->SR1 = 0;
-
-    xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, nullptr);
+    s_i2c1_sm->error();
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 void vApplicationIdleHook() {
