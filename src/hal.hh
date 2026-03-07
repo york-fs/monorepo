@@ -475,3 +475,5 @@ bool wait_equal(const volatile std::uint32_t &reg, std::uint32_t mask, std::uint
                 std::uint32_t timeout = UINT32_MAX);
 
 } // namespace hal
+
+bool hal_low_power();

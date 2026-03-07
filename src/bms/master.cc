@@ -201,7 +201,7 @@ SemaphoreHandle_t s_mcu_mutex;
 std::optional<TickType_t> s_shutdown_time;
 
 // Segment I2C.
-i2c::StateMachine *s_i2c1_sm;
+i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
 TaskHandle_t s_sample_segments_task_handle;
 
 // Task timing.
@@ -565,42 +565,47 @@ void sample_segment(std::size_t index) {
 }
 
 void sample_segments_task(void *) {
-    xTaskNotify(s_sample_segments_task_handle, 1, eSetValueWithOverwrite);
-
-    i2c::StateMachine sm(i2c::Bus::_1);
-    s_i2c1_sm = &sm;
-
-    I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
     hal::enable_irq(I2C1_EV_IRQn, 7);
     hal::enable_irq(I2C1_ER_IRQn, 6);
 
-    std::array<std::uint8_t, 16> buffer{};
+    std::array<std::uint8_t, 8> buffer{};
 
     s_last_segment_sample_time = xTaskGetTickCount();
     while (true) {
-        // Wait for the last transaction to complete up to a timeout in case the state machine gets stuck.
-        bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100)) == 0;
+        for (std::size_t index = 0; index < k_max_segment_count + 1; index++) {
+            const auto start_time = xTaskGetTickCount();
+            if (index == k_max_segment_count) {
+                util::Stream stream(buffer);
+                stream.write_be<std::uint16_t>(200);
+                stream.write_be<std::uint16_t>(300);
+                stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
+                s_i2c1_sm.start_write(0x00, stream.bytes());
+            } else {
+                s_i2c1_sm.start_read(k_segment_address_start + index, buffer);
+            }
 
-        // Reinitialise if needed.
-        if (timeout || (sm.state() != i2c::State::Idle && sm.state() != i2c::State::NoAck)) {
-            // TODO: reinit function.
-            I2C1->CR1 &= ~I2C_CR1_PE;
-            hal::i2c_init(I2C1, std::nullopt);
+            // Wait for the transaction to complete up to a timeout in case the state machine gets stuck.
+            bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100)) == 0;
+
+            // Reinitialise if needed.
+            if (timeout || (s_i2c1_sm.state() != i2c::State::Idle && s_i2c1_sm.state() != i2c::State::NoAck)) {
+                s_i2c1_sm.init();
+            }
+
+            const auto time_taken = xTaskGetTickCount() - start_time;
+            hal::swd_printf("%u: ", index);
+            if (!timeout && s_i2c1_sm.state() == i2c::State::Idle) {
+                hal::swd_printf("success %u", time_taken);
+                for (auto byte : buffer) {
+                    hal::swd_printf(" %u", byte);
+                }
+                hal::swd_printf("\n");
+            } else if (s_i2c1_sm.state() == i2c::State::NoAck) {
+                hal::swd_printf("no ack %u\n", time_taken);
+            }
         }
 
-        if (!timeout && sm.state() == i2c::State::Idle) {
-            hal::swd_printf("success\n");
-        } else if (sm.state() == i2c::State::NoAck) {
-            hal::swd_printf("no ack!\n");
-        }
-
-        util::Stream stream(buffer);
-        stream.write_be<std::uint16_t>(200);
-        stream.write_be<std::uint16_t>(300);
-        stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
-        sm.start_write(0x42, stream.bytes());
-
-        xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(k_segment_sample_period));
+        xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(200));
     }
 }
 
@@ -703,7 +708,13 @@ void swd_task(void *) {
 } // namespace
 
 extern "C" void I2C1_EV_IRQHandler() {
-    if (s_i2c1_sm->event()) {
+    if (!s_i2c1_sm.event()) {
+        // State not changed.
+        return;
+    }
+
+    const auto state = s_i2c1_sm.state();
+    if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
         BaseType_t higher_priority_task_woken = pdFALSE;
         xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
@@ -712,7 +723,7 @@ extern "C" void I2C1_EV_IRQHandler() {
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
-    s_i2c1_sm->error();
+    s_i2c1_sm.error();
     BaseType_t higher_priority_task_woken = pdFALSE;
     xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);

@@ -1,4 +1,5 @@
 #include <hal.hh>
+#include <i2c.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
@@ -39,9 +40,13 @@ enum class AfeStatus {
 std::atomic<std::uint16_t> s_voltage_sample_period;
 std::atomic<std::uint16_t> s_temperature_sample_period;
 
-std::array<std::uint8_t, 16> s_i2c_rx_buffer;
-std::atomic<std::uint8_t> s_i2c_rx_head;
+std::uint8_t s_i2c_address = 0;
+std::array<std::uint8_t, 128> s_i2c_buffer;
+
+std::array<std::uint8_t, 4> s_data;
+
 MessageBufferHandle_t s_i2c_rx_queue;
+i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
 
 // Error tracking.
 std::atomic<std::uint32_t> s_i2c_error_count = 0;
@@ -104,11 +109,19 @@ hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 }
 
 void sample_voltages_task(void *) {
+    static std::uint8_t count = 0;
+
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        // hal::swd_printf("sample voltages\n");
-
         s_led.write(!s_led.read());
+
+        // Enter a critical section to make sure data sent over I2C is atomic. Also for CRC.
+        taskENTER_CRITICAL();
+        count++;
+        for (std::size_t i = 0; i < s_data.size(); i++) {
+            s_data[i] = count + i;
+        }
+        taskEXIT_CRITICAL();
 
         const auto period = util::clamp(s_voltage_sample_period.load(), 200, 1000);
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
@@ -134,7 +147,9 @@ void handle_command(std::span<std::uint8_t> bytes) {
     }
 
     // Compute and compare the actual CRC.
+    taskENTER_CRITICAL();
     const auto crc = hal::crc_compute(bytes.subspan(0, bytes.size() - 4));
+    taskEXIT_CRITICAL();
     if (expected_crc != crc) {
         ++s_crc_error_count;
         return;
@@ -148,9 +163,9 @@ void handle_command(std::span<std::uint8_t> bytes) {
 
 void cmd_task(void *) {
     // TODO
-    const auto i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
+    s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
 
-    hal::swd_printf("Hello world 0x%x\n", i2c_address);
+    hal::swd_printf("Hello world 0x%x\n", s_i2c_address);
 
     while (true) {
         // if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(k_sleep_timeout)) != 0) {
@@ -215,7 +230,7 @@ void cmd_task(void *) {
             pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
         }
 
-        hal::i2c_init(I2C1, i2c_address);
+        // hal::i2c_init(I2C1, s_i2c_address);
 
         // TRA indicates slave TX or RX.
         // SCL stretched until ADDR cleared and DR filled.
@@ -224,12 +239,10 @@ void cmd_task(void *) {
         // BTF cleared by reading from SR1 and a write to DR. STOPF set when master sends stop condition and interrupt
         // generated if ITEVFEN set. Cleared by a read of SR1 and a write to CR1.
 
-        I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
-        hal::enable_irq(I2C1_EV_IRQn, 6);
-        hal::enable_irq(I2C1_ER_IRQn, 1);
+        // I2C1->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
 
-        I2C1->CR1 |= I2C_CR1_ENGC;
-        I2C1->CR1 |= I2C_CR1_ACK;
+        // I2C1->CR1 |= I2C_CR1_ENGC;
+        // I2C1->CR1 |= I2C_CR1_ACK;
     }
 }
 
@@ -243,65 +256,53 @@ void swd_task(void *) {
     }
 }
 
+void i2c_reinit() {
+    hal::enable_irq(I2C1_EV_IRQn, 7);
+    hal::enable_irq(I2C1_ER_IRQn, 6);
+    if (s_i2c1_sm.state() == i2c::State::Error) {
+        s_i2c1_sm.init();
+    }
+    // Listen on our configured address and the general call address.
+    s_i2c1_sm.listen(s_i2c_address, true);
+}
+
 } // namespace
 
 extern "C" void I2C1_EV_IRQHandler() {
+    if (!s_i2c1_sm.event()) {
+        // State not changed.
+        return;
+    }
+
     BaseType_t higher_priority_task_woken = pdFALSE;
-    // xTaskNotifyFromISR(s_sleep_task_handle, 1, eIncrement, &higher_priority_task_woken);
-
-    const auto sr1 = I2C1->SR1;
-    if ((sr1 & I2C_SR1_ADDR) != 0) {
-        // Clear ADDR bit by reading SR2.
-        I2C1->SR2;
-
-        // Reset the receive head position and clear the buffer.
-        s_i2c_rx_head.store(0);
-        std::fill(s_i2c_rx_buffer.begin(), s_i2c_rx_buffer.end(), 0);
-    }
-
-    if ((sr1 & I2C_SR1_RXNE) != 0) {
-        const auto byte = I2C1->DR;
-        const auto index = s_i2c_rx_head.fetch_add(1);
-        if (index + 1 >= s_i2c_rx_buffer.size()) {
-            I2C1->CR1 &= ~I2C_CR1_ACK;
-        }
-        if (index < s_i2c_rx_buffer.size()) {
-            s_i2c_rx_buffer[index] = byte;
-        }
-    }
-
-    if ((sr1 & I2C_SR1_TXE) != 0) {
-        I2C1->DR = 0xaa;
-    }
-
-    if ((sr1 & I2C_SR1_STOPF) != 0) {
-        // Clear the stop flag by writing to CR1.
-        I2C1->CR1 |= 0;
-
-        // Queue message bytes.
-        if (xMessageBufferSendFromISR(s_i2c_rx_queue, s_i2c_rx_buffer.data(), s_i2c_rx_head.load(),
+    const auto state = s_i2c1_sm.state();
+    if (state == i2c::State::SlaveRx) {
+        s_i2c1_sm.set_buffer(s_i2c_buffer);
+    } else if (state == i2c::State::SlaveRxFinish) {
+        if (xMessageBufferSendFromISR(s_i2c_rx_queue, s_i2c_buffer.data(), s_i2c1_sm.head(),
                                       &higher_priority_task_woken) == 0) {
             ++s_i2c_error_count;
         }
-
-        // Re-enable address acknowledgement.
-        I2C1->CR1 |= I2C_CR1_ACK;
-
-        // TODO: Not needed with state machine.
-        std::fill(s_i2c_rx_buffer.begin(), s_i2c_rx_buffer.end(), 0);
+    } else if (state == i2c::State::SlaveTx) {
+        // Build I2C message.
+        util::Stream stream(s_i2c_buffer);
+        for (auto byte : s_data) {
+            stream.write_byte(byte);
+        }
+        stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
+        s_i2c1_sm.set_buffer(stream.bytes());
     }
 
+    if (state == i2c::State::Idle || state == i2c::State::SlaveRxFinish || state == i2c::State::Error ||
+        state == i2c::State::NoAck) {
+        i2c_reinit();
+    }
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
-    const auto sr1 = I2C1->SR1;
-
-    // Clear all error flags.
-    I2C1->SR1 &=
-        ~(I2C_SR1_SMBALERT | I2C_SR1_TIMEOUT | I2C_SR1_PECERR | I2C_SR1_OVR | I2C_SR1_AF | I2C_SR1_ARLO | I2C_SR1_BERR);
-
-    hal::swd_printf("error 0x%x!\n", sr1);
+    s_i2c1_sm.error();
+    i2c_reinit();
 }
 
 void vApplicationIdleHook() {

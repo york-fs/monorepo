@@ -19,6 +19,9 @@ enum class State {
     Rx,
     RxFinish,
     Tx,
+    SlaveRx,
+    SlaveRxFinish,
+    SlaveTx,
     Stop,
     NoAck,
     Error,
@@ -27,7 +30,7 @@ enum class State {
 class StateMachine {
     std::span<std::uint8_t> m_buffer;
     std::atomic<std::uint32_t> m_head;
-    std::atomic<State> m_state;
+    std::atomic<State> m_state{State::Error};
     Bus m_bus;
     std::uint8_t m_address{0};
 
@@ -36,12 +39,14 @@ class StateMachine {
 public:
     explicit StateMachine(Bus bus) : m_bus(bus) {}
 
+    /**
+     * @brief Initialise the I2C peripheral. Can also be used to reinitialise the peripheral in case of a bus lockup or
+     * timeout.
+     */
     void init();
 
-    /**
-     * @brief Reinitialise peripheral in case of bus lockup or timeout.
-     */
-    void reinit();
+    void listen(std::uint8_t address, bool engc);
+    void set_buffer(std::span<std::uint8_t> buffer);
 
     void start_read(std::uint8_t address, std::span<std::uint8_t> buffer);
     void start_write(std::uint8_t address, std::span<std::uint8_t> buffer);
@@ -53,6 +58,7 @@ public:
 
     bool is_full() const;
     std::uint32_t remaining_space() const;
+    std::uint32_t head() const { return m_head.load(); }
     State state() const { return m_state.load(); }
     std::uint8_t address() const { return m_address; }
 };
