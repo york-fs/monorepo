@@ -123,7 +123,8 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     target_link_options(stm-base PUBLIC -T "${STM_LD_SCRIPT}")
 
     add_stm_executable(bms-segment
-        SOURCES src/bms.cc src/max_adc.cc
+        SOURCES src/bms/segment.cc
+        FREERTOS src/bms/segment_freertos_config.h
         CLOCK 8)
     add_stm_executable(bms-master
         SOURCES src/bms/master.cc src/can.cc src/max_adc.cc
