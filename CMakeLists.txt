@@ -115,6 +115,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     # Create a library for the shared base STM code.
     add_library(stm-base STATIC
         src/hal.cc
+        src/i2c.cc
         src/miniprintf.c
         system/startup_stm32f103c8tx.s)
     target_include_directories(stm-base SYSTEM PUBLIC system)
