@@ -1,5 +1,6 @@
 #include <bms/error.hh>
 #include <hal.hh>
+#include <i2c.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
@@ -8,6 +9,7 @@
 #include <task.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <optional>
@@ -21,6 +23,8 @@
 // TODO: Charger control.
 // TODO: SOC estimation.
 
+using namespace bms;
+
 namespace {
 
 /**
@@ -32,6 +36,11 @@ constexpr bool k_enable_debug_logs = false;
  * @brief The I2C address of the first segment.
  */
 constexpr std::uint8_t k_segment_address_start = 0x40;
+
+/**
+ * @brief I2C message size received from a segment in bytes.
+ */
+constexpr std::size_t k_segment_response_size = 63;
 
 /**
  * @brief The maximum number of connected segments.
@@ -159,19 +168,21 @@ struct Config {
 class Segment {
     std::array<std::optional<std::uint16_t>, k_max_cell_count> m_cell_voltages;
     std::array<std::optional<std::int8_t>, k_max_temperature_count> m_temperatures;
+    std::uint32_t m_master_error_count{};
+    std::uint32_t m_slave_error_count{};
     std::uint16_t m_degraded_bitset{};
-    std::uint16_t m_rail_voltage{};
-    bms::SegmentErrorFlags m_error_flags{};
+    SegmentErrorFlags m_error_flags{SegmentError::Disconnected};
     TickType_t m_last_update_time{};
 
 public:
-    void update(util::Stream &stream);
+    void update(std::span<std::uint8_t> bytes);
 
     const auto &cell_voltages() const { return m_cell_voltages; }
     const auto &temperatures() const { return m_temperatures; }
+    std::uint32_t master_error_count() const { return m_master_error_count; }
+    std::uint32_t slave_error_count() const { return m_slave_error_count; }
     std::uint16_t degraded_bitset() const { return m_degraded_bitset; }
-    std::uint16_t rail_voltage() const { return m_rail_voltage; }
-    bms::SegmentErrorFlags error_flags() const { return m_error_flags; }
+    SegmentErrorFlags error_flags() const { return m_error_flags; }
     TickType_t last_update_time() const { return m_last_update_time; }
 };
 
@@ -190,6 +201,10 @@ SemaphoreHandle_t s_mcu_mutex;
 
 // Time of shutdown assertion. Presence indicates whether shutdown is asserted.
 std::optional<TickType_t> s_shutdown_time;
+
+// Segment I2C.
+i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
+TaskHandle_t s_sample_segments_task_handle;
 
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
@@ -258,30 +273,30 @@ void supervisor_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         // Calculate the latest master flags based on the most recent master state and segment data.
-        bms::MasterErrorFlags master_flags;
+        MasterErrorFlags master_flags;
 
         // Check for missed deadlines for all of the other tasks.
         const auto current_time = xTaskGetTickCount();
         if (current_time - (s_last_segment_sample_time - k_segment_sample_period) >= k_schedule_tolerance) {
-            master_flags.set(bms::MasterError::DeadlineOverrun);
+            master_flags.set(MasterError::DeadlineOverrun);
         }
         if (current_time - (s_last_mcu_sample_time - k_mcu_sample_period) >= k_schedule_tolerance) {
-            master_flags.set(bms::MasterError::DeadlineOverrun);
+            master_flags.set(MasterError::DeadlineOverrun);
         }
 
         // Check segment data.
         std::size_t ready_segment_count = 0;
         xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
         for (const auto &segment : s_segments) {
-            if (!segment.error_flags().is_set(bms::SegmentError::Disconnected)) {
+            if (!segment.error_flags().is_set(SegmentError::Disconnected)) {
                 ready_segment_count++;
 
                 // Check for stale data in case of unreliable communication, for example.
                 if (current_time - segment.last_update_time() >= k_schedule_tolerance) {
-                    master_flags.set(bms::MasterError::DeadlineOverrun);
+                    master_flags.set(MasterError::DeadlineOverrun);
                 }
                 if (segment.error_flags().any_set()) {
-                    master_flags.set(bms::MasterError::SegmentError);
+                    master_flags.set(MasterError::SegmentError);
                 }
             }
         }
@@ -289,14 +304,14 @@ void supervisor_task(void *) {
 
         // Check we have the right amount of segments connected.
         if (expected_segment_count && *expected_segment_count != ready_segment_count) {
-            master_flags.set(bms::MasterError::BadSegmentCount);
+            master_flags.set(MasterError::BadSegmentCount);
         }
 
         // TODO: Check MCU values.
 
         // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
         if (!s_oc_n.read() || !s_oc_p.read()) {
-            master_flags.set(bms::MasterError::OvercurrentThreshold);
+            master_flags.set(MasterError::OvercurrentThreshold);
         }
 
         // The following section of code handles the shutdown assertion and delay logic. There are five categories of
@@ -335,7 +350,7 @@ void supervisor_task(void *) {
         should_shutdown_now |= shutdown_request_time && has_elapsed(*shutdown_request_time, k_shutdown_assert_delay);
 
         // Hard overcurrents are an immediate shutdown since they indicate a large short circuit or a faulty sensor.
-        should_shutdown_now |= master_flags.is_set(bms::MasterError::OvercurrentThreshold);
+        should_shutdown_now |= master_flags.is_set(MasterError::OvercurrentThreshold);
 
         // Assert shutdown if we should and haven't already.
         if (!s_shutdown_time && should_shutdown_now) {
@@ -381,105 +396,73 @@ void supervisor_task(void *) {
     }
 }
 
-void Segment::update(util::Stream &stream) {
-    m_error_flags.clear();
-    if (stream.empty()) {
-        m_error_flags.set(bms::SegmentError::Disconnected);
-        return;
-    }
-
-    const auto thermistor_bitset = stream.read_be<std::uint32_t>();
-    if (!thermistor_bitset) {
-        m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-        return;
-    }
-
-    const auto cell_tap_bitset = stream.read_be<std::uint16_t>();
-    if (!cell_tap_bitset) {
-        m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-        return;
-    }
-
-    const auto degraded_bitset = stream.read_be<std::uint16_t>();
-    if (!degraded_bitset) {
-        m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-        return;
-    }
-
-    const auto rail_voltage = stream.read_be<std::uint16_t>();
-    if (!rail_voltage) {
-        m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-        return;
-    }
+void Segment::update(std::span<std::uint8_t> bytes) {
+    // Since we decide the buffer size, we don't need to check each individual read.
+    util::Stream stream(bytes);
+    const auto i2c_error_count = *stream.read_be<std::uint32_t>();
+    const auto thermistor_bitset = *stream.read_be<std::uint32_t>();
+    const auto cell_tap_bitset = *stream.read_be<std::uint16_t>();
+    const auto degraded_bitset = *stream.read_be<std::uint16_t>();
 
     std::array<std::uint16_t, k_max_cell_count> cell_voltages{};
-    for (std::size_t i = 0; i < k_max_cell_count; i++) {
-        const auto voltage = stream.read_be<std::uint16_t>();
-        if (!voltage) {
-            m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-            return;
-        }
-        cell_voltages[i] = *voltage;
+    for (auto &voltage : cell_voltages) {
+        voltage = *stream.read_be<std::uint16_t>();
     }
 
     std::array<std::int8_t, k_max_temperature_count> temperatures{};
-    for (std::size_t i = 0; i < k_max_temperature_count; i++) {
-        const auto temperature = stream.read_be<std::int8_t>();
-        if (!temperature) {
-            m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-            return;
-        }
-        temperatures[i] = *temperature;
+    for (auto &temperature : temperatures) {
+        temperature = *stream.read_byte();
     }
 
-    const auto segment_ready = stream.read_byte();
-    if (!segment_ready) {
-        m_error_flags.set(bms::SegmentError::UnreliableCommunication);
-        return;
-    }
-    if (*segment_ready != 1) {
-        m_error_flags.set(bms::SegmentError::Disconnected);
+    // Compute the actual CRC.
+    const auto crc = hal::crc_compute(stream.bytes());
+    const auto expected_crc = *stream.read_be<std::uint32_t>();
+
+    xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
+    if (crc != expected_crc) {
+        ++m_master_error_count;
+        xSemaphoreGive(s_segments_mutex);
         return;
     }
 
     // Update all data in one go once we know it's valid in terms of checksum and length validity.
     for (std::size_t i = 0; i < k_max_cell_count; i++) {
-        if ((*cell_tap_bitset & (1u << i)) != 0) {
+        if ((cell_tap_bitset & (1u << i)) != 0) {
             m_cell_voltages[i] = cell_voltages[i];
         } else {
             m_cell_voltages[i].reset();
         }
     }
     for (std::size_t i = 0; i < k_max_temperature_count; i++) {
-        if ((*thermistor_bitset & (1u << i)) != 0) {
+        if ((thermistor_bitset & (1u << i)) != 0) {
             m_temperatures[i] = temperatures[i];
         } else {
             m_temperatures[i].reset();
         }
     }
-    m_degraded_bitset = *degraded_bitset;
-    m_rail_voltage = *rail_voltage;
+    m_slave_error_count = i2c_error_count;
+    m_degraded_bitset = degraded_bitset;
+
+    // TODO: This should take into account when the data was actually sampled by the segment which should be sent over
+    // I2C.
     m_last_update_time = xTaskGetTickCount();
 
+    // Recalculate the error flags.
+    m_error_flags.clear();
+
     // Cell count should be exactly right.
-    if (std::popcount(*cell_tap_bitset) != s_config.expected_cell_count) {
-        m_error_flags.set(bms::SegmentError::BadCellCount);
+    if (std::popcount(cell_tap_bitset) != s_config.expected_cell_count) {
+        m_error_flags.set(SegmentError::BadCellCount);
     }
 
     // Thermistors may be allowed to drop below the maximum.
-    if (std::popcount(*thermistor_bitset) < s_config.minimum_thermistor_count) {
-        m_error_flags.set(bms::SegmentError::BadThermistorCount);
+    if (std::popcount(thermistor_bitset) < s_config.minimum_thermistor_count) {
+        m_error_flags.set(SegmentError::BadThermistorCount);
     }
 
     // Don't accept all degraded cell voltage readings.
     if (std::popcount(m_degraded_bitset) >= s_config.expected_cell_count) {
-        m_error_flags.set(bms::SegmentError::UnreliableMeasurement);
-    }
-
-    // Rail voltage needs to be right otherwise measurements are meaningless.
-    if (m_rail_voltage < 31000 || m_rail_voltage > 35000) {
-        m_error_flags.set(bms::SegmentError::BadRailVoltage);
-        m_error_flags.set(bms::SegmentError::UnreliableMeasurement);
+        m_error_flags.set(SegmentError::UnreliableMeasurement);
     }
 
     // Clamp config limits just in-case.
@@ -488,10 +471,10 @@ void Segment::update(util::Stream &stream) {
     for (const auto voltage : m_cell_voltages) {
         if (voltage) {
             if (*voltage < undervoltage_threshold) {
-                m_error_flags.set(bms::SegmentError::Undervoltage);
+                m_error_flags.set(SegmentError::Undervoltage);
             }
             if (*voltage > overvoltage_threshold) {
-                m_error_flags.set(bms::SegmentError::Overvoltage);
+                m_error_flags.set(SegmentError::Overvoltage);
             }
         }
     }
@@ -503,67 +486,57 @@ void Segment::update(util::Stream &stream) {
     for (const auto temperature : m_temperatures) {
         if (temperature) {
             if (*temperature < undertemperature_threshold) {
-                m_error_flags.set(bms::SegmentError::Undertemperature);
+                m_error_flags.set(SegmentError::Undertemperature);
             }
             if (*temperature > overtemperature_threshold) {
-                m_error_flags.set(bms::SegmentError::Overtemperature);
+                m_error_flags.set(SegmentError::Overtemperature);
             }
         }
-    }
-}
-
-bool read_i2c(I2C_TypeDef *i2c, std::uint8_t address, std::span<std::uint8_t> data) {
-    // Bus should already be idle, only allow 1 ms.
-    if (hal::i2c_wait_idle(i2c, 1) != hal::I2cStatus::Ok) {
-        return false;
-    }
-    // TODO: Should use interrupts.
-    const bool ok = hal::i2c_master_read(i2c, address, data, 100) == hal::I2cStatus::Ok;
-    hal::i2c_stop(i2c);
-    return ok;
-}
-
-void sample_segment(std::size_t index) {
-    // TODO: Don't ready a fixed amount of bytes and add a checksum.
-    std::array<std::uint8_t, 60> bytes{};
-    const auto address = k_segment_address_start + index;
-    const bool present = read_i2c(I2C1, address, bytes) || read_i2c(I2C2, address, bytes);
-
-    xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
-    if (present) {
-        util::Stream stream(bytes);
-        s_segments[index].update(stream);
-    } else {
-        // No I2C response.
-        util::Stream stream({});
-        s_segments[index].update(stream);
     }
     xSemaphoreGive(s_segments_mutex);
 }
 
+bool wait_i2c() {
+    // Wait for the transaction to complete up to a timeout in case the state machine gets stuck.
+    const bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15)) == 0;
+    const auto state = s_i2c1_sm.state();
+    if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
+        return state == i2c::State::Idle;
+    }
+    // Reset the I2C periphral.
+    s_i2c1_sm.init();
+    return false;
+}
+
 void sample_segments_task(void *) {
+    hal::enable_irq(I2C1_EV_IRQn, 6);
+    hal::enable_irq(I2C1_ER_IRQn, 6);
+
+    std::array<std::uint8_t, 64> buffer{};
     s_last_segment_sample_time = xTaskGetTickCount();
     while (true) {
-        // Wakeup all segments by effectively pulling SCL low.
-        I2C1->CR1 &= ~I2C_CR1_PE;
-        I2C2->CR1 &= ~I2C_CR1_PE;
-        for (const auto &pin : {s_scl_1, s_scl_2}) {
-            pin.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-            pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        // Wait segment sample period.
+        xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(k_segment_sample_period));
+
+        // Send command to all segments via general call address.
+        util::Stream stream(buffer);
+        stream.write_byte(0xaa);
+        stream.write_be<std::uint16_t>(0x00);
+        stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
+        s_i2c1_sm.start_write(0x00, stream.bytes());
+        if (!wait_i2c()) {
+            // Bus failure or no acknowledge from any segments - don't even bother trying to read the segments.
+            continue;
         }
-
-        // Allow some time for segment wake-up.
-        vTaskDelay(pdMS_TO_TICKS(1));
-
-        // Reinitialise the I2C peripherals.
-        hal::i2c_init(I2C1, std::nullopt);
-        hal::i2c_init(I2C2, std::nullopt);
 
         for (std::size_t index = 0; index < k_max_segment_count; index++) {
-            sample_segment(index);
+            std::fill(buffer.begin(), buffer.end(), 0);
+            auto sub_buffer = std::span(buffer).subspan(0, k_segment_response_size);
+            s_i2c1_sm.start_read(k_segment_address_start + index, sub_buffer);
+            if (wait_i2c()) {
+                s_segments[index].update(sub_buffer);
+            }
         }
-
-        xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(k_segment_sample_period));
     }
 }
 
@@ -623,13 +596,13 @@ void swd_task(void *) {
         xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
         for (std::size_t i = 0; i < s_segments.size(); i++) {
             const auto &segment = s_segments[i];
-            if (segment.error_flags().is_set(bms::SegmentError::Disconnected)) {
+            if (segment.error_flags().is_set(SegmentError::Disconnected)) {
                 continue;
             }
 
             hal::swd_printf("Segment %u (sampled %u ms ago)\n", i, current_time - segment.last_update_time());
             hal::swd_printf("  Error flags: 0x%x\n", static_cast<std::uint32_t>(segment.error_flags()));
-            hal::swd_printf("  Rail voltage: %u\n", segment.rail_voltage());
+            hal::swd_printf("  I2C error counts: %u %u\n", segment.master_error_count(), segment.slave_error_count());
             hal::swd_printf("  Degraded bitset: 0x%x\n", segment.degraded_bitset());
             hal::swd_printf("  Voltages: [");
             for (bool first = true; const auto &voltage : segment.cell_voltages()) {
@@ -664,6 +637,28 @@ void swd_task(void *) {
 }
 
 } // namespace
+
+extern "C" void I2C1_EV_IRQHandler() {
+    if (!s_i2c1_sm.event()) {
+        // State not changed.
+        return;
+    }
+
+    const auto state = s_i2c1_sm.state();
+    if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
+        // Signal transaction completion.
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }
+}
+
+extern "C" void I2C1_ER_IRQHandler() {
+    s_i2c1_sm.error();
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
 
 void vApplicationIdleHook() {
     // TODO: Could disable some peripherals like I2C.
@@ -721,16 +716,8 @@ void app_main() {
         35000, 42000, -20, 24, 12, 3,
     };
 
-    // Initialise both I2C buses and SPI for the ADC.
-    hal::i2c_init(I2C1, std::nullopt);
-    hal::i2c_init(I2C2, std::nullopt);
+    // Initialise SPI for the ADC.
     hal::spi_init_master(SPI2, SPI_CR1_BR_2);
-
-    // Initialise segment data.
-    for (auto &segment : s_segments) {
-        util::Stream stream({});
-        segment.update(stream);
-    }
 
     s_segments_mutex = xSemaphoreCreateMutex();
     s_mcu_mutex = xSemaphoreCreateMutex();
@@ -738,7 +725,7 @@ void app_main() {
     // Create all tasks.
     // TODO: Think about stack sizes and priorities more.
     xTaskCreate(&supervisor_task, "supervisor", 128, nullptr, 4, nullptr);
-    xTaskCreate(&sample_segments_task, "sample_segs", 256, nullptr, 3, nullptr);
+    xTaskCreate(&sample_segments_task, "sample_segs", 256, nullptr, 3, &s_sample_segments_task_handle);
     xTaskCreate(&sample_mcu_task, "sample_mcu", 128, nullptr, 2, nullptr);
     if constexpr (k_enable_debug_logs) {
         xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
