@@ -29,6 +29,7 @@
 
 // Extras configuration.
 #define configUSE_MUTEXES 1
+#define configUSE_TASK_NOTIFICATIONS 1
 #define INCLUDE_vTaskDelay 1
 #define INCLUDE_xTaskDelayUntil 1
 #define INCLUDE_vTaskSuspend 1
