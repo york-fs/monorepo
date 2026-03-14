@@ -15,13 +15,16 @@
 #include <optional>
 
 // TODO: Send CAN status messages.
-// TODO: Implement current sensing.
+// TODO: Implement current sensing for negative sensor and plausibility checks.
 // TODO: Implement EEPROM config.
 // TODO: Receive CAN ready to drive and config update messages.
 // TODO: Implement inverter shutdown.
 // TODO: Control LED via DMA.
 // TODO: Charger control.
 // TODO: SOC estimation.
+// TODO: Disable heap allocation.
+// TODO: Enable stack overflow detection.
+// TODO: EEPROM page for self test (PCBA).
 
 using namespace bms;
 
@@ -103,9 +106,34 @@ constexpr std::uint32_t k_supervisor_period = 10;
 constexpr std::uint32_t k_segment_sample_period = 50;
 
 /**
- * @brief MCU temperature and 3V3 rail sampling task scheduling period in milliseconds.
+ * @brief MCU ADC sampling task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_mcu_sample_period = 200;
+
+/**
+ * @brief Current sensing voltage low pass filter time period in seconds.
+ */
+constexpr float k_current_sense_tau = 0.5f;
+
+/**
+ * @brief Current sensing zero voltage tracking low pass filter time period in seconds.
+ */
+constexpr float k_current_sense_zero_tau = 3.5f;
+
+/**
+ * @brief Magnitude of current which can be rounded down to zero current in amps.
+ */
+constexpr float k_current_sense_zero_threshold = 0.15f;
+
+/**
+ * @brief Current sensor sensitivity in volts per amp.
+ */
+constexpr float k_current_sense_sensitivity = 3.2f / 1000.0f;
+
+/**
+ * @brief Current sensor ideal voltage output at 0 amps.
+ */
+constexpr float k_current_sense_ideal_zero = 2.5f;
 
 /**
  * @brief Whether shutdown assertion requests can be cancelled if the fault clears within the delay grace period.
@@ -165,6 +193,18 @@ struct Config {
     std::uint8_t minimum_thermistor_count;
 };
 
+class CurrentSensor {
+    float m_filtered_voltage{k_current_sense_ideal_zero};
+    float m_zero_voltage{0.0f};
+    float m_current{0.0f};
+    bool m_has_initial_zero{false};
+
+public:
+    void update(float voltage);
+
+    float current() const { return m_current; }
+};
+
 class Segment {
     std::array<std::optional<std::uint16_t>, k_max_cell_count> m_cell_voltages;
     std::array<std::optional<std::int8_t>, k_max_temperature_count> m_temperatures;
@@ -192,6 +232,9 @@ Config s_config;
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
 SemaphoreHandle_t s_segments_mutex;
+
+// Current sensing.
+CurrentSensor m_positive_sensor;
 
 // Sampled values.
 std::uint16_t s_lvs_voltage = 0;
@@ -227,6 +270,12 @@ hal::Gpio s_scl_1(hal::GpioPort::B, 6);
 hal::Gpio s_sda_1(hal::GpioPort::B, 7);
 hal::Gpio s_scl_2(hal::GpioPort::B, 10);
 hal::Gpio s_sda_2(hal::GpioPort::B, 11);
+
+// Switch and ADC SPI pins for current sensing.
+hal::Gpio s_current_switch(hal::GpioPort::A, 10);
+hal::Gpio s_adc_cs(hal::GpioPort::A, 8);
+hal::Gpio s_sck(hal::GpioPort::B, 13);
+hal::Gpio s_miso(hal::GpioPort::B, 14);
 
 /**
  * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
@@ -270,6 +319,18 @@ void supervisor_task(void *) {
     // Enable the external TPS3851 watchdog.
     hal::gpio_set(s_wds);
 
+    // Enable all IRQs after enabling the watchdog.
+    hal::enable_irq(I2C1_EV_IRQn, 8);
+    hal::enable_irq(I2C1_ER_IRQn, 8);
+
+    // The current sensing interrupts don't use RTOS functions, so can have a priority below
+    // configMAX_SYSCALL_INTERRUPT_PRIORITY (5), which we do for the SPI handling ones to ensure its fairly strict
+    // timing. However, the timer interrupt which drives the current sensing is kept at a low priority to make current
+    // sensing in general lower priority than CAN and segment I2C.
+    hal::enable_irq(TIM3_IRQn, 9);
+    hal::enable_irq(EXTI15_10_IRQn, 0);
+    hal::enable_irq(SPI2_IRQn, 1);
+
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         // Calculate the latest master flags based on the most recent master state and segment data.
@@ -308,6 +369,9 @@ void supervisor_task(void *) {
         }
 
         // TODO: Check MCU values.
+        // TODO: Check that current sensor zero voltage is within a suitable interval, which would both detect a
+        //       bad/disconnect sensor and current already flowing when the BMS starts.
+        // TODO: Check current values.
 
         // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
         if (!s_oc_n.read() || !s_oc_p.read()) {
@@ -393,6 +457,33 @@ void supervisor_task(void *) {
         hal::gpio_reset(s_wdi);
         hal::gpio_set(s_wdi);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
+    }
+}
+
+void CurrentSensor::update(float voltage) {
+    // TODO: Don't hardcode the delta time, it should be kept in sync with the timer period.
+    constexpr float dt = 1.0f / 1000.0f;
+
+    // Update voltage filter.
+    constexpr float alpha = dt / (dt + k_current_sense_tau);
+    m_filtered_voltage += alpha * (voltage - m_filtered_voltage);
+
+    // Don't calculate current until we have an initial zero voltage.
+    if (!m_has_initial_zero) {
+        m_zero_voltage = m_filtered_voltage;
+        if (uptime_ms() > 2000) {
+            m_has_initial_zero = true;
+        }
+        return;
+    }
+
+    // Calculate new current.
+    m_current = (m_filtered_voltage - m_zero_voltage) / k_current_sense_sensitivity;
+
+    // Slowly tend the zero voltage if our current is zero.
+    constexpr float beta = dt / (dt + k_current_sense_zero_tau);
+    if (std::abs(m_current) < k_current_sense_zero_threshold) {
+        m_zero_voltage += beta * (m_filtered_voltage - m_zero_voltage);
     }
 }
 
@@ -509,9 +600,6 @@ bool wait_i2c() {
 }
 
 void sample_segments_task(void *) {
-    hal::enable_irq(I2C1_EV_IRQn, 6);
-    hal::enable_irq(I2C1_ER_IRQn, 6);
-
     std::array<std::uint8_t, 64> buffer{};
     s_last_segment_sample_time = xTaskGetTickCount();
     while (true) {
@@ -592,6 +680,9 @@ void swd_task(void *) {
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
         xSemaphoreGive(s_mcu_mutex);
 
+        const auto positive_current = static_cast<std::int32_t>(m_positive_sensor.current() * 1000.0f);
+        hal::swd_printf("Positive current: %d\n", positive_current);
+
         const auto current_time = xTaskGetTickCount();
         xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
         for (std::size_t i = 0; i < s_segments.size(); i++) {
@@ -637,6 +728,43 @@ void swd_task(void *) {
 }
 
 } // namespace
+
+extern "C" void TIM3_IRQHandler() {
+    // Clear update pending flag.
+    TIM3->SR = ~TIM_SR_UIF;
+
+    // Enable the external interrupt on MISO to capture the busy bit.
+    EXTI->IMR |= EXTI_IMR_MR14;
+
+    // Initiate an ADC conversion.
+    hal::gpio_set(s_adc_cs);
+    hal::gpio_reset(s_adc_cs);
+}
+
+extern "C" void EXTI15_10_IRQHandler() {
+    // Clear pending flag.
+    EXTI->PR = EXTI_PR_PR14;
+
+    // Skip over the MAX11163's busy bit by clocking once manually.
+    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max10);
+    hal::gpio_set(s_sck);
+    hal::gpio_reset(s_sck);
+    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+
+    // Disable the external interrupt so that it doesn't false trigger when doing the real SPI transfer.
+    EXTI->IMR &= ~EXTI_IMR_MR14;
+
+    // Transfer to the ADC.
+    SPI2->DR = 0u;
+}
+
+extern "C" void SPI2_IRQHandler() {
+    if ((SPI2->SR & SPI_SR_RXNE) != 0) {
+        // Convert to floating point volts.
+        const auto voltage = static_cast<float>((SPI2->DR * k_adc_vref) >> 16) * 0.0001f;
+        m_positive_sensor.update(voltage);
+    }
+}
 
 extern "C" void I2C1_EV_IRQHandler() {
     if (!s_i2c1_sm.event()) {
@@ -689,8 +817,14 @@ void app_main() {
         pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
     }
 
+    // Configure current sensing and SPI pins.
+    s_current_switch.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
+    s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_miso.configure(hal::GpioInputMode::PullUp);
+
     // Lock pins whose configurations don't need to change.
-    hal::gpio_lock(s_lvs_sample, s_ref_sample, s_wdi, s_wds, s_oc_n, s_oc_p, s_shutdown, s_led);
+    hal::gpio_lock(s_lvs_sample, s_ref_sample, s_adc_cs, s_current_switch, s_wdi, s_wds, s_oc_n, s_oc_p, s_shutdown,
+                   s_led, s_miso);
 
     // Enable the backup domain and disable write protection.
     RCC->APB1ENR |= RCC_APB1ENR_BKPEN;
@@ -711,13 +845,26 @@ void app_main() {
     PWR->CR &= ~PWR_CR_DBP;
     RCC->APB1ENR &= ~RCC_APB1ENR_BKPEN;
 
+    // Setup 16-bit SPI for the current sampling ADC.
+    RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+    SPI2->CR2 = SPI_CR2_RXNEIE;
+    SPI2->CR1 = SPI_CR1_DFF | SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_1 | SPI_CR1_MSTR;
+
+    // Setup a falling edge external interrupt on MISO for triggering on ADC completion.
+    AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PB;
+    EXTI->FTSR |= EXTI_FTSR_TR14;
+
+    // Setup a 1 kHz timer to trigger current sampling.
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+    TIM3->DIER |= TIM_DIER_UIE;
+    TIM3->PSC = 111;
+    TIM3->ARR = 499;
+    TIM3->CR1 |= TIM_CR1_CEN;
+
     // TODO: Read config from EEPROM.
     s_config = {
         35000, 42000, -20, 24, 12, 3,
     };
-
-    // Initialise SPI for the ADC.
-    hal::spi_init_master(SPI2, SPI_CR1_BR_2);
 
     s_segments_mutex = xSemaphoreCreateMutex();
     s_mcu_mutex = xSemaphoreCreateMutex();
