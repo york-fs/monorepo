@@ -2,6 +2,7 @@
 #include <charger/can_messages.hh>
 #include <charger/error.hh>
 #include <config.hh>
+#include <freertos.hh>
 #include <hal.hh>
 
 #include <FreeRTOS.h>
@@ -64,8 +65,8 @@ struct SwdData {
 };
 
 // Control loop.
-QueueHandle_t s_control_queue;
-QueueHandle_t s_swd_queue;
+freertos::Queue<ControlMessage> s_control_queue;
+freertos::Queue<SwdData> s_swd_queue;
 
 hal::Gpio s_vcc_sense(hal::GpioPort::A, 2);
 hal::Gpio s_cc_set(hal::GpioPort::A, 8);
@@ -130,9 +131,9 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
 void control_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3, 8);
-    can::listen<ControlMessage, [](const ControlMessage &control) {
+    can::listen<ControlMessage, [](const ControlMessage &control_message) {
         BaseType_t higher_priority_task_woken = pdFALSE;
-        xQueueSendToBackFromISR(s_control_queue, &control, &higher_priority_task_woken);
+        s_control_queue.send_to_back_isr(control_message, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_charger_can_id, 0, 0);
 
@@ -171,12 +172,11 @@ void control_task(void *) {
     bool enable_requested = false;
     while (true) {
         // Wait for a new command or the update period time.
-        ControlMessage message;
-        if (xQueueReceive(s_control_queue, &message, pdMS_TO_TICKS(k_update_period)) == pdPASS) {
+        if (const auto message = s_control_queue.receive(pdMS_TO_TICKS(k_update_period))) {
             last_receive_time = xTaskGetTickCount();
-            target_current = message.target_current;
-            target_voltage = message.target_voltage;
-            enable_requested = message.enable;
+            target_current = message->target_current;
+            target_voltage = message->target_voltage;
+            enable_requested = message->enable;
         }
 
         // Calculate charge rail voltage.
@@ -224,15 +224,14 @@ void control_task(void *) {
             .target_voltage = target_voltage,
             .enabled = enable,
         };
-        xQueueOverwrite(s_swd_queue, &swd_data);
+        s_swd_queue.overwrite(swd_data);
     }
 }
 
 void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        SwdData data;
-        xQueueReceive(s_swd_queue, &data, portMAX_DELAY);
+        const auto data = *s_swd_queue.receive(portMAX_DELAY);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(200));
 
         hal::swd_printf("-------------------------\n");
@@ -257,8 +256,8 @@ void app_main() {
     // Default open-drain enable pin to high.
     hal::gpio_set(s_enable);
 
-    s_control_queue = xQueueCreate(8, sizeof(ControlMessage));
-    s_swd_queue = xQueueCreate(1, sizeof(SwdData));
+    s_control_queue = freertos::Queue<ControlMessage>::create(8);
+    s_swd_queue = freertos::Queue<SwdData>::create(1);
 
     xTaskCreate(&control_task, "control", 128, nullptr, 4, nullptr);
     if constexpr (k_enable_debug_logs) {

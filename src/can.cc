@@ -1,5 +1,6 @@
 #include <can.hh>
 
+#include <freertos.hh>
 #include <hal.hh>
 #include <stm32f103xb.h>
 
@@ -19,7 +20,7 @@ namespace {
 // Allow 10 milliseconds for synchronising with the bus.
 constexpr std::uint32_t k_init_timeout = 10;
 
-QueueHandle_t s_tx_queue = nullptr;
+freertos::Queue<Frame> s_tx_queue;
 TaskHandle_t s_task_handle = nullptr;
 Speed s_speed;
 std::array<rx_callback_t, 28> s_rx_callbacks{};
@@ -147,8 +148,8 @@ void tx_task(void *) {
         }
 
         // Wait for a frame to be queued.
-        Frame frame;
-        if (xQueueReceive(s_tx_queue, &frame, portMAX_DELAY) != pdPASS) {
+        const auto frame = s_tx_queue.receive(portMAX_DELAY);
+        if (!frame) {
             continue;
         }
 
@@ -168,18 +169,18 @@ void tx_task(void *) {
 
         // Fill in a free mailbox.
         auto &mailbox = CAN1->sTxMailBox[(CAN1->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos];
-        if (frame.is_extended()) {
-            mailbox.TIR = (frame.extended_id() << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
+        if (frame->is_extended()) {
+            mailbox.TIR = (frame->extended_id() << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
         } else {
-            mailbox.TIR = frame.standard_id() << CAN_TI0R_STID_Pos;
+            mailbox.TIR = frame->standard_id() << CAN_TI0R_STID_Pos;
         }
-        mailbox.TDTR = frame.length & 0xfu;
-        mailbox.TDLR = (static_cast<std::uint32_t>(frame.data[3]) << 24) |
-                       (static_cast<std::uint32_t>(frame.data[2]) << 16) |
-                       (static_cast<std::uint32_t>(frame.data[1]) << 8) | frame.data[0];
-        mailbox.TDHR = (static_cast<std::uint32_t>(frame.data[7]) << 24) |
-                       (static_cast<std::uint32_t>(frame.data[6]) << 16) |
-                       (static_cast<std::uint32_t>(frame.data[5]) << 8) | frame.data[4];
+        mailbox.TDTR = frame->length & 0xfu;
+        mailbox.TDLR = (static_cast<std::uint32_t>(frame->data[3]) << 24) |
+                       (static_cast<std::uint32_t>(frame->data[2]) << 16) |
+                       (static_cast<std::uint32_t>(frame->data[1]) << 8) | frame->data[0];
+        mailbox.TDHR = (static_cast<std::uint32_t>(frame->data[7]) << 24) |
+                       (static_cast<std::uint32_t>(frame->data[6]) << 16) |
+                       (static_cast<std::uint32_t>(frame->data[5]) << 8) | frame->data[4];
 
         // Request transmission.
         mailbox.TIR |= CAN_TI0R_TXRQ;
@@ -282,7 +283,7 @@ void init(Port port, Speed speed, std::uint32_t task_priority, std::uint32_t tx_
     }
 
     // Create the queue of outbound frames.
-    s_tx_queue = xQueueCreate(tx_queue_size, sizeof(Frame));
+    s_tx_queue = freertos::Queue<Frame>::create(tx_queue_size);
 
     // Create the task with the given priority.
     // TODO: Tune stack size.
@@ -326,8 +327,8 @@ void route_filter(std::uint8_t fifo, std::uint8_t filter, std::uint32_t mask, st
 }
 
 void queue_frame(const Frame &frame) {
-    assert(s_tx_queue != nullptr);
-    if (xQueueSendToBack(s_tx_queue, &frame, 0) != pdPASS) {
+    assert(s_tx_queue);
+    if (!s_tx_queue.send_to_back(frame, 0)) {
         ++s_lost_tx_count;
     }
 }
