@@ -36,6 +36,11 @@ constexpr std::uint32_t k_max_voltage = 58000;
 constexpr std::uint32_t k_update_period = 100;
 
 /**
+ * @brief Maximum wait time allowed between CAN commands in milliseconds.
+ */
+constexpr std::uint32_t k_command_timeout = 5000;
+
+/**
  * @brief Voltage setpoint fudge factor to account for diode drop and ohmic loss in the main current carrying
  * conductors. This is quite sad but is necessary with hardware revision A since the MCU doesn't sample the MOSFET drop.
  */
@@ -194,7 +199,7 @@ void control_task(void *) {
         error_flags.set_all(set_voltage(charge_voltage, target_voltage));
 
         // Don't enable if we haven't had a control command in a while.
-        if (xTaskGetTickCount() - last_receive_time >= pdMS_TO_TICKS(1000)) {
+        if (xTaskGetTickCount() - last_receive_time >= pdMS_TO_TICKS(k_command_timeout)) {
             error_flags.set(Error::CommunicationTimeout);
         }
 
