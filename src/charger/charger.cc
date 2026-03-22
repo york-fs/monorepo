@@ -31,6 +31,11 @@ constexpr std::uint32_t k_current_limit = 3000;
 constexpr std::uint32_t k_max_voltage = 58000;
 
 /**
+ * @brief Control loop update period in milliseconds assuming commands don't come faster.
+ */
+constexpr std::uint32_t k_update_period = 100;
+
+/**
  * @brief Voltage setpoint fudge factor to account for diode drop and ohmic loss in the main current carrying
  * conductors. This is quite sad but is necessary with hardware revision A since the MCU doesn't sample the MOSFET drop.
  */
@@ -160,9 +165,9 @@ void control_task(void *) {
     std::uint16_t target_voltage = 0;
     bool enable_requested = false;
     while (true) {
-        // Run when a new command comes, or every 200 ms.
+        // Wait for a new command or the update period time.
         ControlMessage message;
-        if (xQueueReceive(s_control_queue, &message, pdMS_TO_TICKS(200)) == pdPASS) {
+        if (xQueueReceive(s_control_queue, &message, pdMS_TO_TICKS(k_update_period)) == pdPASS) {
             last_receive_time = xTaskGetTickCount();
             target_current = message.target_current;
             target_voltage = message.target_voltage;
