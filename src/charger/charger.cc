@@ -34,7 +34,7 @@ constexpr std::uint32_t k_max_voltage = 58000;
  * @brief Voltage setpoint fudge factor to account for diode drop and ohmic loss in the main current carrying
  * conductors. This is quite sad but is necessary with hardware revision A since the MCU doesn't sample the MOSFET drop.
  */
-constexpr std::uint32_t k_voltage_fudge = 800;
+constexpr std::uint32_t k_voltage_fudge = 300;
 
 constexpr std::uint32_t k_cv_set_ratio = 205;
 
