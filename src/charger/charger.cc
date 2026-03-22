@@ -170,6 +170,7 @@ void control_task(void *) {
     std::uint16_t target_current = 0;
     std::uint16_t target_voltage = 0;
     bool enable_requested = false;
+    float baz = 0.0f;
     while (true) {
         // Wait for a new command or the update period time.
         if (const auto message = s_control_queue.receive(pdMS_TO_TICKS(k_update_period))) {
@@ -181,7 +182,18 @@ void control_task(void *) {
 
         // Calculate charge rail voltage.
         // TODO: Calculate MCU temperature.
-        charge_voltage = ((static_cast<std::uint32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
+        const auto foo = ((static_cast<std::uint32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
+        const auto bar = static_cast<float>(foo) / 1000.0f;
+
+        if (baz == 0.0f) {
+            baz = bar;
+        }
+
+        baz += 0.01f * (bar - baz);
+
+        charge_voltage = static_cast<std::uint32_t>(baz * 1000.0f);
+
+        // charge_voltage = ((static_cast<std::uint32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
 
         // Build new error flags.
         ErrorFlags error_flags;

@@ -176,7 +176,7 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Wait for a sampling period. Use a slightly higher period when charging to allow for recovery from balancing drop.
-    vTaskDelay(pdMS_TO_TICKS(calib ? 2000 : s_is_charging ? 100 : 30));
+    vTaskDelay(pdMS_TO_TICKS(calib ? 2000 : s_is_charging ? 250 : 30));
 
     // Sample all cells in order of most potential to least potential (w.r.t. segment ground).
     for (std::size_t cell = 12; cell > 0; cell--) {
