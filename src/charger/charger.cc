@@ -179,11 +179,22 @@ void control_task(void *) {
             enable_requested = message->enable;
         }
 
-        // Calculate charge rail voltage.
-        // TODO: Calculate MCU temperature.
-        charge_voltage = ((static_cast<std::uint32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
+        // Calculate instantaneous charge rail voltage.
+        const auto instant_charge_voltage = ((static_cast<std::int32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
+
+        // Update filtered charge voltage.
+        const auto charge_voltage_error = std::abs(instant_charge_voltage - static_cast<std::int32_t>(charge_voltage));
+        if (charge_voltage_error > 1000) {
+            charge_voltage = static_cast<std::uint32_t>(instant_charge_voltage);
+        } else {
+            constexpr auto Q = 8;
+            constexpr auto alpha = 1 << (Q - 5);
+            const auto delta = alpha * (instant_charge_voltage - static_cast<std::int32_t>(charge_voltage));
+            charge_voltage += (delta + (1 << (Q - 1))) >> Q;
+        }
 
         // Build new error flags.
+        // TODO: Calculate MCU temperature.
         ErrorFlags error_flags;
         if (!enable_requested) {
             error_flags.set(Error::Disabled);
