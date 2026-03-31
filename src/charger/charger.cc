@@ -166,6 +166,7 @@ void control_task(void *) {
     TIM1->CR1 |= TIM_CR1_CEN;
 
     TickType_t last_receive_time = 0;
+    std::int32_t filtered_charge_voltage = 0;
     std::uint16_t charge_voltage = 0;
     std::uint16_t target_current = 0;
     std::uint16_t target_voltage = 0;
@@ -183,14 +184,32 @@ void control_task(void *) {
         const auto instant_charge_voltage = ((static_cast<std::int32_t>(adc_buffer[0]) * 3300) >> 12) * 18;
 
         // Update filtered charge voltage.
-        const auto charge_voltage_error = std::abs(instant_charge_voltage - static_cast<std::int32_t>(charge_voltage));
+        const auto charge_voltage_error = std::abs(instant_charge_voltage - filtered_charge_voltage);
         if (charge_voltage_error > 1000) {
-            charge_voltage = static_cast<std::uint32_t>(instant_charge_voltage);
+            // Don't filter large errors.
+            filtered_charge_voltage = instant_charge_voltage;
         } else {
+            // Perform a simple low pass filter but using only integer operations (Q format).
             constexpr auto Q = 8;
             constexpr auto alpha = 1 << (Q - 5);
-            const auto delta = alpha * (instant_charge_voltage - static_cast<std::int32_t>(charge_voltage));
-            charge_voltage += (delta + (1 << (Q - 1))) >> Q;
+            const auto delta = alpha * (instant_charge_voltage - filtered_charge_voltage);
+            filtered_charge_voltage += (delta + (1 << (Q - 1))) >> Q;
+        }
+
+        // Round filtered charge voltage up to the nearest 50 mV. This will overestimate slightly, which is good for the
+        // CV setpoint and MOSFET power calculations.
+        const auto rounded_charge_voltage = static_cast<std::uint16_t>(((filtered_charge_voltage + 49) / 50) * 50);
+
+        // Update a hysteresis filter using the filtered and rounded voltages.
+        constexpr auto hysteresis_threshold = 25;
+        if (rounded_charge_voltage > charge_voltage) {
+            if (filtered_charge_voltage > charge_voltage + hysteresis_threshold) {
+                charge_voltage = rounded_charge_voltage;
+            }
+        } else if (rounded_charge_voltage < charge_voltage) {
+            if (filtered_charge_voltage + hysteresis_threshold < charge_voltage) {
+                charge_voltage = rounded_charge_voltage;
+            }
         }
 
         // Build new error flags.
