@@ -435,7 +435,7 @@ void cmd_task(void *) {
         // Disable the frontend and reference.
         hal::gpio_reset(s_afe_en, s_ref_en, s_led);
 
-        // Pull the GPIO expander outputs low to avoid power draw.
+        // Drive all thermistor outputs low to avoid floating power draw.
         s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
         s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
         hal::i2c_init(I2C2, std::nullopt);
@@ -443,6 +443,9 @@ void cmd_task(void *) {
         static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0x00));
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0x00));
         static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0x00));
+        for (const auto &pin : s_mcu_thermistor_enable) {
+            pin.configure(hal::GpioInputMode::PullDown);
+        }
 
         // Reconfigure SCL as a regular input for use as an external event. Also reconfigure SDA to avoid the STM
         // driving it low and upsetting the isolator.
