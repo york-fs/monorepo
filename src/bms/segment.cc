@@ -245,19 +245,19 @@ void sample_voltages_task(void *) {
     }
 }
 
-hal::I2cStatus set_expander_register(ExpanderRegister reg, std::uint8_t value) {
+bool set_expander_register(ExpanderRegister reg, std::uint8_t value) {
     std::array data{
         static_cast<std::uint8_t>(reg),
         value,
     };
-    if (auto status = hal::i2c_wait_idle(I2C2, 5); status != hal::I2cStatus::Ok) {
-        return status;
+    if (const auto status = hal::i2c_wait_idle(I2C2, 5); status != hal::I2cStatus::Ok) {
+        return false;
     }
-    if (auto status = hal::i2c_master_write(I2C2, 0x20, data); status != hal::I2cStatus::Ok) {
-        return status;
+    if (const auto status = hal::i2c_master_write(I2C2, 0x20, data); status != hal::I2cStatus::Ok) {
+        return false;
     }
     hal::i2c_stop(I2C2);
-    return hal::I2cStatus::Ok;
+    return true;
 }
 
 std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::uint8_t index) {
@@ -276,7 +276,7 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
         const auto pin_index = index - s_mcu_thermistor_enable.size();
         const auto pin_bit =
             configuration_register == ExpanderRegister::ConfigurationPort0 ? pin_index : 15 - pin_index;
-        if (set_expander_register(configuration_register, ~(1u << pin_bit)) != hal::I2cStatus::Ok) {
+        if (!set_expander_register(configuration_register, ~(1u << pin_bit))) {
             // Failed to configure expander.
             return std::nullopt;
         }
@@ -301,7 +301,7 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     if (index < s_mcu_thermistor_enable.size()) {
         // Reconfigure MCU pin to high impedance.
         s_mcu_thermistor_enable[index].configure(hal::GpioInputMode::Floating);
-    } else if (set_expander_register(configuration_register, 0xff) != hal::I2cStatus::Ok) {
+    } else if (!set_expander_register(configuration_register, 0xff)) {
         // Failed to configure expander.
         return std::nullopt;
     }
@@ -341,6 +341,30 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
 void sample_temperatures_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
+        const auto period = s_is_charging ? 2000 : 1000;
+        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
+
+        // Make all expander pins high impedance.
+        if (!set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff)) {
+            continue;
+        }
+        if (!set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff)) {
+            continue;
+        }
+
+        // Set output bits so that each thermistor can be sampled by briefly configuring the pin as an output.
+        if (!set_expander_register(ExpanderRegister::OutputPort0, 0xff)) {
+            continue;
+        }
+        if (!set_expander_register(ExpanderRegister::OutputPort1, 0xff)) {
+            continue;
+        }
+
+        // Make MCU connected thermistors high impedance.
+        for (const auto &pin : s_mcu_thermistor_enable) {
+            pin.configure(hal::GpioInputMode::Floating);
+        }
+
         std::uint32_t thermistor_bitset = 0;
         std::array<std::int8_t, 23> temperatures{};
         for (std::uint8_t index = 0; index < temperatures.size(); index++) {
@@ -357,9 +381,6 @@ void sample_temperatures_task(void *) {
         s_thermistor_bitset = thermistor_bitset;
         std::copy(temperatures.begin(), temperatures.end(), s_temperatures.begin());
         taskEXIT_CRITICAL();
-
-        const auto period = s_is_charging ? 2000 : 1000;
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
     }
 }
 
@@ -504,14 +525,6 @@ void cmd_task(void *) {
                 s_correction_table[i] = sample->first / 128;
             }
         }
-
-        // Configure expander.
-        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0xff));
-        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0xff));
-        static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort0, 0x00));
-        static_cast<void>(set_expander_register(ExpanderRegister::PolarityPort1, 0x00));
-        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff));
-        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff));
     }
 }
 
