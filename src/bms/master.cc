@@ -1,6 +1,7 @@
 #include <bms/error.hh>
 #include <can.hh>
 #include <config.hh>
+#include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
 #include <stm32f103xb.h>
@@ -280,16 +281,6 @@ hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 
 /**
- * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
- */
-std::uint32_t uptime_ms() {
-    // This conditional should be compiled out since the tick type is atomic so no critical section or interrupt masking
-    // is needed. This code also ignores the possibility of tick overflow.
-    const auto tick_count = xPortIsInsideInterrupt() ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
-    return pdTICKS_TO_MS(tick_count);
-}
-
-/**
  * @brief Returns true if at least the specified duration of time has passed since the given start time.
  *
  * @param start the period start time in FreeRTOS tick units
@@ -483,7 +474,7 @@ void CurrentSensor::update(float voltage) {
     // Don't calculate current until we have an initial zero voltage.
     if (!m_has_initial_zero) {
         m_zero_voltage = m_filtered_voltage;
-        if (uptime_ms() > 2000) {
+        if (freertos::uptime_ms() > 2000) {
             m_has_initial_zero = true;
         }
         return;
@@ -684,7 +675,7 @@ void swd_task(void *) {
             const auto time_since_assertion = pdTICKS_TO_MS(xTaskGetTickCount() - *s_shutdown_time);
             hal::swd_printf("Time since shutdown assertion: %u\n", time_since_assertion);
         }
-        hal::swd_printf("Uptime: %u\n", uptime_ms() / 1000);
+        hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
         hal::swd_printf("CAN online: %s\n", can::is_online() ? "yes" : "no");
 
         const auto can_stats = can::get_stats();

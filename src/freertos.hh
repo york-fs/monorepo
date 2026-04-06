@@ -84,4 +84,14 @@ void Queue<T>::overwrite_isr(const T &item, BaseType_t *higher_priority_task_wok
     xQueueOverwriteFromISR(m_handle, &item, higher_priority_task_woken);
 }
 
+/**
+ * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
+ */
+inline std::uint32_t uptime_ms() {
+    // This conditional should be compiled out since the tick type is atomic so no critical section or interrupt masking
+    // is needed. This code also ignores the possibility of tick overflow.
+    const auto tick_count = xPortIsInsideInterrupt() ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
+    return pdTICKS_TO_MS(tick_count);
+}
+
 } // namespace freertos
