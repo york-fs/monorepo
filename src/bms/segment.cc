@@ -176,7 +176,14 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Wait for a sampling period. Use a slightly higher period when charging to allow for recovery from balancing drop.
-    vTaskDelay(pdMS_TO_TICKS(calib ? 2000 : s_is_charging ? 250 : 30));
+    vTaskDelay(pdMS_TO_TICKS(calib ? 1000 : s_is_charging ? 250 : 30));
+
+    // Enter hold mode early for charge injection calibration.
+    if (calib && !afe_transfer(0b10000000, false)) {
+        // Failed to configure frontend.
+        xSemaphoreGive(s_afe_mutex);
+        return;
+    }
 
     // Sample all cells in order of most potential to least potential (w.r.t. segment ground).
     for (std::size_t cell = 12; cell > 0; cell--) {
@@ -191,6 +198,11 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
         if (!afe_transfer(index_table[index], false)) {
             // Failed to configure frontend.
             continue;
+        }
+
+        // Discard the first ADC reading.
+        if (calib) {
+            max_adc::sample_raw(SPI2, s_adc_cs);
         }
 
         // Take successive ADC samples to obtain an average voltage reading.
@@ -222,7 +234,6 @@ void sample_voltages_task(void *) {
                 }
 
                 // Cell tap is connected. Apply parasitic capacitance correction factor.
-                // TODO: Do more testing with this.
                 cell_tap_bitet |= 1u << index;
                 voltages[index] = voltage - s_correction_table[index];
 
@@ -517,12 +528,12 @@ void cmd_task(void *) {
         vTaskDelay(pdMS_TO_TICKS(200));
 
         // Perform a parasitic capacitance calibration.
-        // TODO: More error checking here.
         std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, 12> samples;
+        std::fill(s_correction_table.begin(), s_correction_table.end(), 0);
         sample_voltages_raw(samples, true);
         for (std::size_t i = 0; i < samples.size(); i++) {
             if (const auto sample = samples[i]) {
-                s_correction_table[i] = sample->first / 128;
+                s_correction_table[i] = (sample->first + 127) / 128;
             }
         }
     }
