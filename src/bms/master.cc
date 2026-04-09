@@ -126,7 +126,7 @@ constexpr float k_current_sense_zero_tau = 3.5f;
 /**
  * @brief Magnitude of current which can be rounded down to zero current in amps.
  */
-constexpr float k_current_sense_zero_threshold = 0.15f;
+constexpr float k_current_sense_zero_threshold = 0.1f;
 
 /**
  * @brief Current sensor sensitivity in volts per amp.
