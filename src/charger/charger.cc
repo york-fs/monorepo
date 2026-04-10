@@ -103,6 +103,12 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
         error_flags.set(Error::RailOvervoltage);
     }
 
+    // Special mode for discharging.
+    if (target_voltage == 0xffff) {
+        TIM1->CCR2 = 0;
+        return error_flags;
+    }
+
     // Factor in any drop into the effective available charge voltage.
     charge_voltage -= std::min(charge_voltage, k_voltage_fudge);
 
