@@ -104,7 +104,7 @@ State handle_event(I2C_TypeDef *i2c, StateMachine *sm) {
     // Send stop condition once the last byte has been fully transferred.
     if (state == State::Stop && (sr1 & I2C_SR1_BTF) != 0) {
         i2c->CR2 &= ~I2C_CR2_ITEVTEN;
-        i2c->CR1 |= I2C_CR1_STOP;
+        i2c->CR1 |= sm->should_emit_stop() ? I2C_CR1_STOP : I2C_CR1_START;
         return State::Idle;
     }
 
@@ -187,6 +187,7 @@ void StateMachine::init() {
     // Enable the peripheral.
     i2c->CR1 |= I2C_CR1_PE;
     m_state.store(State::Idle);
+    m_emit_stop = true;
 }
 
 void StateMachine::listen(std::uint8_t address, bool engc) {
@@ -209,26 +210,29 @@ void StateMachine::set_buffer(std::span<std::uint8_t> buffer) {
     m_head.store(0);
 }
 
-void StateMachine::start(std::uint8_t address, std::span<std::uint8_t> buffer) {
+void StateMachine::start(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
     m_address = address;
     m_buffer = buffer;
+    const bool should_emit_start = std::exchange(m_emit_stop, emit_stop);
     m_head.store(0);
     m_state.store(State::Start);
 
     // Enable all interrupts and generate a start condition.
     auto *i2c = i2c_for(m_bus);
-    i2c->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
     i2c->CR1 &= ~I2C_CR1_POS;
-    i2c->CR1 |= I2C_CR1_START;
+    i2c->CR2 |= I2C_CR2_ITBUFEN | I2C_CR2_ITEVTEN | I2C_CR2_ITERREN;
+    if (should_emit_start) {
+        i2c->CR1 |= I2C_CR1_START;
+    }
 }
 
-void StateMachine::start_read(std::uint8_t address, std::span<std::uint8_t> buffer) {
+void StateMachine::start_read(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
     i2c_for(m_bus)->CR1 |= I2C_CR1_ACK;
-    start((address << 1) | 1u, buffer);
+    start((address << 1) | 1u, buffer, emit_stop);
 }
 
-void StateMachine::start_write(std::uint8_t address, std::span<std::uint8_t> buffer) {
-    start(address << 1, buffer);
+void StateMachine::start_write(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
+    start(address << 1, buffer, emit_stop);
 }
 
 bool StateMachine::event() {

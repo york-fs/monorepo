@@ -34,8 +34,9 @@ class StateMachine {
     std::atomic<State> m_state{State::Error};
     Bus m_bus;
     std::uint8_t m_address{0};
+    bool m_emit_stop{true};
 
-    void start(std::uint8_t address, std::span<std::uint8_t> buffer);
+    void start(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop);
 
 public:
     explicit StateMachine(Bus bus) : m_bus(bus) {}
@@ -49,8 +50,8 @@ public:
     void listen(std::uint8_t address, bool engc);
     void set_buffer(std::span<std::uint8_t> buffer);
 
-    void start_read(std::uint8_t address, std::span<std::uint8_t> buffer);
-    void start_write(std::uint8_t address, std::span<std::uint8_t> buffer);
+    void start_read(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop);
+    void start_write(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop);
 
     bool event();
     void error();
@@ -62,6 +63,7 @@ public:
     std::uint32_t head() const { return m_head.load(); }
     State state() const { return m_state.load(); }
     std::uint8_t address() const { return m_address; }
+    bool should_emit_stop() const { return m_emit_stop; }
 };
 
 } // namespace i2c

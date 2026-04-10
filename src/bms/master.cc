@@ -614,7 +614,7 @@ void sample_segments_task(void *) {
         stream.write_byte(0xaa);
         stream.write_be<std::uint16_t>(0x00);
         stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
-        s_i2c1_sm.start_write(0x00, stream.bytes());
+        s_i2c1_sm.start_write(0x00, stream.bytes(), true);
         if (!wait_i2c()) {
             // Bus failure or no acknowledge from any segments - don't even bother trying to read the segments.
             continue;
@@ -623,7 +623,7 @@ void sample_segments_task(void *) {
         for (std::size_t index = 0; index < k_max_segment_count; index++) {
             std::fill(buffer.begin(), buffer.end(), 0);
             auto sub_buffer = std::span(buffer).subspan(0, k_segment_response_size);
-            s_i2c1_sm.start_read(k_segment_address_start + index, sub_buffer);
+            s_i2c1_sm.start_read(k_segment_address_start + index, sub_buffer, true);
             if (wait_i2c()) {
                 s_segments[index].update(sub_buffer);
             }
