@@ -74,3 +74,6 @@
 	url = https://github.com/york-fs/bspd.git
 	update = rebase
 	branch = master
+[submodule "kicad/tsac-distribution"]
+	path = kicad/tsac-distribution
+	url = https://github.com/york-fs/tsac-distribution.git
