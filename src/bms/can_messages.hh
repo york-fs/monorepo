@@ -15,6 +15,8 @@ struct WriteConfigMessage {
 };
 
 struct ConfigSegmentMessage {
+    std::uint8_t start_address;
+    std::uint8_t segment_count;
     std::uint8_t cell_count;
     std::uint8_t minimum_thermistor_count;
 

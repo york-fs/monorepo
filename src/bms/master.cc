@@ -49,11 +49,6 @@ constexpr std::uint8_t k_eeprom_address = 0x50;
 constexpr std::uint16_t k_eeprom_page_size = 32;
 
 /**
- * @brief The I2C address of the first segment.
- */
-constexpr std::uint8_t k_segment_address_start = 0x40;
-
-/**
  * @brief I2C message size received from a segment in bytes.
  */
 constexpr std::size_t k_segment_response_size = 63;
@@ -199,6 +194,8 @@ constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_
 
 struct Config {
     // Segment config.
+    std::uint8_t segment_start_address;
+    std::uint8_t segment_count;
     std::uint8_t cell_count;
     std::uint8_t minimum_thermistor_count;
 
@@ -335,7 +332,6 @@ bool has_elapsed(TickType_t start, std::uint32_t duration) {
  * cause it to timeout, assert shutdown, and reset the MCU.
  */
 void supervisor_task(void *) {
-    std::optional<std::size_t> expected_segment_count;
     std::optional<TickType_t> shutdown_request_time;
     std::optional<TickType_t> fault_cleared_time;
 
@@ -404,8 +400,8 @@ void supervisor_task(void *) {
         }
         xSemaphoreGive(s_segments_mutex);
 
-        // Check we have the right amount of segments connected.
-        if (expected_segment_count && *expected_segment_count != ready_segment_count) {
+        // Check that we have the right amount of segments connected.
+        if (ready_segment_count != s_config.segment_count) {
             master_flags.set(MasterError::BadSegmentCount);
         }
 
@@ -740,6 +736,8 @@ void config_task(void *) {
     // Dump config.
     if constexpr (k_enable_debug_logs) {
         hal::swd_printf("\nUsing config version %u in slot %u\n", s_config.counter, config_index);
+        hal::swd_printf("segment_start_address: 0x%x\n", s_config.segment_start_address);
+        hal::swd_printf("segment_count: %u\n", s_config.segment_count);
         hal::swd_printf("cell_count: %u\n", s_config.cell_count);
         hal::swd_printf("minimum_thermistor_count: %u\n", s_config.minimum_thermistor_count);
         hal::swd_printf("undervoltage_threshold: %u\n", s_config.undervoltage_threshold);
@@ -756,6 +754,8 @@ void config_task(void *) {
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_bms_can_id, 1, 0);
     can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
+        s_config.segment_start_address = new_config.start_address;
+        s_config.segment_count = new_config.segment_count;
         s_config.cell_count = new_config.cell_count;
         s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
     }>(config::k_bms_can_id, 1, 1);
@@ -808,7 +808,7 @@ void sample_segments_task(void *) {
         for (std::size_t index = 0; index < k_max_segment_count; index++) {
             std::fill(buffer.begin(), buffer.end(), 0);
             auto sub_buffer = std::span(buffer).subspan(0, k_segment_response_size);
-            s_i2c1_sm.start_read(k_segment_address_start + index, sub_buffer, true);
+            s_i2c1_sm.start_read(s_config.segment_start_address + index, sub_buffer, true);
             if (i2c_wait(s_i2c1_sm)) {
                 s_segments[index].update(sub_buffer);
             }

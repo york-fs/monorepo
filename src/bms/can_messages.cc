@@ -16,18 +16,28 @@ bool WriteConfigMessage::encode(util::Stream &) const {
 }
 
 std::optional<ConfigSegmentMessage> ConfigSegmentMessage::decode(util::Stream &stream) {
+    const auto start_address = stream.read_byte();
+    const auto segment_count = stream.read_byte();
     const auto cell_count = stream.read_byte();
     const auto minimum_thermistor_count = stream.read_byte();
-    if (!cell_count || !minimum_thermistor_count) {
+    if (!start_address || !segment_count || !cell_count || !minimum_thermistor_count) {
         return std::nullopt;
     }
     return ConfigSegmentMessage{
+        .start_address = *start_address,
+        .segment_count = *segment_count,
         .cell_count = *cell_count,
         .minimum_thermistor_count = *minimum_thermistor_count,
     };
 }
 
 bool ConfigSegmentMessage::encode(util::Stream &stream) const {
+    if (!stream.write_byte(start_address)) {
+        return false;
+    }
+    if (!stream.write_byte(segment_count)) {
+        return false;
+    }
     if (!stream.write_byte(cell_count)) {
         return false;
     }
