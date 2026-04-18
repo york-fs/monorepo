@@ -20,8 +20,9 @@ namespace {
 // Allow 10 milliseconds for synchronising with the bus.
 constexpr std::uint32_t k_init_timeout = 10;
 
-freertos::Queue<Frame> s_tx_queue;
-TaskHandle_t s_task_handle = nullptr;
+// TODO: Tune task stack size.
+freertos::Task<128> s_task;
+freertos::Queue<Frame, 8> s_tx_queue;
 Speed s_speed;
 std::array<rx_callback_t, 28> s_rx_callbacks{};
 std::atomic<std::uint32_t> s_rx_count = 0;
@@ -137,13 +138,13 @@ bool reinit(Speed speed) {
  */
 void tx_task(void *) {
     // Start with all 3 mailboxes free.
-    xTaskNotify(s_task_handle, 3, eSetValueWithOverwrite);
+    xTaskNotify(*s_task, 3, eSetValueWithOverwrite);
     while (true) {
         if (!s_online.load()) {
             // TODO: Backoff with jitter.
             vTaskDelay(pdMS_TO_TICKS(100));
             s_online.store(reinit(s_speed));
-            xTaskNotify(s_task_handle, 3, eSetValueWithOverwrite);
+            xTaskNotify(*s_task, 3, eSetValueWithOverwrite);
             continue;
         }
 
@@ -232,7 +233,7 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
     }
     if (free_mailboxes != 0) {
         BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(s_task_handle, free_mailboxes, eIncrement, &higher_priority_task_woken);
+        xTaskNotifyFromISR(*s_task, free_mailboxes, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }
 }
@@ -255,11 +256,11 @@ extern "C" void CAN1_SCE_IRQHandler() {
     s_online.store((CAN1->ESR & CAN_ESR_BOFF) == 0);
     if (!s_online.load()) {
         // Kick task notification so that it attempt to resync with the bus.
-        xTaskNotifyFromISR(s_task_handle, 1, eIncrement, nullptr);
+        xTaskNotifyFromISR(*s_task, 1, eIncrement, nullptr);
     }
 }
 
-void init(Port port, Speed speed, std::uint32_t task_priority, std::uint32_t tx_queue_size) {
+void init(Port port, Speed speed, std::uint32_t task_priority) {
     // Enable CAN1's peripheral clock.
     RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
 
@@ -282,14 +283,12 @@ void init(Port port, Speed speed, std::uint32_t task_priority, std::uint32_t tx_
         AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP3;
     }
 
-    // Create the queue of outbound frames.
-    s_tx_queue = freertos::Queue<Frame>::create(tx_queue_size);
+    // Initialise the queue of outbound frames.
+    s_tx_queue.init();
 
-    // Create the task with the given priority.
-    // TODO: Tune stack size.
+    // Initialise the task with the given priority.
     s_speed = speed;
-    xTaskCreate(&tx_task, "can", 128, nullptr, task_priority, &s_task_handle);
-
+    s_task.init(&tx_task, "can", task_priority);
     s_online.store(reinit(speed));
 }
 

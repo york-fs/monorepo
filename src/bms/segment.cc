@@ -1,3 +1,4 @@
+#include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
 #include <max_adc.hh>
@@ -71,13 +72,13 @@ enum class ExpanderRegister : std::uint8_t {
 };
 
 // Lock for frontend access.
-SemaphoreHandle_t s_afe_mutex;
+freertos::Mutex s_afe_mutex;
 
 // I2C communication to master.
 i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
 std::uint8_t s_i2c_address = 0;
 std::array<std::uint8_t, 128> s_i2c_buffer;
-MessageBufferHandle_t s_cmd_queue;
+freertos::MessageBuffer<128> s_cmd_queue;
 
 // Command received from master.
 std::atomic<bool> s_is_charging;
@@ -93,6 +94,12 @@ std::uint32_t s_thermistor_bitset = 0;
 
 // Error tracking.
 std::atomic<std::uint32_t> s_i2c_error_count = 0;
+
+// Tasks.
+freertos::Task<128> s_cmd_task;
+freertos::Task<128> s_sample_voltages_task;
+freertos::Task<128> s_sample_temperatures_task;
+freertos::Task<128> s_swd_task;
 
 // I2C slave address configuration pins.
 std::array s_address_pins{
@@ -166,12 +173,12 @@ hal::Gpio s_sda_2(hal::GpioPort::B, 11);
 }
 
 void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::uint16_t>>> samples, bool calib) {
-    xSemaphoreTake(s_afe_mutex, portMAX_DELAY);
+    xSemaphoreTake(*s_afe_mutex, portMAX_DELAY);
 
     // Configure the frontend. We want to sample the cells without any leakage paths.
     if (!afe_transfer(calib ? 0u : 0b01011000u, false)) {
         // Failed to configure frontend.
-        xSemaphoreGive(s_afe_mutex);
+        xSemaphoreGive(*s_afe_mutex);
         return;
     }
 
@@ -181,7 +188,7 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     // Enter hold mode early for charge injection calibration.
     if (calib && !afe_transfer(0b10000000, false)) {
         // Failed to configure frontend.
-        xSemaphoreGive(s_afe_mutex);
+        xSemaphoreGive(*s_afe_mutex);
         return;
     }
 
@@ -211,7 +218,7 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 
     // Re-enable leakage paths (diagnostic mode and balancing). Diagnostic mode helps to catch disconnected taps.
     static_cast<void>(afe_transfer(0b01011000u, true));
-    xSemaphoreGive(s_afe_mutex);
+    xSemaphoreGive(*s_afe_mutex);
 }
 
 void sample_voltages_task(void *) {
@@ -297,16 +304,16 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     hal::delay_us(5);
 
     // Configure the frontend.
-    xSemaphoreTake(s_afe_mutex, portMAX_DELAY);
+    xSemaphoreTake(*s_afe_mutex, portMAX_DELAY);
     if (!afe_transfer(0b00111000u, true)) {
         // Failed to configure frontend.
-        xSemaphoreGive(s_afe_mutex);
+        xSemaphoreGive(*s_afe_mutex);
         return std::nullopt;
     }
 
     // Sample the voltage on the ADC.
     const auto sample = max_adc::sample_voltage(SPI2, s_adc_cs, k_adc_vref, 8);
-    xSemaphoreGive(s_afe_mutex);
+    xSemaphoreGive(*s_afe_mutex);
 
     // Disable the thermistor.
     if (index < s_mcu_thermistor_enable.size()) {
@@ -448,7 +455,7 @@ void cmd_task(void *) {
     while (true) {
         std::array<std::uint8_t, 16> cmd_bytes{};
         const auto cmd_length =
-            xMessageBufferReceive(s_cmd_queue, cmd_bytes.data(), cmd_bytes.size(), pdMS_TO_TICKS(k_sleep_timeout));
+            xMessageBufferReceive(*s_cmd_queue, cmd_bytes.data(), cmd_bytes.size(), pdMS_TO_TICKS(k_sleep_timeout));
         if (cmd_length != 0) {
             // Received a master command - handle it and stay awake.
             handle_command(std::span(cmd_bytes).subspan(0, cmd_length));
@@ -579,7 +586,7 @@ extern "C" void I2C1_EV_IRQHandler() {
     if (state == i2c::State::SlaveRx) {
         s_i2c1_sm.set_buffer(std::span(s_i2c_buffer).subspan(0, 16));
     } else if (state == i2c::State::SlaveRxFinish) {
-        if (xMessageBufferSendFromISR(s_cmd_queue, s_i2c_buffer.data(), s_i2c1_sm.head(),
+        if (xMessageBufferSendFromISR(*s_cmd_queue, s_i2c_buffer.data(), s_i2c1_sm.head(),
                                       &higher_priority_task_woken) == 0) {
             ++s_i2c_error_count;
         }
@@ -636,14 +643,14 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    s_afe_mutex = xSemaphoreCreateMutex();
-    s_cmd_queue = xMessageBufferCreate(128);
+    s_afe_mutex.init();
+    s_cmd_queue.init();
 
-    xTaskCreate(&cmd_task, "cmd", 128, nullptr, 4, nullptr);
-    xTaskCreate(&sample_voltages_task, "voltages", 128, nullptr, 3, nullptr);
-    xTaskCreate(&sample_temperatures_task, "temperatures", 128, nullptr, 2, nullptr);
+    s_cmd_task.init(&cmd_task, "cmd", 4);
+    s_sample_voltages_task.init(&sample_voltages_task, "voltages", 3);
+    s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 2);
     if constexpr (k_enable_debug_logs) {
-        xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
+        s_swd_task.init(&swd_task, "swd", 1);
     }
     vTaskStartScheduler();
 }

@@ -144,10 +144,9 @@ using rx_callback_t = void (*)(const Frame &);
  * @param port the pin pair to use as RX and TX
  * @param speed the bus speed to use
  * @param task_priority the priority to use for the transmission task
- * @param tx_queue_size the size of the queue to make for holding pending transmissions
  * @return true if initialisation was successful; false otherwise
  */
-void init(Port port, Speed speed, std::uint32_t task_priority, std::uint32_t tx_queue_size);
+void init(Port port, Speed speed, std::uint32_t task_priority);
 
 /**
  * @brief Sets the given callback to be called when a message is pending on the given FIFO and filter index.

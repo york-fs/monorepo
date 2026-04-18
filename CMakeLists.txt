@@ -62,14 +62,14 @@ function(add_stm_executable target)
             ${CMAKE_SOURCE_DIR}/freertos/stream_buffer.c
             ${CMAKE_SOURCE_DIR}/freertos/tasks.c
             ${CMAKE_SOURCE_DIR}/freertos/timers.c
-            ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3/port.c
-            ${CMAKE_SOURCE_DIR}/freertos/portable/MemMang/heap_4.c)
+            ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3/port.c)
         target_compile_options(${target}-freertos PRIVATE -w)
         target_include_directories(${target}-freertos PUBLIC
             ${CMAKE_SOURCE_DIR}/freertos/include
             ${CMAKE_SOURCE_DIR}/freertos/portable/GCC/ARM_CM3
             ${CMAKE_CURRENT_BINARY_DIR}/${target}-include)
         target_link_libraries(${target} PRIVATE ${target}-freertos)
+        target_sources(${target} PRIVATE src/freertos.cc)
     endif()
 endfunction()
 

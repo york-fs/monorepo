@@ -15,9 +15,9 @@
 #define configIDLE_SHOULD_YIELD 1
 #define configMINIMAL_STACK_SIZE 128
 
-// Heap configuration.
-#define configSUPPORT_DYNAMIC_ALLOCATION 1
-#define configTOTAL_HEAP_SIZE (8 * 1024)
+// Disable heap.
+#define configSUPPORT_STATIC_ALLOCATION 1
+#define configSUPPORT_DYNAMIC_ALLOCATION 0
 #define configUSE_MALLOC_FAILED_HOOK 0
 
 // Interrupt configuration. The kernel gets the lowest priority, which is the highest numerical value. This applies to

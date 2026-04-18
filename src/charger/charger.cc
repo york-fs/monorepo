@@ -65,8 +65,12 @@ struct SwdData {
 };
 
 // Control loop.
-freertos::Queue<ControlMessage> s_control_queue;
-freertos::Queue<SwdData> s_swd_queue;
+freertos::Queue<ControlMessage, 8> s_control_queue;
+freertos::Queue<SwdData, 1> s_swd_queue;
+
+// Tasks.
+freertos::Task<128> s_control_task;
+freertos::Task<128> s_swd_task;
 
 hal::Gpio s_vcc_sense(hal::GpioPort::A, 2);
 hal::Gpio s_cc_set(hal::GpioPort::A, 8);
@@ -136,7 +140,7 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
 
 void control_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 3, 8);
+    can::init(can::Port::B, config::k_can_speed, 3);
     can::listen<ControlMessage, [](const ControlMessage &control_message) {
         BaseType_t higher_priority_task_woken = pdFALSE;
         s_control_queue.send_to_back_isr(control_message, &higher_priority_task_woken);
@@ -292,12 +296,12 @@ void app_main() {
     // Default open-drain enable pin to high.
     hal::gpio_set(s_enable);
 
-    s_control_queue = freertos::Queue<ControlMessage>::create(8);
-    s_swd_queue = freertos::Queue<SwdData>::create(1);
+    s_control_queue.init();
+    s_swd_queue.init();
 
-    xTaskCreate(&control_task, "control", 128, nullptr, 4, nullptr);
+    s_control_task.init(&control_task, "control", 4);
     if constexpr (k_enable_debug_logs) {
-        xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
+        s_swd_task.init(&swd_task, "swd", 1);
     }
     vTaskStartScheduler();
 }

@@ -1,3 +1,4 @@
+#include <freertos.hh>
 #include <hal.hh>
 #include <util.hh>
 
@@ -47,7 +48,12 @@ enum class State {
 std::uint16_t s_precharge_voltage = 0;
 std::uint16_t s_tractive_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
-SemaphoreHandle_t s_sample_mutex;
+freertos::Mutex s_sample_mutex;
+
+// Tasks.
+freertos::Task<128> s_sample_task;
+freertos::Task<256> s_sm_task;
+freertos::Task<128> s_swd_task;
 
 // Input pins.
 hal::Gpio s_precharge_sample(hal::GpioPort::A, 1);
@@ -133,11 +139,11 @@ void sample_task(void *) {
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
 
         // Update global values.
-        xSemaphoreTake(s_sample_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
         s_precharge_voltage = precharge_voltage;
         s_tractive_voltage = tractive_voltage;
         s_mcu_temperature = temperature;
-        xSemaphoreGive(s_sample_mutex);
+        xSemaphoreGive(*s_sample_mutex);
 
         // Start next ADC sample.
         hal::adc_start(ADC1);
@@ -166,9 +172,9 @@ State update_state(State current_state, std::uint32_t elapsed_time) {
         return State::Standby;
     }
 
-    xSemaphoreTake(s_sample_mutex, portMAX_DELAY);
+    xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
     util::ScopeGuard mutex_release([&] {
-        xSemaphoreGive(s_sample_mutex);
+        xSemaphoreGive(*s_sample_mutex);
     });
 
     if (current_state == State::Precharge) {
@@ -246,11 +252,11 @@ void swd_task(void *) {
     while (true) {
         hal::swd_printf("--------------------------------\n");
 
-        xSemaphoreTake(s_sample_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
         hal::swd_printf("Precharge: %u\n", s_precharge_voltage);
         hal::swd_printf("Tractive: %u\n", s_tractive_voltage);
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
-        xSemaphoreGive(s_sample_mutex);
+        xSemaphoreGive(*s_sample_mutex);
 
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
     }
@@ -278,10 +284,10 @@ void app_main() {
         hal::Gpio(hal::GpioPort::B, pin).configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     }
 
-    s_sample_mutex = xSemaphoreCreateMutex();
-    xTaskCreate(&sample_task, "sample", 128, nullptr, 3, nullptr);
-    xTaskCreate(&sm_task, "sm", 256, nullptr, 2, nullptr);
-    xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
+    s_sample_mutex.init();
+    s_sample_task.init(&sample_task, "sample", 3);
+    s_sm_task.init(&sm_task, "sm", 2);
+    s_swd_task.init(&swd_task, "swd", 1);
 
     // Start the scheduler which we shouldn't return from.
     vTaskStartScheduler();

@@ -25,7 +25,6 @@
 // TODO: Control LED via DMA.
 // TODO: Charger control.
 // TODO: SOC estimation.
-// TODO: Disable heap allocation.
 // TODO: Enable stack overflow detection.
 // TODO: EEPROM page for self test (PCBA).
 
@@ -254,7 +253,7 @@ Config s_config;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
-SemaphoreHandle_t s_segments_mutex;
+freertos::Mutex s_segments_mutex;
 
 // Current sensing.
 CurrentSensor m_positive_sensor;
@@ -263,18 +262,22 @@ CurrentSensor m_positive_sensor;
 std::uint16_t s_lvs_voltage = 0;
 std::uint16_t s_ref_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
-SemaphoreHandle_t s_mcu_mutex;
+freertos::Mutex s_mcu_mutex;
 
 // Time of shutdown assertion. Presence indicates whether shutdown is asserted.
 std::optional<TickType_t> s_shutdown_time;
 
-// Segment I2C.
+// I2C state machines.
 i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
-TaskHandle_t s_sample_segments_task_handle;
-
-// EEPROM I2C.
 i2c::StateMachine s_i2c2_sm(i2c::Bus::_2);
-TaskHandle_t s_config_task_handle;
+
+// Tasks.
+// TODO: Think about stack sizes more.
+freertos::Task<128> s_supervisor_task;
+freertos::Task<256> s_sample_segments_task;
+freertos::Task<128> s_sample_mcu_task;
+freertos::Task<256> s_config_task;
+freertos::Task<128> s_swd_task;
 
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
@@ -344,7 +347,7 @@ void supervisor_task(void *) {
     hal::gpio_set(s_wds);
 
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 3, 8);
+    can::init(can::Port::B, config::k_can_speed, 3);
 
     // Enable all IRQs after enabling the watchdog.
     hal::enable_irq(CAN1_SCE_IRQn, 6);
@@ -384,7 +387,7 @@ void supervisor_task(void *) {
 
         // Check segment data.
         std::size_t ready_segment_count = 0;
-        xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
         for (const auto &segment : s_segments) {
             if (!segment.error_flags().is_set(SegmentError::Disconnected)) {
                 ready_segment_count++;
@@ -398,7 +401,7 @@ void supervisor_task(void *) {
                 }
             }
         }
-        xSemaphoreGive(s_segments_mutex);
+        xSemaphoreGive(*s_segments_mutex);
 
         // Check that we have the right amount of segments connected.
         if (ready_segment_count != s_config.segment_count) {
@@ -546,10 +549,10 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     const auto crc = compute_crc(stream.bytes());
     const auto expected_crc = *stream.read_be<std::uint32_t>();
 
-    xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
+    xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
     if (crc != expected_crc) {
         ++m_master_error_count;
-        xSemaphoreGive(s_segments_mutex);
+        xSemaphoreGive(*s_segments_mutex);
         return;
     }
 
@@ -621,7 +624,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
             }
         }
     }
-    xSemaphoreGive(s_segments_mutex);
+    xSemaphoreGive(*s_segments_mutex);
 }
 
 bool i2c_wait(i2c::StateMachine &sm) {
@@ -750,7 +753,7 @@ void config_task(void *) {
     // Install config listeners on FIFO 1.
     can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
         BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyIndexedFromISR(s_config_task_handle, 1, 1, eIncrement, &higher_priority_task_woken);
+        xTaskNotifyIndexedFromISR(*s_config_task, 1, 1, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_bms_can_id, 1, 0);
     can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
@@ -839,11 +842,11 @@ void sample_mcu_task(void *) {
         const auto temperature = ((1430 - temperature_voltage) * 10) / 43 + 25;
 
         // Update global values.
-        xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_mcu_mutex, portMAX_DELAY);
         s_lvs_voltage = lvs_voltage;
         s_ref_voltage = ref_voltage;
         s_mcu_temperature = temperature;
-        xSemaphoreGive(s_mcu_mutex);
+        xSemaphoreGive(*s_mcu_mutex);
 
         // Start next ADC sample.
         hal::adc_start(ADC1);
@@ -867,17 +870,17 @@ void swd_task(void *) {
         hal::swd_printf("CAN status: %u/%u %u/%u\n", can_stats.rx_count, can_stats.lost_rx_count, can_stats.tx_count,
                         can_stats.lost_tx_count);
 
-        xSemaphoreTake(s_mcu_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_mcu_mutex, portMAX_DELAY);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
         hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
-        xSemaphoreGive(s_mcu_mutex);
+        xSemaphoreGive(*s_mcu_mutex);
 
         const auto positive_current = static_cast<std::int32_t>(m_positive_sensor.current() * 1000.0f);
         hal::swd_printf("Positive current: %d\n", positive_current);
 
         const auto current_time = xTaskGetTickCount();
-        xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
         for (std::size_t i = 0; i < s_segments.size(); i++) {
             const auto &segment = s_segments[i];
             if (segment.error_flags().is_set(SegmentError::Disconnected)) {
@@ -914,7 +917,7 @@ void swd_task(void *) {
             }
             hal::swd_printf("]\n");
         }
-        xSemaphoreGive(s_segments_mutex);
+        xSemaphoreGive(*s_segments_mutex);
 
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
     }
@@ -969,7 +972,7 @@ extern "C" void I2C1_EV_IRQHandler() {
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
         BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+        xTaskNotifyFromISR(*s_sample_segments_task, 1, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }
 }
@@ -977,7 +980,7 @@ extern "C" void I2C1_EV_IRQHandler() {
 extern "C" void I2C1_ER_IRQHandler() {
     s_i2c1_sm.error();
     BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(s_sample_segments_task_handle, 1, eIncrement, &higher_priority_task_woken);
+    xTaskNotifyFromISR(*s_sample_segments_task, 1, eIncrement, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -991,7 +994,7 @@ extern "C" void I2C2_EV_IRQHandler() {
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
         BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(s_config_task_handle, 1, eIncrement, &higher_priority_task_woken);
+        xTaskNotifyFromISR(*s_config_task, 1, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }
 }
@@ -999,7 +1002,7 @@ extern "C" void I2C2_EV_IRQHandler() {
 extern "C" void I2C2_ER_IRQHandler() {
     s_i2c2_sm.error();
     BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(s_config_task_handle, 1, eIncrement, &higher_priority_task_woken);
+    xTaskNotifyFromISR(*s_config_task, 1, eIncrement, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -1080,17 +1083,17 @@ void app_main() {
     TIM3->ARR = 499;
     TIM3->CR1 |= TIM_CR1_CEN;
 
-    s_segments_mutex = xSemaphoreCreateMutex();
-    s_mcu_mutex = xSemaphoreCreateMutex();
+    s_segments_mutex.init();
+    s_mcu_mutex.init();
 
-    // Create all tasks.
-    // TODO: Think about stack sizes and priorities more.
-    xTaskCreate(&supervisor_task, "supervisor", 128, nullptr, 4, nullptr);
-    xTaskCreate(&sample_segments_task, "sample_segs", 256, nullptr, 3, &s_sample_segments_task_handle);
-    xTaskCreate(&sample_mcu_task, "sample_mcu", 128, nullptr, 2, nullptr);
-    xTaskCreate(&config_task, "config", 256, nullptr, 1, &s_config_task_handle);
+    // Initialise all tasks.
+    // TODO: Think about priorities more.
+    s_supervisor_task.init(&supervisor_task, "supervisor", 4);
+    s_sample_segments_task.init(&sample_segments_task, "sample_segs", 3);
+    s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 2);
+    s_config_task.init(&config_task, "config", 1);
     if constexpr (k_enable_debug_logs) {
-        xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
+        s_swd_task.init(&swd_task, "swd", 1);
     }
 
     // Start the scheduler which we shouldn't return from.
