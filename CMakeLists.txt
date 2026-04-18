@@ -95,7 +95,6 @@ endfunction()
 
 # Create an OBJECT library for platform-independent code.
 add_library(shared OBJECT
-    src/bms_logic.cc
     src/bms/can_messages.cc
     src/charger/can_messages.cc
     src/dti.cc)
