@@ -256,7 +256,7 @@ std::array<Segment, k_max_segment_count> s_segments;
 freertos::Mutex s_segments_mutex;
 
 // Current sensing.
-CurrentSensor m_positive_sensor;
+CurrentSensor s_positive_sensor;
 
 // Sampled values.
 std::uint16_t s_lvs_voltage = 0;
@@ -876,7 +876,7 @@ void swd_task(void *) {
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
         xSemaphoreGive(*s_mcu_mutex);
 
-        const auto positive_current = static_cast<std::int32_t>(m_positive_sensor.current() * 1000.0f);
+        const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
         hal::swd_printf("Positive current: %d\n", positive_current);
 
         const auto current_time = xTaskGetTickCount();
@@ -958,7 +958,7 @@ extern "C" void SPI2_IRQHandler() {
     if ((SPI2->SR & SPI_SR_RXNE) != 0) {
         // Convert to floating point volts.
         const auto voltage = static_cast<float>((SPI2->DR * k_adc_vref) >> 16) * 0.0001f;
-        m_positive_sensor.update(voltage);
+        s_positive_sensor.update(voltage);
     }
 }
 
