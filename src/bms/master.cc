@@ -1,3 +1,4 @@
+#include <bms/can_messages.hh>
 #include <bms/error.hh>
 #include <can.hh>
 #include <config.hh>
@@ -19,8 +20,7 @@
 
 // TODO: Send CAN status messages.
 // TODO: Implement current sensing for negative sensor and plausibility checks.
-// TODO: Implement EEPROM config.
-// TODO: Receive CAN ready to drive and config update messages.
+// TODO: Receive CAN ready to drive message.
 // TODO: Implement inverter shutdown.
 // TODO: Control LED via DMA.
 // TODO: Charger control.
@@ -37,6 +37,16 @@ namespace {
  * @brief Whether to enable the SWD debug logging task.
  */
 constexpr bool k_enable_debug_logs = false;
+
+/**
+ * @brief The I2C address of the EEPROM.
+ */
+constexpr std::uint8_t k_eeprom_address = 0x50;
+
+/**
+ * @brief The size of an EEPROM page in bytes.
+ */
+constexpr std::uint16_t k_eeprom_page_size = 32;
 
 /**
  * @brief The I2C address of the first segment.
@@ -188,12 +198,25 @@ static_assert(k_maximum_reaction_time > k_shutdown_assert_delay + k_supervisor_p
 constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_time - k_shutdown_assert_delay);
 
 struct Config {
+    // Segment config.
+    std::uint8_t cell_count;
+    std::uint8_t minimum_thermistor_count;
+
+    // Threshold config.
     std::uint16_t undervoltage_threshold;
     std::uint16_t overvoltage_threshold;
     std::int8_t undertemperature_threshold;
     std::int8_t overtemperature_threshold;
-    std::uint8_t expected_cell_count;
-    std::uint8_t minimum_thermistor_count;
+
+    // Header data.
+    std::uint32_t magic;
+    std::uint32_t counter;
+    std::uint32_t crc;
+};
+
+constexpr std::array<std::uint16_t, 2> k_config_offsets{
+    0,
+    (sizeof(Config) + k_eeprom_page_size - 1) / k_eeprom_page_size,
 };
 
 class CurrentSensor {
@@ -229,7 +252,7 @@ public:
     TickType_t last_update_time() const { return m_last_update_time; }
 };
 
-// Global config.
+// Active config.
 Config s_config;
 
 // Global array of segments with associated mutex.
@@ -252,6 +275,10 @@ std::optional<TickType_t> s_shutdown_time;
 i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
 TaskHandle_t s_sample_segments_task_handle;
 
+// EEPROM I2C.
+i2c::StateMachine s_i2c2_sm(i2c::Bus::_2);
+TaskHandle_t s_config_task_handle;
+
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
 TickType_t s_last_mcu_sample_time = 0;
@@ -266,6 +293,7 @@ hal::Gpio s_oc_n(hal::GpioPort::A, 11);
 hal::Gpio s_oc_p(hal::GpioPort::A, 12);
 
 hal::Gpio s_shutdown(hal::GpioPort::B, 1);
+hal::Gpio s_eeprom_wc(hal::GpioPort::B, 2);
 hal::Gpio s_led(hal::GpioPort::B, 5);
 
 // I2C pins.
@@ -279,6 +307,13 @@ hal::Gpio s_current_switch(hal::GpioPort::A, 10);
 hal::Gpio s_adc_cs(hal::GpioPort::A, 8);
 hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
+
+std::uint32_t compute_crc(std::span<const std::uint8_t> data) {
+    taskENTER_CRITICAL();
+    const auto crc = hal::crc_compute(data);
+    taskEXIT_CRITICAL();
+    return crc;
+}
 
 /**
  * @brief Returns true if at least the specified duration of time has passed since the given start time.
@@ -320,12 +355,15 @@ void supervisor_task(void *) {
     hal::enable_irq(CAN1_TX_IRQn, 7);
     hal::enable_irq(I2C1_EV_IRQn, 8);
     hal::enable_irq(I2C1_ER_IRQn, 8);
+    hal::enable_irq(I2C2_EV_IRQn, 9);
+    hal::enable_irq(I2C2_ER_IRQn, 9);
+    hal::enable_irq(CAN1_RX1_IRQn, 10);
 
     // The current sensing interrupts don't use RTOS functions, so can have a priority below
     // configMAX_SYSCALL_INTERRUPT_PRIORITY (5), which we do for the external interrupt on MISO and the RXNE handler to
     // ensure the fairly strict SPI timing. However, the timer interrupt which drives the current sensing is kept at a
     // low priority to make current sensing in general lower priority than CAN and segment I2C.
-    hal::enable_irq(TIM3_IRQn, 9);
+    hal::enable_irq(TIM3_IRQn, 10);
     hal::enable_irq(EXTI15_10_IRQn, 0);
     hal::enable_irq(SPI2_IRQn, 1);
 
@@ -509,7 +547,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     }
 
     // Compute the actual CRC.
-    const auto crc = hal::crc_compute(stream.bytes());
+    const auto crc = compute_crc(stream.bytes());
     const auto expected_crc = *stream.read_be<std::uint32_t>();
 
     xSemaphoreTake(s_segments_mutex, portMAX_DELAY);
@@ -545,7 +583,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     m_error_flags.clear();
 
     // Cell count should be exactly right.
-    if (std::popcount(cell_tap_bitset) != s_config.expected_cell_count) {
+    if (std::popcount(cell_tap_bitset) != s_config.cell_count) {
         m_error_flags.set(SegmentError::BadCellCount);
     }
 
@@ -555,7 +593,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     }
 
     // Don't accept all degraded cell voltage readings.
-    if (std::popcount(m_degraded_bitset) >= s_config.expected_cell_count) {
+    if (std::popcount(m_degraded_bitset) >= s_config.cell_count) {
         m_error_flags.set(SegmentError::UnreliableMeasurement);
     }
 
@@ -590,16 +628,163 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     xSemaphoreGive(s_segments_mutex);
 }
 
-bool wait_i2c() {
+bool i2c_wait(i2c::StateMachine &sm) {
     // Wait for the transaction to complete up to a timeout in case the state machine gets stuck.
     const bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15)) == 0;
-    const auto state = s_i2c1_sm.state();
+    const auto state = sm.state();
     if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
         return state == i2c::State::Idle;
     }
     // Reset the I2C periphral.
-    s_i2c1_sm.init();
+    sm.init();
     return false;
+}
+
+bool eeprom_read(std::uint16_t page_index, std::span<std::uint8_t> data) {
+    // Write address bytes.
+    const auto address = page_index * k_eeprom_page_size;
+    std::array<std::uint8_t, 2> address_bytes{
+        static_cast<std::uint8_t>((address >> 8u) & 0xffu),
+        static_cast<std::uint8_t>(address & 0xffu),
+    };
+    s_i2c2_sm.start_write(k_eeprom_address, address_bytes, false);
+    if (!i2c_wait(s_i2c2_sm)) {
+        return false;
+    }
+
+    // Read data bytes.
+    s_i2c2_sm.start_read(k_eeprom_address, data, true);
+    return i2c_wait(s_i2c2_sm);
+}
+
+template <util::trivially_copyable T>
+bool eeprom_read(std::uint16_t page_index, T &object) {
+    auto *data = std::bit_cast<std::uint8_t *>(&object);
+    return eeprom_read(page_index, std::span(data, sizeof(T)));
+}
+
+bool eeprom_write_page(std::uint16_t page_index, std::span<const std::uint8_t> page) {
+    // Allow writes.
+    util::ScopeGuard wc_guard([] {
+        hal::gpio_set(s_eeprom_wc);
+    });
+    hal::gpio_reset(s_eeprom_wc);
+
+    const auto address = page_index * k_eeprom_page_size;
+    const auto to_copy = std::min(page.size(), static_cast<std::size_t>(k_eeprom_page_size));
+    std::array<std::uint8_t, k_eeprom_page_size + 2> bytes{
+        static_cast<std::uint8_t>((address >> 8u) & 0xffu),
+        static_cast<std::uint8_t>(address & 0xffu),
+    };
+    std::copy_n(page.begin(), to_copy, std::next(bytes.begin(), 2));
+    s_i2c2_sm.start_write(k_eeprom_address, bytes, true);
+    if (!i2c_wait(s_i2c2_sm)) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+    return true;
+}
+
+bool eeprom_write(std::uint16_t page_index, std::span<const std::uint8_t> data) {
+    for (std::uint16_t byte_index = 0; byte_index < data.size(); byte_index += k_eeprom_page_size) {
+        if (!eeprom_write_page(page_index++, data.subspan(byte_index))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <util::trivially_copyable T>
+bool eeprom_write(std::uint16_t page_index, const T &object) {
+    const auto *data = std::bit_cast<const std::uint8_t *>(&object);
+    return eeprom_write(page_index, std::span(data, sizeof(T)));
+}
+
+bool read_config(std::uint16_t page_index, Config &config) {
+    // TODO: EEPROM failure should trigger a different error.
+    if (!eeprom_read(page_index, config)) {
+        return false;
+    }
+    if (config.magic != k_config_magic) {
+        return false;
+    }
+    const auto *bytes = std::bit_cast<const std::uint8_t *>(&config);
+    const auto crc = compute_crc(std::span(bytes, sizeof(Config) - 4));
+    return crc == config.crc;
+}
+
+void config_task(void *) {
+    // Initialise the I2C bus with EEPROM.
+    s_i2c2_sm.init();
+
+    // Try to read the latest valid config stored on EEPROM.
+    std::optional<Config> newest_config;
+    std::uint8_t config_index = 0;
+    for (std::uint8_t index = 0; index < k_config_offsets.size(); index++) {
+        Config config;
+        if (read_config(k_config_offsets[index], config)) {
+            if (!newest_config || config.counter > newest_config->counter) {
+                newest_config.emplace(config);
+                config_index = index;
+            }
+        }
+    }
+
+    // Copy config to global config.
+    if (newest_config) {
+        taskENTER_CRITICAL();
+        s_config = *newest_config;
+        taskEXIT_CRITICAL();
+    }
+
+    // Dump config.
+    if constexpr (k_enable_debug_logs) {
+        hal::swd_printf("\nUsing config version %u in slot %u\n", s_config.counter, config_index);
+        hal::swd_printf("cell_count: %u\n", s_config.cell_count);
+        hal::swd_printf("minimum_thermistor_count: %u\n", s_config.minimum_thermistor_count);
+        hal::swd_printf("undervoltage_threshold: %u\n", s_config.undervoltage_threshold);
+        hal::swd_printf("overvoltage_threshold: %u\n", s_config.overvoltage_threshold);
+        hal::swd_printf("undertemperature_threshold: %d\n", s_config.undertemperature_threshold);
+        hal::swd_printf("overtemperature_threshold: %d\n", s_config.overtemperature_threshold);
+        hal::swd_printf("\n");
+    }
+
+    // Install config listeners on FIFO 1.
+    can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        xTaskNotifyIndexedFromISR(s_config_task_handle, 1, 1, eIncrement, &higher_priority_task_woken);
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }>(config::k_bms_can_id, 1, 0);
+    can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
+        s_config.cell_count = new_config.cell_count;
+        s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
+    }>(config::k_bms_can_id, 1, 1);
+    can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
+        s_config.undervoltage_threshold = new_config.undervoltage_threshold;
+        s_config.overvoltage_threshold = new_config.overvoltage_threshold;
+        s_config.undertemperature_threshold = new_config.undertemperature_threshold;
+        s_config.overtemperature_threshold = new_config.overtemperature_threshold;
+    }>(config::k_bms_can_id, 1, 2);
+
+    while (true) {
+        // Wait for a config write request.
+        ulTaskNotifyTakeIndexed(1, pdTRUE, portMAX_DELAY);
+
+        // Use the next slot not currently in use.
+        config_index = (config_index + 1) % k_config_offsets.size();
+        s_config.magic = k_config_magic;
+        s_config.counter++;
+        if constexpr (k_enable_debug_logs) {
+            hal::swd_printf("Saving config version %u to slot %u\n", s_config.counter, config_index);
+        }
+
+        // Compute new CRC.
+        const auto *bytes = std::bit_cast<const std::uint8_t *>(&s_config);
+        s_config.crc = compute_crc(std::span(bytes, sizeof(Config) - 4));
+
+        // TODO: Don't ignore failure here.
+        eeprom_write(k_config_offsets[config_index], s_config);
+    }
 }
 
 void sample_segments_task(void *) {
@@ -613,9 +798,9 @@ void sample_segments_task(void *) {
         util::Stream stream(buffer);
         stream.write_byte(0xaa);
         stream.write_be<std::uint16_t>(0x00);
-        stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
+        stream.write_be<std::uint32_t>(compute_crc(stream.bytes()));
         s_i2c1_sm.start_write(0x00, stream.bytes(), true);
-        if (!wait_i2c()) {
+        if (!i2c_wait(s_i2c1_sm)) {
             // Bus failure or no acknowledge from any segments - don't even bother trying to read the segments.
             continue;
         }
@@ -624,7 +809,7 @@ void sample_segments_task(void *) {
             std::fill(buffer.begin(), buffer.end(), 0);
             auto sub_buffer = std::span(buffer).subspan(0, k_segment_response_size);
             s_i2c1_sm.start_read(k_segment_address_start + index, sub_buffer, true);
-            if (wait_i2c()) {
+            if (i2c_wait(s_i2c1_sm)) {
                 s_segments[index].update(sub_buffer);
             }
         }
@@ -796,6 +981,28 @@ extern "C" void I2C1_ER_IRQHandler() {
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
+extern "C" void I2C2_EV_IRQHandler() {
+    if (!s_i2c2_sm.event()) {
+        // State not changed.
+        return;
+    }
+
+    const auto state = s_i2c2_sm.state();
+    if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
+        // Signal transaction completion.
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        xTaskNotifyFromISR(s_config_task_handle, 1, eIncrement, &higher_priority_task_woken);
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }
+}
+
+extern "C" void I2C2_ER_IRQHandler() {
+    s_i2c2_sm.error();
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    xTaskNotifyFromISR(s_config_task_handle, 1, eIncrement, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
 void vApplicationIdleHook() {
     // TODO: Could disable some peripherals like I2C.
     // TODO: Test power consumption of this and verify that it doesn't affect timing.
@@ -818,7 +1025,11 @@ void app_main() {
 
     // Shutdown output is push-pull but also has an external pull-down in case of MCU failure.
     s_shutdown.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_eeprom_wc.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    // Default write control pin high (writes disabled).
+    hal::gpio_set(s_eeprom_wc);
 
     // Configure I2C pins for peripheral use.
     for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
@@ -832,7 +1043,7 @@ void app_main() {
 
     // Lock pins whose configurations don't need to change.
     hal::gpio_lock(s_lvs_sample, s_ref_sample, s_adc_cs, s_current_switch, s_wdi, s_wds, s_oc_n, s_oc_p, s_shutdown,
-                   s_led, s_miso);
+                   s_eeprom_wc, s_led, s_miso);
 
     // Enable the backup domain and disable write protection.
     RCC->APB1ENR |= RCC_APB1ENR_BKPEN;
@@ -869,11 +1080,6 @@ void app_main() {
     TIM3->ARR = 499;
     TIM3->CR1 |= TIM_CR1_CEN;
 
-    // TODO: Read config from EEPROM.
-    s_config = {
-        35000, 42000, -20, 24, 12, 3,
-    };
-
     s_segments_mutex = xSemaphoreCreateMutex();
     s_mcu_mutex = xSemaphoreCreateMutex();
 
@@ -882,6 +1088,7 @@ void app_main() {
     xTaskCreate(&supervisor_task, "supervisor", 128, nullptr, 4, nullptr);
     xTaskCreate(&sample_segments_task, "sample_segs", 256, nullptr, 3, &s_sample_segments_task_handle);
     xTaskCreate(&sample_mcu_task, "sample_mcu", 128, nullptr, 2, nullptr);
+    xTaskCreate(&config_task, "config", 256, nullptr, 1, &s_config_task_handle);
     if constexpr (k_enable_debug_logs) {
         xTaskCreate(&swd_task, "swd", 128, nullptr, 1, nullptr);
     }
