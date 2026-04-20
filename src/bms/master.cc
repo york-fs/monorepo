@@ -17,6 +17,7 @@
 #include <bit>
 #include <cstdint>
 #include <optional>
+#include <variant>
 
 // TODO: Send CAN status messages.
 // TODO: Implement current sensing for negative sensor and plausibility checks.
@@ -38,7 +39,7 @@ namespace {
 constexpr bool k_enable_debug_logs = false;
 
 /**
- * @brief The I2C address of the EEPROM.
+ * @brief The I2C address of the onboard EEPROM.
  */
 constexpr std::uint8_t k_eeprom_address = 0x50;
 
@@ -106,6 +107,11 @@ constexpr std::uint32_t k_config_magic = 0x6c72d132;
  * @brief Supervisor task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_supervisor_period = 10;
+
+/**
+ * @brief Control task scheduling period in milliseconds.
+ */
+constexpr std::uint32_t k_control_period = 1000;
 
 /**
  * @brief Segment sampling task scheduling period in milliseconds.
@@ -253,8 +259,9 @@ struct SwdData {
     std::optional<std::uint32_t> shutdown_duration;
 };
 
-// Active config.
+// Active config and control mode.
 Config s_config;
+std::variant<std::monostate> s_control_mode;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -278,6 +285,7 @@ i2c::StateMachine s_i2c2_sm(i2c::Bus::_2);
 freertos::Task<128> s_supervisor_task;
 freertos::Task<256> s_sample_segments_task;
 freertos::Task<128> s_sample_mcu_task;
+freertos::Task<128> s_control_task;
 freertos::Task<256> s_config_task;
 freertos::Task<128> s_swd_task;
 freertos::Queue<SwdData, 1> s_swd_queue;
@@ -351,7 +359,7 @@ void supervisor_task(void *) {
     hal::gpio_set(s_wds);
 
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 3);
+    can::init(can::Port::B, config::k_can_speed, 2);
 
     // Enable all IRQs after enabling the watchdog.
     hal::enable_irq(CAN1_SCE_IRQn, 6);
@@ -495,6 +503,9 @@ void supervisor_task(void *) {
         // Update the shutdown pin as the first priority. The pin is inverted since active-high signals no fault.
         s_shutdown.write(!shutdown_time.has_value());
 
+        // Signal the control task to keep working.
+        xTaskNotify(*s_control_task, 1, eIncrement);
+
         // Update SWD data.
         if constexpr (k_enable_debug_logs) {
             SwdData swd_data{
@@ -512,6 +523,16 @@ void supervisor_task(void *) {
         hal::gpio_reset(s_wdi);
         hal::gpio_set(s_wdi);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
+    }
+}
+
+void control_task(void *) {
+    TickType_t last_schedule_time = xTaskGetTickCount();
+    while (true) {
+        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_control_period));
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // TODO: Send inverter power limits.
     }
 }
 
@@ -879,7 +900,7 @@ void swd_task(void *) {
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
         hal::swd_printf("Master flags: 0x%x\n", data.master_flags.value());
         if (data.shutdown_duration) {
-            hal::swd_printf("Time since shutdown assertion: %u\n", *data.shutdown_duration);
+            hal::swd_printf("Shutdown duration: %u\n", *data.shutdown_duration);
         }
 
         const auto can_stats = can::get_stats();
@@ -1101,14 +1122,14 @@ void app_main() {
     s_mcu_mutex.init();
 
     // Initialise all tasks.
-    // TODO: Think about priorities more.
     s_supervisor_task.init(&supervisor_task, "supervisor", 4);
     s_sample_segments_task.init(&sample_segments_task, "sample_segs", 3);
-    s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 2);
+    s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 3);
+    s_control_task.init(&control_task, "control", 2);
     s_config_task.init(&config_task, "config", 1);
     if constexpr (k_enable_debug_logs) {
         s_swd_queue.init();
-        s_swd_task.init(&swd_task, "swd", 1);
+        s_swd_task.init(&swd_task, "swd", 0);
     }
 
     // Start the scheduler which we shouldn't return from.
