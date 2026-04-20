@@ -248,6 +248,11 @@ public:
     TickType_t last_update_time() const { return m_last_update_time; }
 };
 
+struct SwdData {
+    MasterErrorFlags master_flags;
+    std::optional<std::uint32_t> shutdown_duration;
+};
+
 // Active config.
 Config s_config;
 
@@ -264,9 +269,6 @@ std::uint16_t s_ref_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
 freertos::Mutex s_mcu_mutex;
 
-// Time of shutdown assertion. Presence indicates whether shutdown is asserted.
-std::optional<TickType_t> s_shutdown_time;
-
 // I2C state machines.
 i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
 i2c::StateMachine s_i2c2_sm(i2c::Bus::_2);
@@ -278,6 +280,7 @@ freertos::Task<256> s_sample_segments_task;
 freertos::Task<128> s_sample_mcu_task;
 freertos::Task<256> s_config_task;
 freertos::Task<128> s_swd_task;
+freertos::Queue<SwdData, 1> s_swd_queue;
 
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
@@ -335,12 +338,13 @@ bool has_elapsed(TickType_t start, std::uint32_t duration) {
  * cause it to timeout, assert shutdown, and reset the MCU.
  */
 void supervisor_task(void *) {
+    std::optional<TickType_t> shutdown_time;
     std::optional<TickType_t> shutdown_request_time;
     std::optional<TickType_t> fault_cleared_time;
 
     // Start with shutdown asserted and set fault_cleared_time such that shutdown will be deasserted after the start
     // delay. If an error is flagged during this window, then fault_cleared_time will be reset.
-    s_shutdown_time.emplace(0);
+    shutdown_time.emplace(0);
     fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deassert_delay);
 
     // Enable the external TPS3851 watchdog.
@@ -435,7 +439,7 @@ void supervisor_task(void *) {
                 hal::swd_printf("%u: Started shutdown request with flags 0x%x\n", *shutdown_request_time,
                                 master_flags.value());
             }
-        } else if (!should_shutdown && !s_shutdown_time && k_allow_shutdown_cancellation) {
+        } else if (!should_shutdown && !shutdown_time && k_allow_shutdown_cancellation) {
             // Cancel the request if it hasn't been fulfilled already.
             if constexpr (k_enable_debug_logs) {
                 if (shutdown_request_time) {
@@ -457,15 +461,15 @@ void supervisor_task(void *) {
         should_shutdown_now |= master_flags.is_set(MasterError::OvercurrentThreshold);
 
         // Assert shutdown if we should and haven't already.
-        if (!s_shutdown_time && should_shutdown_now) {
-            s_shutdown_time.emplace(xTaskGetTickCount());
+        if (!shutdown_time && should_shutdown_now) {
+            shutdown_time.emplace(xTaskGetTickCount());
             if constexpr (k_enable_debug_logs) {
-                hal::swd_printf("%u: Asserted shutdown\n", *s_shutdown_time);
+                hal::swd_printf("%u: Asserted shutdown\n", *shutdown_time);
             }
         }
 
         // Keep track of the time elapsed since all faults have cleared.
-        if (!fault_cleared_time && s_shutdown_time && !should_shutdown) {
+        if (!fault_cleared_time && shutdown_time && !should_shutdown) {
             fault_cleared_time.emplace(xTaskGetTickCount());
             if constexpr (k_enable_debug_logs) {
                 hal::swd_printf("%u: Fault cleared\n", *fault_cleared_time);
@@ -482,14 +486,25 @@ void supervisor_task(void *) {
         if (!should_shutdown && fault_cleared_time && has_elapsed(*fault_cleared_time, k_shutdown_deassert_delay)) {
             shutdown_request_time.reset();
             fault_cleared_time.reset();
-            s_shutdown_time.reset();
+            shutdown_time.reset();
             if constexpr (k_enable_debug_logs) {
                 hal::swd_printf("%u: Deasserted shutdown\n", xTaskGetTickCount());
             }
         }
 
-        // The shutdown pin is inverted since active-high signals no fault.
-        s_shutdown.write(!s_shutdown_time.has_value());
+        // Update the shutdown pin as the first priority. The pin is inverted since active-high signals no fault.
+        s_shutdown.write(!shutdown_time.has_value());
+
+        // Update SWD data.
+        if constexpr (k_enable_debug_logs) {
+            SwdData swd_data{
+                .master_flags = master_flags,
+            };
+            if (shutdown_time) {
+                swd_data.shutdown_duration = pdTICKS_TO_MS(xTaskGetTickCount() - *shutdown_time);
+            }
+            s_swd_queue.overwrite(swd_data);
+        }
 
         // Feed the watchdog and wait until next supervision period. The TPS3851 is extremely fast and only needs a 50
         // ns pulse, so we don't need any delays here. A longer pulse is fine since it is still orders of magnitude
@@ -857,18 +872,19 @@ void sample_mcu_task(void *) {
 void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
+        const auto data = *s_swd_queue.receive(portMAX_DELAY);
+        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+
         hal::swd_printf("--------------------------------\n");
-        hal::swd_printf("Shutdown asserted: %s\n", !s_shutdown.read() ? "yes" : "no");
-        if (s_shutdown_time) {
-            const auto time_since_assertion = pdTICKS_TO_MS(xTaskGetTickCount() - *s_shutdown_time);
-            hal::swd_printf("Time since shutdown assertion: %u\n", time_since_assertion);
-        }
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
-        hal::swd_printf("CAN online: %s\n", can::is_online() ? "yes" : "no");
+        hal::swd_printf("Master flags: 0x%x\n", data.master_flags.value());
+        if (data.shutdown_duration) {
+            hal::swd_printf("Time since shutdown assertion: %u\n", *data.shutdown_duration);
+        }
 
         const auto can_stats = can::get_stats();
-        hal::swd_printf("CAN status: %u/%u %u/%u\n", can_stats.rx_count, can_stats.lost_rx_count, can_stats.tx_count,
-                        can_stats.lost_tx_count);
+        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
+                        can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
 
         xSemaphoreTake(*s_mcu_mutex, portMAX_DELAY);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
@@ -918,8 +934,6 @@ void swd_task(void *) {
             hal::swd_printf("]\n");
         }
         xSemaphoreGive(*s_segments_mutex);
-
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
     }
 }
 
@@ -1093,6 +1107,7 @@ void app_main() {
     s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 2);
     s_config_task.init(&config_task, "config", 1);
     if constexpr (k_enable_debug_logs) {
+        s_swd_queue.init();
         s_swd_task.init(&swd_task, "swd", 1);
     }
 
