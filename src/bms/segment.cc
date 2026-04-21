@@ -96,7 +96,7 @@ std::uint32_t s_thermistor_bitset = 0;
 std::atomic<std::uint32_t> s_i2c_error_count = 0;
 
 // Tasks.
-freertos::Task<128> s_cmd_task;
+freertos::Task<256> s_cmd_task;
 freertos::Task<128> s_sample_voltages_task;
 freertos::Task<128> s_sample_temperatures_task;
 freertos::Task<128> s_swd_task;
@@ -413,10 +413,17 @@ void handle_command(std::span<std::uint8_t> bytes) {
         ++s_i2c_error_count;
         return;
     }
-    const auto balance_bitset = stream.read_be<std::uint16_t>();
-    if (!balance_bitset) {
-        ++s_i2c_error_count;
-        return;
+    std::uint16_t balance_bitset = 0;
+    while (bytes.size() > stream.head() + sizeof(std::uint32_t)) {
+        const auto address = stream.read_byte();
+        const auto bitset = stream.read_be<std::uint16_t>();
+        if (!address || !bitset) {
+            ++s_i2c_error_count;
+            return;
+        }
+        if (*address == s_i2c_address) {
+            balance_bitset = *bitset;
+        }
     }
     const auto expected_crc = stream.read_be<std::uint32_t>();
     if (!expected_crc) {
@@ -434,7 +441,14 @@ void handle_command(std::span<std::uint8_t> bytes) {
     }
 
     s_is_charging.store(*mode_byte == 0x55);
-    s_balance_bitset.store(*balance_bitset);
+
+    std::uint16_t reversed_bitset = 0;
+    for (std::size_t i = 0; i < 16; i++) {
+        if ((balance_bitset & (1u << i)) != 0) {
+            reversed_bitset |= (1u << (15 - i));
+        }
+    }
+    s_balance_bitset.store(reversed_bitset);
 }
 
 void i2c_listen() {
@@ -453,7 +467,7 @@ void cmd_task(void *) {
 
     s_i2c1_sm.init();
     while (true) {
-        std::array<std::uint8_t, 16> cmd_bytes{};
+        std::array<std::uint8_t, 64> cmd_bytes{};
         const auto cmd_length =
             xMessageBufferReceive(*s_cmd_queue, cmd_bytes.data(), cmd_bytes.size(), pdMS_TO_TICKS(k_sleep_timeout));
         if (cmd_length != 0) {

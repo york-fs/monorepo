@@ -239,6 +239,7 @@ class Segment {
     std::uint32_t m_master_error_count{};
     std::uint32_t m_slave_error_count{};
     std::uint16_t m_degraded_bitset{};
+    std::uint16_t m_balance_bitset{};
     SegmentErrorFlags m_error_flags{SegmentError::Disconnected};
     TickType_t m_last_update_time{};
 
@@ -250,6 +251,7 @@ public:
     std::uint32_t master_error_count() const { return m_master_error_count; }
     std::uint32_t slave_error_count() const { return m_slave_error_count; }
     std::uint16_t degraded_bitset() const { return m_degraded_bitset; }
+    std::uint16_t &balance_bitset() { return m_balance_bitset; }
     SegmentErrorFlags error_flags() const { return m_error_flags; }
     TickType_t last_update_time() const { return m_last_update_time; }
 };
@@ -504,7 +506,16 @@ void supervisor_task(void *) {
         s_shutdown.write(!shutdown_time.has_value());
 
         // Signal the control task to keep working.
-        xTaskNotify(*s_control_task, 1, eIncrement);
+        if (!shutdown_time) {
+            xTaskNotify(*s_control_task, 1, eIncrement);
+        } else {
+            // Make sure all balancers are off.
+            xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+            for (auto &segment : s_segments) {
+                segment.balance_bitset() = 0;
+            }
+            xSemaphoreGive(*s_segments_mutex);
+        }
 
         // Update SWD data.
         if constexpr (k_enable_debug_logs) {
@@ -833,11 +844,25 @@ void sample_segments_task(void *) {
         // Wait segment sample period.
         xTaskDelayUntil(&s_last_segment_sample_time, pdMS_TO_TICKS(k_segment_sample_period));
 
-        // Send command to all segments via general call address.
+        // Build command which will be sent to all segments via the general call address.
         util::Stream stream(buffer);
-        stream.write_byte(0xaa);
-        stream.write_be<std::uint16_t>(0x00);
+
+        // Set charging mode (reduced segment sampling period) if we are in a specific control mode.
+        stream.write_byte(std::holds_alternative<std::monostate>(s_control_mode) ? 0xaa : 0x55);
+
+        // Write balance bitsets.
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        for (std::size_t index = 0; index < k_max_segment_count; index++) {
+            if (s_segments[index].balance_bitset() != 0) {
+                stream.write_byte(s_config.segment_start_address + index);
+                stream.write_be(s_segments[index].balance_bitset());
+            }
+        }
+        xSemaphoreGive(*s_segments_mutex);
+
+        // Write CRC.
         stream.write_be<std::uint32_t>(compute_crc(stream.bytes()));
+
         s_i2c1_sm.start_write(0x00, stream.bytes(), true);
         if (!i2c_wait(s_i2c1_sm)) {
             // Bus failure or no acknowledge from any segments - don't even bother trying to read the segments.
