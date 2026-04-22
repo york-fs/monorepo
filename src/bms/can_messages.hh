@@ -7,6 +7,15 @@
 
 namespace bms {
 
+struct StartFullDischargeMessage {
+    std::uint16_t target_voltage;
+
+    static constexpr std::uint32_t packet_id() { return 0x1000; }
+    static constexpr std::uint32_t default_priority() { return 2; }
+    static std::optional<StartFullDischargeMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
 struct WriteConfigMessage {
     static constexpr std::uint32_t packet_id() { return 0x2000; }
     static constexpr std::uint32_t default_priority() { return 0; }

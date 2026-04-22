@@ -263,7 +263,7 @@ struct SwdData {
 
 // Active config and control mode.
 Config s_config;
-std::variant<std::monostate> s_control_mode;
+std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -538,12 +538,33 @@ void supervisor_task(void *) {
 }
 
 void control_task(void *) {
+    // Install control listeners.
+    can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
+        s_control_mode.emplace<StartFullDischargeMessage>(message);
+    }>(config::k_bms_can_id, 0);
+
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_control_period));
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // TODO: Send inverter power limits.
+
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
+            for (auto &segment : s_segments) {
+                for (std::size_t cell = 0; cell < segment.cell_voltages().size(); cell++) {
+                    if (const auto voltage = segment.cell_voltages()[cell]) {
+                        if (*voltage > full_discharge->target_voltage + 100) {
+                            segment.balance_bitset() |= 1u << cell;
+                        } else if (*voltage < full_discharge->target_voltage + 50) {
+                            segment.balance_bitset() &= ~(1u << cell);
+                        }
+                    }
+                }
+            }
+        }
+        xSemaphoreGive(*s_segments_mutex);
     }
 }
 
@@ -802,19 +823,19 @@ void config_task(void *) {
         BaseType_t higher_priority_task_woken = pdFALSE;
         xTaskNotifyIndexedFromISR(*s_config_task, 1, 1, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
-    }>(config::k_bms_can_id, 0);
+    }>(config::k_bms_can_id, 1);
     can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
         s_config.segment_start_address = new_config.start_address;
         s_config.segment_count = new_config.segment_count;
         s_config.cell_count = new_config.cell_count;
         s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
-    }>(config::k_bms_can_id, 1);
+    }>(config::k_bms_can_id, 2);
     can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
         s_config.undervoltage_threshold = new_config.undervoltage_threshold;
         s_config.overvoltage_threshold = new_config.overvoltage_threshold;
         s_config.undertemperature_threshold = new_config.undertemperature_threshold;
         s_config.overtemperature_threshold = new_config.overtemperature_threshold;
-    }>(config::k_bms_can_id, 2);
+    }>(config::k_bms_can_id, 3);
 
     while (true) {
         // Wait for a config write request.

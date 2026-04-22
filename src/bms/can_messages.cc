@@ -7,6 +7,20 @@
 
 namespace bms {
 
+std::optional<StartFullDischargeMessage> StartFullDischargeMessage::decode(util::Stream &stream) {
+    const auto target_voltage = stream.read_be<std::uint16_t>();
+    if (!target_voltage) {
+        return std::nullopt;
+    }
+    return StartFullDischargeMessage{
+        .target_voltage = *target_voltage,
+    };
+}
+
+bool StartFullDischargeMessage::encode(util::Stream &stream) const {
+    return stream.write_be(target_voltage);
+}
+
 std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &stream) {
     return WriteConfigMessage{};
 }
