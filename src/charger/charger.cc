@@ -145,7 +145,7 @@ void control_task(void *) {
         BaseType_t higher_priority_task_woken = pdFALSE;
         s_control_queue.send_to_back_isr(control_message, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
-    }>(config::k_charger_can_id, 0, 0);
+    }>(config::k_charger_can_id, 0);
 
     // Enable CAN IRQs.
     hal::enable_irq(CAN1_TX_IRQn, 7);

@@ -365,12 +365,12 @@ void supervisor_task(void *) {
 
     // Enable all IRQs after enabling the watchdog.
     hal::enable_irq(CAN1_SCE_IRQn, 6);
-    hal::enable_irq(CAN1_TX_IRQn, 7);
-    hal::enable_irq(I2C1_EV_IRQn, 8);
-    hal::enable_irq(I2C1_ER_IRQn, 8);
+    hal::enable_irq(I2C1_EV_IRQn, 7);
+    hal::enable_irq(I2C1_ER_IRQn, 7);
+    hal::enable_irq(CAN1_TX_IRQn, 8);
+    hal::enable_irq(CAN1_RX0_IRQn, 8);
     hal::enable_irq(I2C2_EV_IRQn, 9);
     hal::enable_irq(I2C2_ER_IRQn, 9);
-    hal::enable_irq(CAN1_RX1_IRQn, 10);
 
     // The current sensing interrupts don't use RTOS functions, so can have a priority below
     // configMAX_SYSCALL_INTERRUPT_PRIORITY (5), which we do for the external interrupt on MISO and the RXNE handler to
@@ -797,24 +797,24 @@ void config_task(void *) {
         hal::swd_printf("\n");
     }
 
-    // Install config listeners on FIFO 1.
+    // Install config message listeners.
     can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
         BaseType_t higher_priority_task_woken = pdFALSE;
         xTaskNotifyIndexedFromISR(*s_config_task, 1, 1, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
-    }>(config::k_bms_can_id, 1, 0);
+    }>(config::k_bms_can_id, 0);
     can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
         s_config.segment_start_address = new_config.start_address;
         s_config.segment_count = new_config.segment_count;
         s_config.cell_count = new_config.cell_count;
         s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
-    }>(config::k_bms_can_id, 1, 1);
+    }>(config::k_bms_can_id, 1);
     can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
         s_config.undervoltage_threshold = new_config.undervoltage_threshold;
         s_config.overvoltage_threshold = new_config.overvoltage_threshold;
         s_config.undertemperature_threshold = new_config.undertemperature_threshold;
         s_config.overtemperature_threshold = new_config.overtemperature_threshold;
-    }>(config::k_bms_can_id, 1, 2);
+    }>(config::k_bms_can_id, 2);
 
     while (true) {
         // Wait for a config write request.

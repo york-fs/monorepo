@@ -149,17 +149,16 @@ using rx_callback_t = void (*)(const Frame &);
 void init(Port port, Speed speed, std::uint32_t task_priority);
 
 /**
- * @brief Sets the given callback to be called when a message is pending on the given FIFO and filter index.
+ * @brief Sets the given callback to be called when a message is pending from the given filter index.
  *
- * @param fifo the FIFO index; must be 0 or 1
  * @param filter the filter index; must be in the range [0, 13]
  * @param callback the callback to set
  */
-void set_rx_callback(std::uint8_t fifo, std::uint8_t filter, rx_callback_t callback);
+void set_rx_callback(std::uint8_t filter, rx_callback_t callback);
 
 /**
- * @brief Configures and enables the specified CAN filter to route incoming frames to the specified FIFO index. A
- * frame will be matched if, after applying the given bitmask, it equals the specified value.
+ * @brief Configures and enables the specified CAN filter to match incoming frames. A frame will be matched if, after
+ * applying the given bitmask, it equals the specified value.
  *
  * Incoming extended frames are structured as follows:
  *   EXID[28:0] | IDE | RTR | 0
@@ -167,12 +166,11 @@ void set_rx_callback(std::uint8_t fifo, std::uint8_t filter, rx_callback_t callb
  * Incoming standard frames are structured as follows:
  *   STID[10:0] | 0[17:0] | IDE | RTR | 0
  *
- * @param fifo the FIFO index; must be 0 or 1
  * @param filter the filter index to configure; must be in the range [0, 13]
  * @param mask the bitmask to be applied to the incoming frame (bitwise AND)
  * @param value the expected value to which the incoming frame is compared to, after masking
  */
-void route_filter(std::uint8_t fifo, std::uint8_t filter, std::uint32_t mask, std::uint32_t value);
+void configure_filter(std::uint8_t filter, std::uint32_t mask, std::uint32_t value);
 
 /**
  * @brief Queues the given frame for transmission on the CAN bus.
@@ -293,16 +291,15 @@ void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::de
  * @brief Sets up a reception filter to listen for the given packet in a frame with the given node ID.
  *
  * @param node_id the node ID to listen for
- * @param fifo the FIFO index to route to; must be 0 or 1
  * @param filter the filter index; must be in the range [0, 13]
  */
 template <HasId T, void (*Callback)(const T &)>
-void listen(std::uint8_t node_id, std::uint8_t fifo, std::uint8_t filter) {
+void listen(std::uint8_t node_id, std::uint8_t filter) {
     const auto expected =
         (static_cast<std::uint32_t>(T::packet_id()) << 11) | (static_cast<std::uint32_t>(node_id) << 3) | 0b100u;
-    route_filter(fifo, filter, 0x1fffffff, expected);
+    configure_filter(filter, 0x1fffffff, expected);
     set_rx_callback(
-        fifo, filter, +[](const Frame &frame) {
+        filter, +[](const Frame &frame) {
             if (const auto decoded = decode_fast<T>(frame)) {
                 Callback(*decoded);
             }

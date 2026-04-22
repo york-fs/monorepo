@@ -20,11 +20,11 @@ namespace {
 // Allow 10 milliseconds for synchronising with the bus.
 constexpr std::uint32_t k_init_timeout = 10;
 
-// TODO: Tune task stack size.
+// TODO: Tune task stack sizes.
 freertos::Task<128> s_task;
 freertos::Queue<Frame, 8> s_tx_queue;
 Speed s_speed;
-std::array<rx_callback_t, 28> s_rx_callbacks{};
+std::array<rx_callback_t, 14> s_rx_callbacks{};
 std::atomic<std::uint32_t> s_rx_count = 0;
 std::atomic<std::uint32_t> s_tx_count = 0;
 std::atomic<std::uint32_t> s_lost_rx_count = 0;
@@ -36,44 +36,6 @@ Identifier decode_identifier(std::uint32_t rir) {
         return ExtendedIdentifier((rir & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos);
     }
     return StandardIdentifier((rir & CAN_RI0R_STID_Msk) >> CAN_RI0R_STID_Pos);
-}
-
-void fifo_interrupt(const std::uint8_t fifo_index) {
-    volatile std::uint32_t &fifo_reg = fifo_index == 1 ? CAN1->RF1R : CAN1->RF0R;
-    if ((fifo_reg & CAN_RF0R_FOVR0) != 0u) {
-        // FIFO overrun.
-        fifo_reg |= CAN_RF0R_FOVR0;
-        ++s_lost_rx_count;
-    }
-
-    const auto &mailbox = CAN1->sFIFOMailBox[fifo_index];
-    while ((fifo_reg & CAN_RF0R_FMP0) != 0) {
-        // Read data from mailbox.
-        Frame frame{
-            .identifier = decode_identifier(mailbox.RIR),
-            .data{
-                static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 8u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 16u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 24u) & 0xffu),
-                static_cast<std::uint8_t>(mailbox.RDHR & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 8u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 16u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 24u) & 0xffu),
-            },
-            .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
-        };
-        const auto filter_index = (mailbox.RDTR & CAN_RDT0R_FMI_Msk) >> CAN_RDT0R_FMI_Pos;
-
-        // Release the FIFO to allow more inbound frames.
-        fifo_reg |= CAN_RF0R_RFOM0;
-
-        const auto callback = s_rx_callbacks[(fifo_index * 14) + filter_index];
-        if (callback != nullptr) {
-            callback(frame);
-        }
-        ++s_rx_count;
-    }
 }
 
 bool reinit(Speed speed) {
@@ -118,12 +80,18 @@ bool reinit(Speed speed) {
     // Prioritise transmissions by identifier.
     CAN1->MCR &= ~CAN_MCR_TXFP;
 
+    // Set 32-bit mask mode for all filter banks.
+    CAN1->FMR |= CAN_FMR_FINIT;
+    CAN1->FM1R = 0u;
+    CAN1->FS1R = 0x3fffu;
+    CAN1->FFA1R = 0u;
+    CAN1->FMR &= ~CAN_FMR_FINIT;
+
     // Enable error interrupts.
     CAN1->IER |= CAN_IER_ERRIE | CAN_IER_LECIE | CAN_IER_BOFIE | CAN_IER_EPVIE | CAN_IER_EWGIE;
 
-    // Enable message pending and overrun interrupts for both FIFOs.
+    // Enable message pending and overrun interrupts for FIFO 0.
     CAN1->IER |= CAN_IER_FOVIE0 | CAN_IER_FMPIE0;
-    CAN1->IER |= CAN_IER_FOVIE1 | CAN_IER_FMPIE1;
 
     // Enable transmit mailbox empty interrupt.
     CAN1->IER |= CAN_IER_TMEIE;
@@ -239,11 +207,40 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
 }
 
 extern "C" void USB_LP_CAN1_RX0_IRQHandler() {
-    fifo_interrupt(0);
-}
+    if ((CAN1->RF0R & CAN_RF0R_FOVR0) != 0u) {
+        // FIFO overrun.
+        CAN1->RF0R |= CAN_RF0R_FOVR0;
+        ++s_lost_rx_count;
+    }
 
-extern "C" void CAN1_RX1_IRQHandler() {
-    fifo_interrupt(1);
+    const auto &mailbox = CAN1->sFIFOMailBox[0];
+    while ((CAN1->RF0R & CAN_RF0R_FMP0) != 0) {
+        // Read data from mailbox.
+        Frame frame{
+            .identifier = decode_identifier(mailbox.RIR),
+            .data{
+                static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 8u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 16u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 24u) & 0xffu),
+                static_cast<std::uint8_t>(mailbox.RDHR & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 8u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 16u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 24u) & 0xffu),
+            },
+            .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
+        };
+        const auto filter_index = (mailbox.RDTR & CAN_RDT0R_FMI_Msk) >> CAN_RDT0R_FMI_Pos;
+
+        // Release the FIFO to allow more inbound frames.
+        CAN1->RF0R |= CAN_RF0R_RFOM0;
+
+        const auto callback = s_rx_callbacks[filter_index];
+        if (callback != nullptr) {
+            callback(frame);
+        }
+        ++s_rx_count;
+    }
 }
 
 extern "C" void CAN1_SCE_IRQHandler() {
@@ -292,37 +289,22 @@ void init(Port port, Speed speed, std::uint32_t task_priority) {
     s_online.store(reinit(speed));
 }
 
-void set_rx_callback(std::uint8_t fifo, std::uint8_t filter, rx_callback_t callback) {
-    s_rx_callbacks[(fifo * 14) + filter] = callback;
+void set_rx_callback(std::uint8_t filter, rx_callback_t callback) {
+    s_rx_callbacks[filter] = callback;
 }
 
-void route_filter(std::uint8_t fifo, std::uint8_t filter, std::uint32_t mask, std::uint32_t value) {
+void configure_filter(std::uint8_t filter, std::uint32_t mask, std::uint32_t value) {
     const std::uint32_t filter_bit = 1u << filter;
 
     // Ensure filter is disabled.
     CAN1->FA1R &= ~filter_bit;
 
-    // Enable filter init mode.
-    CAN1->FMR |= CAN_FMR_FINIT;
-
-    // Set 32-bit scale mask mode.
-    CAN1->FM1R &= ~filter_bit;
-    CAN1->FS1R |= filter_bit;
-
-    // Set desired FIFO.
-    if (fifo != 0u) {
-        CAN1->FFA1R |= filter_bit;
-    } else {
-        CAN1->FFA1R &= ~filter_bit;
-    }
-
     // Set mask and desired value.
     CAN1->sFilterRegister[filter].FR1 = value;
     CAN1->sFilterRegister[filter].FR2 = mask;
 
-    // Enable the filter and leave init mode.
+    // Enable the filter.
     CAN1->FA1R |= filter_bit;
-    CAN1->FMR &= ~CAN_FMR_FINIT;
 }
 
 void queue_frame(const Frame &frame) {
