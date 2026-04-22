@@ -1,6 +1,8 @@
 #include <bms/can_messages.hh>
 #include <bms/error.hh>
 #include <can.hh>
+#include <charger/can_messages.hh>
+#include <charger/error.hh>
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
@@ -261,9 +263,11 @@ struct SwdData {
     std::optional<std::uint32_t> shutdown_duration;
 };
 
+struct Charge {};
+
 // Active config and control mode.
 Config s_config;
-std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
+std::variant<std::monostate, StartFullDischargeMessage, Charge> s_control_mode;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -506,16 +510,16 @@ void supervisor_task(void *) {
         s_shutdown.write(!shutdown_time.has_value());
 
         // Signal the control task to keep working.
-        if (!shutdown_time) {
-            xTaskNotify(*s_control_task, 1, eIncrement);
-        } else {
-            // Make sure all balancers are off.
-            xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
-            for (auto &segment : s_segments) {
-                segment.balance_bitset() = 0;
-            }
-            xSemaphoreGive(*s_segments_mutex);
-        }
+        // if (!shutdown_time) {
+        //     xTaskNotify(*s_control_task, 1, eIncrement);
+        // } else {
+        //     // Make sure all balancers are off.
+        //     xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        //     for (auto &segment : s_segments) {
+        //         segment.balance_bitset() = 0;
+        //     }
+        //     xSemaphoreGive(*s_segments_mutex);
+        // }
 
         // Update SWD data.
         if constexpr (k_enable_debug_logs) {
@@ -1004,6 +1008,206 @@ void swd_task(void *) {
     }
 }
 
+void charge() {
+    static charger::ErrorFlags charger_error_flags;
+    static std::uint32_t charge_voltage = 0;
+    can::listen<charger::StatusMessage, [](const charger::StatusMessage &charger_status) {
+        charger_error_flags = charger_status.error_flags;
+        charge_voltage = static_cast<std::uint32_t>(charger_status.charge_voltage) * 10;
+    }>(config::k_charger_can_id, 4);
+
+    s_control_mode.emplace<Charge>(Charge{});
+
+    enum class State {
+        ConstantCurrent,
+        ConstantVoltage,
+        Finished,
+    };
+
+    auto state = State::ConstantCurrent;
+    std::uint32_t cv_target = 510000;
+    std::uint32_t cv_counter1 = 0;
+    std::uint32_t cv_counter2 = 0;
+    bool enable_cv_balance = false;
+    std::uint16_t balance_bitset = 0;
+    TickType_t last_schedule_time = xTaskGetTickCount();
+    while (true) {
+        const auto swd_data = *s_swd_queue.receive(portMAX_DELAY);
+        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+
+        std::array<std::uint16_t, 12> cell_voltages{};
+        std::array<std::int8_t, 23> temperatures{};
+        std::uint32_t master_error_count = 0;
+        std::uint32_t slave_error_count = 0;
+
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        for (std::size_t i = 0; i < 12; i++) {
+            cell_voltages[i] = s_segments[2].cell_voltages()[i].value_or(0);
+        }
+        for (std::size_t i = 0; i < 23; i++) {
+            temperatures[i] = s_segments[2].temperatures()[i].value_or(-10);
+        }
+        master_error_count = s_segments[2].master_error_count();
+        slave_error_count = s_segments[2].slave_error_count();
+        xSemaphoreGive(*s_segments_mutex);
+
+        std::uint32_t pack_voltage = 0;
+        std::uint16_t min_cell_voltage = 0xffff;
+        std::uint16_t max_cell_voltage = 0;
+        for (const std::uint16_t voltage : cell_voltages) {
+            pack_voltage += voltage;
+            min_cell_voltage = std::min(min_cell_voltage, voltage);
+            max_cell_voltage = std::max(max_cell_voltage, voltage);
+        }
+
+        charger::ControlMessage charger_control{
+            .target_voltage = static_cast<std::uint16_t>(cv_target / 10),
+        };
+        if (charge_voltage > pack_voltage && state != State::Finished) {
+            charger_control.enable = true;
+
+            // Calculate current limit.
+            const auto mosfet_drop = charge_voltage - pack_voltage;
+            charger_control.target_current = static_cast<std::uint16_t>(util::clamp(25000000u / mosfet_drop, 0, 1000));
+
+            if (state == State::ConstantCurrent) {
+                for (std::size_t cell = 0; cell < 12; cell++) {
+                    if (cell_voltages[cell] >= min_cell_voltage + 500 && cell_voltages[cell] >= 36500) {
+                        balance_bitset |= 1u << cell;
+                    } else if (cell_voltages[cell] <= min_cell_voltage + 200) {
+                        balance_bitset &= ~(1u << cell);
+                    }
+                }
+
+                if (max_cell_voltage >= 42000) {
+                    state = State::ConstantVoltage;
+                    cv_target = pack_voltage;
+                    balance_bitset = 0;
+                }
+            } else if (state == State::ConstantVoltage) {
+                cv_counter1++;
+                if (max_cell_voltage < 41950) {
+                    cv_counter2++;
+                } else {
+                    cv_counter2 = 0;
+                }
+
+                const auto diff = max_cell_voltage - min_cell_voltage;
+                if ((cv_counter1 > 10 && cv_counter2 > 5 && (max_cell_voltage < 41900 || diff < 100)) || (cv_counter1 > 60 && max_cell_voltage < 42500)) {
+                    // Go up 10 mV.
+                    cv_target = std::min(cv_target + 100u, static_cast<std::uint32_t>(510000));
+                    cv_counter1 = 0;
+                }
+
+                if (diff >= 100) {
+                    enable_cv_balance = true;
+                } else if (diff <= 50) {
+                    enable_cv_balance = false;
+                }
+
+                if (enable_cv_balance) {
+                    for (std::size_t cell = 0; cell < 12; cell++) {
+                        if (cell_voltages[cell] >= max_cell_voltage - 50) {
+                            balance_bitset |= 1u << cell;
+                        } else if (cell_voltages[cell] <= max_cell_voltage - 100) {
+                            balance_bitset &= ~(1u << cell);
+                        }
+                    }
+                } else {
+                    balance_bitset = 0;
+                }
+            }
+        } else {
+            balance_bitset = 0;
+        }
+
+        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        if (freertos::uptime_ms() > 2000 && freertos::uptime_ms() < 7000) {
+            s_segments[2].balance_bitset() = 0xffff;
+        } else {
+            s_segments[2].balance_bitset() = balance_bitset;
+        }
+        xSemaphoreGive(*s_segments_mutex);
+
+        if (freertos::uptime_ms() > 10000) {
+            can::transmit(config::k_charger_can_id, charger_control);
+        }
+
+        const auto measured_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
+        if (max_cell_voltage >= 41950 && (max_cell_voltage - min_cell_voltage) < 100 &&
+            std::abs(measured_current) < 75) {
+            state = State::Finished;
+        }
+
+        hal::swd_printf("%u,", freertos::uptime_ms());
+        hal::swd_printf("%u,", static_cast<std::uint32_t>(state));
+        hal::swd_printf("0x%x,", swd_data.master_flags.value());
+        hal::swd_printf("0x%x,", charger_error_flags.value());
+        hal::swd_printf("%u,", charger_control.enable);
+        hal::swd_printf("%u,", charger_control.target_current);
+        hal::swd_printf("%u,", charger_control.target_voltage);
+        hal::swd_printf("0x%x,", balance_bitset);
+        hal::swd_printf("%d,", measured_current);
+        hal::swd_printf("%u,", charge_voltage);
+        hal::swd_printf("%u,", pack_voltage);
+        for (const std::uint16_t voltage : cell_voltages) {
+            hal::swd_printf("%u,", voltage);
+        }
+        for (auto index : {0, 1, 2}) {
+            hal::swd_printf("%d,", temperatures[index]);
+        }
+        hal::swd_printf("%u,", master_error_count);
+        hal::swd_printf("%u,", slave_error_count);
+
+        const auto can_stats = can::get_stats();
+        hal::swd_printf("%u,", can_stats.rx_count);
+        hal::swd_printf("%u,", can_stats.lost_rx_count);
+        hal::swd_printf("%u,", can_stats.tx_count);
+        hal::swd_printf("%u\n", can_stats.lost_tx_count);
+    }
+}
+
+// void discharge() {
+//     std::array<std::pair<float, float>, 11> results{};
+//     CharacterisationRun run(results, 2.0f, 3.0f, 600.0f);
+//     TickType_t last_schedule_time = xTaskGetTickCount();
+//     while (!run.is_done()) {
+//         xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+//         const auto voltage = static_cast<float>(s_segments[2].cell_voltages()[2].value_or(0)) / 10000.0f;
+//         xSemaphoreGive(*s_segments_mutex);
+
+//         if (freertos::uptime_ms() > 10000) {
+//             run.update(5.0f, 0.2f, voltage);
+//         }
+
+//         charger::ControlMessage charger_control{
+//             .target_current = 200,
+//             .enable = run.should_discharge() && voltage > 2.8f,
+//         };
+//         can::transmit(config::k_charger_can_id, charger_control);
+
+//         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
+//         hal::swd_printf("%u,%u,%u,%d,%u\n", freertos::uptime_ms(), charger_control.enable,
+//                         static_cast<std::uint32_t>(voltage * 10000.0f), positive_current, run.result_index());
+
+//         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(5000));
+//     }
+
+//     hal::swd_printf("FINAL RESULTS\n");
+//     for (const auto [soc, ocv] : results) {
+//         hal::swd_printf("%u,%u\n", static_cast<std::uint32_t>(soc * 100.0f),
+//                         static_cast<std::uint32_t>(ocv * 10000.0f));
+//     }
+// }
+
+void charge_task(void *) {
+    while (true) {
+        // Wait for a charge request.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        charge();
+    }
+}
+
 } // namespace
 
 extern "C" void TIM3_IRQHandler() {
@@ -1093,6 +1297,8 @@ void vApplicationIdleHook() {
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
 }
 
+static freertos::Task<256> s_charge_task;
+
 void app_main() {
     // Configure ADC inputs.
     s_lvs_sample.configure(hal::GpioInputMode::Analog);
@@ -1177,6 +1383,10 @@ void app_main() {
         s_swd_queue.init();
         s_swd_task.init(&swd_task, "swd", 0);
     }
+
+    // Initiate charging manually.
+    s_charge_task.init(&charge_task, "charge", 2);
+    xTaskNotify(*s_charge_task, 1, eIncrement);
 
     // Start the scheduler which we shouldn't return from.
     vTaskStartScheduler();
