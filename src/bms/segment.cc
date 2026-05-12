@@ -190,11 +190,11 @@ std::optional<std::uint16_t> adc_sample_raw() {
     return (static_cast<std::uint16_t>(bytes[0]) << 8u) | bytes[1];
 }
 
-std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::size_t sample_count) {
-    std::uint16_t min_value = std::numeric_limits<std::uint16_t>::max();
-    std::uint16_t max_value = 0;
+std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::uint32_t sample_count) {
+    auto min_value = std::numeric_limits<std::uint16_t>::max();
+    auto max_value = std::numeric_limits<std::uint16_t>::min();
     std::uint32_t sum = 0;
-    for (std::size_t i = 0; i < sample_count; i++) {
+    for (std::uint32_t i = 0; i < sample_count; i++) {
         const auto value = adc_sample_raw();
         if (!value) {
             return std::nullopt;
@@ -204,8 +204,9 @@ std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::s
         sum += *value;
     }
 
-    const auto average = sum / sample_count;
-    const auto voltage = (average * k_adc_vref) >> 16u;
+    // Calculate the average in ADC counts and convert that to a voltage, taking care to avoid truncation bias.
+    const auto average = (sum + (sample_count / 2)) / sample_count;
+    const auto voltage = (average * k_adc_vref + (1u << 15)) >> 16u;
     return std::make_pair(voltage, max_value - min_value);
 }
 
