@@ -1,7 +1,6 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
-#include <max_adc.hh>
 #include <stm32f103xb.h>
 #include <util.hh>
 
@@ -172,6 +171,44 @@ hal::Gpio s_sda_2(hal::GpioPort::B, 11);
     return (bytes[2] & 0xfu) == 0u;
 }
 
+std::optional<std::uint16_t> adc_sample_raw() {
+    // Trigger conversion.
+    hal::gpio_reset(s_adc_cs);
+    hal::gpio_set(s_adc_cs);
+
+    // Wait maximum conversion time.
+    // TODO: This should be done with interrupts like in the master firmware.
+    hal::delay_us(3);
+
+    // Read value over SPI.
+    std::array<std::uint8_t, 2> bytes{};
+    if (!hal::spi_transfer(SPI2, s_adc_cs, bytes, 2)) {
+        return std::nullopt;
+    }
+
+    // Return assembled value.
+    return (static_cast<std::uint16_t>(bytes[0]) << 8u) | bytes[1];
+}
+
+std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::size_t sample_count) {
+    std::uint16_t min_value = std::numeric_limits<std::uint16_t>::max();
+    std::uint16_t max_value = 0;
+    std::uint32_t sum = 0;
+    for (std::size_t i = 0; i < sample_count; i++) {
+        const auto value = adc_sample_raw();
+        if (!value) {
+            return std::nullopt;
+        }
+        min_value = std::min(min_value, *value);
+        max_value = std::max(max_value, *value);
+        sum += *value;
+    }
+
+    const auto average = sum / sample_count;
+    const auto voltage = (average * k_adc_vref) >> 16u;
+    return std::make_pair(voltage, max_value - min_value);
+}
+
 void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::uint16_t>>> samples, bool calib) {
     xSemaphoreTake(*s_afe_mutex, portMAX_DELAY);
 
@@ -209,11 +246,11 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 
         // Discard the first ADC reading.
         if (calib) {
-            max_adc::sample_raw(SPI2, s_adc_cs);
+            adc_sample_raw();
         }
 
         // Take successive ADC samples to obtain an average voltage reading.
-        samples[index] = max_adc::sample_voltage(SPI2, s_adc_cs, k_adc_vref, 16);
+        samples[index] = adc_sample_voltage(16);
     }
 
     // Re-enable leakage paths (diagnostic mode and balancing). Diagnostic mode helps to catch disconnected taps.
@@ -312,7 +349,7 @@ std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::ui
     }
 
     // Sample the voltage on the ADC.
-    const auto sample = max_adc::sample_voltage(SPI2, s_adc_cs, k_adc_vref, 8);
+    const auto sample = adc_sample_voltage(8);
     xSemaphoreGive(*s_afe_mutex);
 
     // Disable the thermistor.
