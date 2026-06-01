@@ -77,3 +77,10 @@
 [submodule "kicad/tsac-distribution"]
 	path = kicad/tsac-distribution
 	url = https://github.com/york-fs/tsac-distribution.git
+	update = rebase
+	branch = master
+[submodule "kicad/front-distribution"]
+	path = kicad/front-distribution
+	url = https://github.com/york-fs/front-distribution.git
+	update = rebase
+	branch = master
