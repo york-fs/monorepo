@@ -21,7 +21,7 @@ namespace {
 /**
  * @brief Whether to enable the SWD debug logging task.
  */
-constexpr bool k_enable_debug_logs = false;
+constexpr bool k_enable_debug_logs = true;
 
 /**
  * @brief Sleep timeout in milliseconds.
@@ -34,6 +34,11 @@ constexpr std::uint32_t k_sleep_timeout = 2000;
 constexpr std::uint16_t k_adc_vref = 45000;
 
 /**
+ * @brief Hard-coded value of the 3V3 rail powering the STM's ADC in 1 mV resolution.
+ */
+constexpr std::uint32_t k_mcu_vref = 3333;
+
+/**
  * @brief Cell degraded threshold in ADC counts.
  */
 constexpr std::uint16_t k_cell_degraded_threshold = 10;
@@ -44,37 +49,36 @@ constexpr std::uint16_t k_cell_degraded_threshold = 10;
 constexpr std::uint16_t k_cell_open_threshold = 1000;
 
 /**
- * @brief Thermistor acceptable noise threshold in ADC counts. This value corresponds to around 100 mV.
- */
-constexpr std::uint16_t k_thermistor_noise_threshold = 1500;
-
-/**
  * @brief Voltage threshold from the absolute endpoints (0 and Vref) in 100 uV resolution from when to consider a
 thermistor as being either open or short circuit.
 */
 constexpr std::uint32_t k_thermistor_range_threshold = 3000;
 
 /**
- * @brief Product and die version bits for the MAX14920 AFE.
+ * @brief Product and die version bits for the MAX14921 AFE.
  */
-constexpr std::uint8_t k_afe_version_bits = 0b1010u;
+constexpr std::uint8_t k_afe_version_bits = 0b0010u;
 
-enum class ExpanderRegister : std::uint8_t {
-    InputPort0 = 0x00,
-    InputPort1 = 0x01,
-    OutputPort0 = 0x02,
-    OutputPort1 = 0x03,
-    PolarityPort0 = 0x04,
-    PolarityPort1 = 0x05,
-    ConfigurationPort0 = 0x06,
-    ConfigurationPort1 = 0x07,
-};
+/**
+ * @brief Thermistor MUX mapping array.
+ */
+constexpr std::array<std::array<std::uint32_t, 3>, 8> k_thermistor_mapping{{
+    {2, 13, 21},
+    {1, 15, 22},
+    {0, 10, 23},
+    {3, 12, 20},
+    {6, 11, 18},
+    {5, 9, 16},
+    {7, 14, 19},
+    {4, 8, 17},
+}};
 
 // Lock for frontend access.
+// TODO: Remove?
 freertos::Mutex s_afe_mutex;
 
 // I2C communication to master.
-i2c::StateMachine s_i2c1_sm(i2c::Bus::_1);
+i2c::StateMachine s_i2c_sm(i2c::Bus::_1);
 std::uint8_t s_i2c_address = 0;
 std::array<std::uint8_t, 128> s_i2c_buffer;
 freertos::MessageBuffer<128> s_cmd_queue;
@@ -84,11 +88,13 @@ std::atomic<bool> s_is_charging;
 std::atomic<std::uint16_t> s_balance_bitset;
 
 // Sampled data.
-std::array<std::uint16_t, 12> s_correction_table{};
-std::array<std::uint16_t, 12> s_voltages{};
-std::array<std::int8_t, 23> s_temperatures{};
+std::array<std::uint16_t, 16> s_correction_table{};
+std::array<std::uint16_t, 16> s_voltages{};
+std::array<std::int8_t, 24> s_temperatures{};
 std::uint16_t s_cell_tap_bitset = 0;
 std::uint16_t s_degraded_bitset = 0;
+std::uint16_t s_rail_voltage = 0;
+std::uint16_t s_ref_voltage = 0;
 std::uint32_t s_thermistor_bitset = 0;
 
 // Error tracking.
@@ -108,30 +114,36 @@ std::array s_address_pins{
     hal::Gpio(hal::GpioPort::A, 11),
 };
 
-// Thermistors connected directly to the STM.
-std::array s_mcu_thermistor_enable{
-    hal::Gpio(hal::GpioPort::B, 9), hal::Gpio(hal::GpioPort::B, 8), hal::Gpio(hal::GpioPort::B, 12),
-    hal::Gpio(hal::GpioPort::A, 1), hal::Gpio(hal::GpioPort::A, 2), hal::Gpio(hal::GpioPort::A, 3),
+// Thermistor control and input pins.
+hal::Gpio s_rail_sample(hal::GpioPort::A, 1);
+std::array s_mux_sample{
+    hal::Gpio(hal::GpioPort::A, 2),
+    hal::Gpio(hal::GpioPort::A, 3),
     hal::Gpio(hal::GpioPort::A, 4),
+};
+hal::Gpio s_mux_en(hal::GpioPort::B, 10);
+std::array s_mux_control{
+    hal::Gpio(hal::GpioPort::B, 11),
+    hal::Gpio(hal::GpioPort::B, 9),
+    hal::Gpio(hal::GpioPort::B, 8),
 };
 
 // General pins.
 hal::Gpio s_afe_en(hal::GpioPort::B, 0);
 hal::Gpio s_ref_en(hal::GpioPort::B, 1);
 hal::Gpio s_led(hal::GpioPort::B, 5);
+hal::Gpio s_ref_sample(hal::GpioPort::A, 7);
 
 // SPI pins for ADC and AFE.
 hal::Gpio s_adc_cs(hal::GpioPort::A, 5);
-hal::Gpio s_afe_cs(hal::GpioPort::A, 7);
+hal::Gpio s_afe_cs(hal::GpioPort::A, 6);
 hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 hal::Gpio s_mosi(hal::GpioPort::B, 15);
 
 // I2C pins.
-hal::Gpio s_scl_1(hal::GpioPort::B, 6);
-hal::Gpio s_sda_1(hal::GpioPort::B, 7);
-hal::Gpio s_scl_2(hal::GpioPort::B, 10);
-hal::Gpio s_sda_2(hal::GpioPort::B, 11);
+hal::Gpio s_scl(hal::GpioPort::B, 6);
+hal::Gpio s_sda(hal::GpioPort::B, 7);
 
 [[nodiscard]] bool afe_transfer(std::uint8_t selection, bool allow_leakage) {
     // Make sure bottom control bits are clear.
@@ -162,7 +174,7 @@ hal::Gpio s_sda_2(hal::GpioPort::B, 11);
         return false;
     }
 
-    // Check MAX14920 version.
+    // Check AFE version.
     if ((bytes[2] >> 4) != k_afe_version_bits) {
         return false;
     }
@@ -231,14 +243,14 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Sample all cells in order of most potential to least potential (w.r.t. segment ground).
-    for (std::size_t cell = 12; cell > 0; cell--) {
+    for (std::size_t cell = 16; cell > 0; cell--) {
         const auto index = static_cast<std::uint8_t>(cell - 1);
 
         // Select the cell for output on AOUT in hold mode. The level shift and AOUT settle delay should pass before
         // the first ADC acquisition occurs.
-        constexpr std::array<std::uint8_t, 12> index_table{
-            0b10000000, 0b11000000, 0b10100000, 0b11100000, 0b10010000, 0b11010000,
-            0b10110000, 0b11110000, 0b10001000, 0b11001000, 0b10101000, 0b11101000,
+        constexpr std::array<std::uint8_t, 16> index_table{
+            0b10000000, 0b11000000, 0b10100000, 0b11100000, 0b10010000, 0b11010000, 0b10110000, 0b11110000,
+            0b10001000, 0b11001000, 0b10101000, 0b11101000, 0b10011000, 0b11011000, 0b10111000, 0b11111000,
         };
         if (!afe_transfer(index_table[index], false)) {
             // Failed to configure frontend.
@@ -262,12 +274,12 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 void sample_voltages_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, 12> samples;
+        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, 16> samples;
         sample_voltages_raw(samples, false);
 
         std::uint16_t cell_tap_bitet = 0;
         std::uint16_t degraded_bitset = 0;
-        std::array<std::uint16_t, 12> voltages{};
+        std::array<std::uint16_t, 16> voltages{};
         for (std::size_t index = 0; index < voltages.size(); index++) {
             if (const auto sample = samples[index]) {
                 const auto [voltage, adc_range] = *samples[index];
@@ -301,139 +313,98 @@ void sample_voltages_task(void *) {
     }
 }
 
-bool set_expander_register(ExpanderRegister reg, std::uint8_t value) {
-    std::array data{
-        static_cast<std::uint8_t>(reg),
-        value,
-    };
-    if (const auto status = hal::i2c_wait_idle(I2C2, 5); status != hal::I2cStatus::Ok) {
-        return false;
-    }
-    if (const auto status = hal::i2c_master_write(I2C2, 0x20, data); status != hal::I2cStatus::Ok) {
-        return false;
-    }
-    hal::i2c_stop(I2C2);
-    return true;
-}
-
-std::optional<std::int8_t> sample_thermistor(std::uint16_t rail_voltage, std::uint8_t index) {
-    auto configuration_register = ExpanderRegister::ConfigurationPort0;
-    if (index >= s_mcu_thermistor_enable.size() + 8) {
-        configuration_register = ExpanderRegister::ConfigurationPort1;
-    }
-
-    // Enable the thermistor.
-    if (index < s_mcu_thermistor_enable.size()) {
-        // Pull the MCU pin high.
-        s_mcu_thermistor_enable[index].configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-        hal::gpio_set(s_mcu_thermistor_enable[index]);
-    } else {
-        // The thermistor order is reversed on port 1 compared to port 0, i.e. the pins go in a clockwise fashion.
-        const auto pin_index = index - s_mcu_thermistor_enable.size();
-        const auto pin_bit =
-            configuration_register == ExpanderRegister::ConfigurationPort0 ? pin_index : 15 - pin_index;
-        if (!set_expander_register(configuration_register, ~(1u << pin_bit))) {
-            // Failed to configure expander.
-            return std::nullopt;
-        }
-    }
-
-    // Allow some settling time.
-    hal::delay_us(5);
-
-    // Configure the frontend.
-    xSemaphoreTake(*s_afe_mutex, portMAX_DELAY);
-    if (!afe_transfer(0b00111000u, true)) {
-        // Failed to configure frontend.
-        xSemaphoreGive(*s_afe_mutex);
-        return std::nullopt;
-    }
-
-    // Sample the voltage on the ADC.
-    const auto sample = adc_sample_voltage(8);
-    xSemaphoreGive(*s_afe_mutex);
-
-    // Disable the thermistor.
-    if (index < s_mcu_thermistor_enable.size()) {
-        // Reconfigure MCU pin to high impedance.
-        s_mcu_thermistor_enable[index].configure(hal::GpioInputMode::Floating);
-    } else if (!set_expander_register(configuration_register, 0xff)) {
-        // Failed to configure expander.
-        return std::nullopt;
-    }
-
-    if (!sample) {
-        // Failed to sample ADC.
-        return std::nullopt;
-    }
-
-    // The min ensures that a bad rail voltage doesn't result in false readings.
-    auto [voltage, adc_range] = *sample;
-    voltage = std::min(voltage, rail_voltage);
-
+std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std::uint16_t voltage, float beta) {
     // Check if the voltage measurement is viable.
     if (voltage < k_thermistor_range_threshold || voltage > (rail_voltage - k_thermistor_range_threshold)) {
-        return std::nullopt;
-    }
-
-    // Check if the voltage measurement is too noisy.
-    if (adc_range > k_thermistor_noise_threshold) {
         return std::nullopt;
     }
 
     // Thermistor is connected, so we can calculate the temperature.
     // TODO: Use a lookup table/don't use floats here.
     const auto resistance = (rail_voltage * 10000) / voltage - 10000;
-    float beta = 1.0f / 3950.0f;
-    if (index < 3) {
-        // The onboard thermistors have a different beta.
-        beta = 1.0f / 3350.0f;
-    }
     const float t0 = 1.0f / 298.15f;
     const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 10000.0f)) - 273.15f;
     return static_cast<std::int8_t>(temperature);
 }
 
 void sample_temperatures_task(void *) {
+    // Configure analog inputs.
+    s_rail_sample.configure(hal::GpioInputMode::Analog);
+    s_ref_sample.configure(hal::GpioInputMode::Analog);
+    for (const auto &pin : s_mux_sample) {
+        pin.configure(hal::GpioInputMode::Analog);
+    }
+
+    // Configure open-drain enable output. This pin controls the output enable line for each MUX, as well the P-channel
+    // MOSFET powering the thermistors.
+    s_mux_en.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
+    hal::gpio_set(s_mux_en);
+
+    // Configure commoned MUX selection pins.
+    for (const auto &pin : s_mux_control) {
+        pin.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    }
+
+    hal::adc_init(ADC1, 5);
+    hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
+    hal::adc_sequence_channel(ADC1, 2, 2, 0b010u);
+    hal::adc_sequence_channel(ADC1, 3, 3, 0b010u);
+    hal::adc_sequence_channel(ADC1, 4, 4, 0b010u);
+    hal::adc_sequence_channel(ADC1, 5, 7, 0b010u);
+
+    std::array<std::uint16_t, 5> adc_buffer{};
+    hal::adc_init_dma(adc_buffer);
+
+    DMA1_Channel1->CCR |= DMA_CCR_TCIE;
+    hal::enable_irq(DMA1_Channel1_IRQn, 7);
+
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         const auto period = s_is_charging ? 2000 : 1000;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
 
-        // Make all expander pins high impedance.
-        if (!set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff)) {
-            continue;
-        }
-        if (!set_expander_register(ExpanderRegister::ConfigurationPort1, 0xff)) {
-            continue;
-        }
-
-        // Set output bits so that each thermistor can be sampled by briefly configuring the pin as an output.
-        if (!set_expander_register(ExpanderRegister::OutputPort0, 0xff)) {
-            continue;
-        }
-        if (!set_expander_register(ExpanderRegister::OutputPort1, 0xff)) {
-            continue;
-        }
-
-        // Make MCU connected thermistors high impedance.
-        for (const auto &pin : s_mcu_thermistor_enable) {
-            pin.configure(hal::GpioInputMode::Floating);
-        }
+        hal::gpio_reset(s_mux_en);
 
         std::uint32_t thermistor_bitset = 0;
-        std::array<std::int8_t, 23> temperatures{};
-        for (std::uint8_t index = 0; index < temperatures.size(); index++) {
-            const auto temperature = sample_thermistor(33330, index);
-            if (temperature) {
-                // Temperature reading is viable.
-                thermistor_bitset |= 1u << index;
-                temperatures[index] = *temperature;
+        std::array<std::int8_t, s_temperatures.size()> temperatures{};
+        for (std::uint32_t selection = 0; selection < 8; selection++) {
+            // Set A, B, and C selection outputs.
+            s_mux_control[0].write((selection & 0b1u) != 0);
+            s_mux_control[1].write((selection & 0b10u) != 0);
+            s_mux_control[2].write((selection & 0b100u) != 0);
+
+            // Enable thermistor.
+            // hal::gpio_reset(s_mux_en);
+
+            // Settle delay.
+            // TODO
+            vTaskDelay(pdMS_TO_TICKS(1));
+
+            hal::adc_start(ADC1);
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+            const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
+            for (std::uint32_t mux = 0; mux < 3; mux++) {
+                const auto index = k_thermistor_mapping[selection][mux];
+                const auto beta = 1.0f / (index < 4 ? 3350.0f : 3950.0f);
+                const auto voltage = (k_mcu_vref * adc_buffer[mux + 1]) >> 12;
+                const auto temperature = calculate_thermistor(rail_voltage, voltage, beta);
+                if (temperature) {
+                    // The temperature reading is viable.
+                    s_thermistor_bitset |= 1u << index;
+                    temperatures[index] = *temperature;
+                }
             }
         }
 
+        hal::gpio_set(s_mux_en);
+
+        // Calculate the external reference voltage. The input has a 2x divider.
+        const auto ref_voltage = ((k_mcu_vref * adc_buffer[4]) >> 12) * 2;
+
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         taskENTER_CRITICAL();
+        s_ref_voltage = ref_voltage;
         s_thermistor_bitset = thermistor_bitset;
         std::copy(temperatures.begin(), temperatures.end(), s_temperatures.begin());
         taskEXIT_CRITICAL();
@@ -492,18 +463,18 @@ void handle_command(std::span<std::uint8_t> bytes) {
 void i2c_listen() {
     hal::enable_irq(I2C1_EV_IRQn, 6);
     hal::enable_irq(I2C1_ER_IRQn, 6);
-    if (s_i2c1_sm.state() == i2c::State::Error) {
+    if (s_i2c_sm.state() == i2c::State::Error) {
         ++s_i2c_error_count;
-        s_i2c1_sm.init();
+        s_i2c_sm.init();
     }
     // Listen on our configured address and the general call address.
-    s_i2c1_sm.listen(s_i2c_address, true);
+    s_i2c_sm.listen(s_i2c_address, true);
 }
 
 void cmd_task(void *) {
     s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
 
-    s_i2c1_sm.init();
+    s_i2c_sm.init();
     while (true) {
         std::array<std::uint8_t, 64> cmd_bytes{};
         const auto cmd_length =
@@ -526,23 +497,10 @@ void cmd_task(void *) {
         // Disable the frontend and reference.
         hal::gpio_reset(s_afe_en, s_ref_en, s_led);
 
-        // Drive all thermistor outputs low to avoid floating power draw.
-        s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        hal::i2c_init(I2C2, std::nullopt);
-        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort0, 0x00));
-        static_cast<void>(set_expander_register(ExpanderRegister::OutputPort1, 0x00));
-        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort0, 0x00));
-        static_cast<void>(set_expander_register(ExpanderRegister::ConfigurationPort1, 0x00));
-        for (const auto &pin : s_mcu_thermistor_enable) {
-            pin.configure(hal::GpioInputMode::PullDown);
-        }
-
         // Reconfigure SCL as a regular input for use as an external event. Also reconfigure SDA to avoid the STM
         // driving it low and upsetting the isolator.
-        for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
-            pin.configure(hal::GpioInputMode::Floating);
-        }
+        s_scl.configure(hal::GpioInputMode::Floating);
+        s_sda.configure(hal::GpioInputMode::Floating);
 
         // Setup external event on SCL (PB6).
         // TODO: Make a HAL function for this.
@@ -552,8 +510,11 @@ void cmd_task(void *) {
 
         // Enter stop mode. Disable SysTick to avoid an STM errata.
         SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-        hal::enter_stop_mode(hal::WakeupSource::Event);
+        // hal::enter_stop_mode(hal::WakeupSource::Event);
         SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
+
+        // TODO
+        vTaskDelay(pdMS_TO_TICKS(100));
 
         // Woken up from stop mode - enable the frontend and reference.
         hal::gpio_set(s_afe_en, s_ref_en, s_led);
@@ -563,16 +524,11 @@ void cmd_task(void *) {
         s_balance_bitset.store(0);
 
         // Listen on I2C.
-        for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
-            pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        }
+        s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+        s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
         i2c_listen();
 
-        // Initialise I2C2 in master mode for the GPIO expander.
-        // TODO: This should use the state machine.
-        hal::i2c_init(I2C2, std::nullopt);
-
-        // Wake the ADC.
+        // Wake the external ADC.
         hal::gpio_reset(s_sck, s_adc_cs);
         hal::gpio_set(s_adc_cs, s_afe_cs);
 
@@ -587,7 +543,7 @@ void cmd_task(void *) {
         vTaskDelay(pdMS_TO_TICKS(200));
 
         // Perform a parasitic capacitance calibration.
-        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, 12> samples;
+        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, s_correction_table.size()> samples;
         std::fill(s_correction_table.begin(), s_correction_table.end(), 0);
         sample_voltages_raw(samples, true);
         for (std::size_t i = 0; i < samples.size(); i++) {
@@ -595,6 +551,9 @@ void cmd_task(void *) {
                 s_correction_table[i] = (sample->first + 127) / 128;
             }
         }
+
+        // TODO
+        vTaskDelay(pdMS_TO_TICKS(1000000));
     }
 }
 
@@ -606,15 +565,19 @@ void swd_task(void *) {
         hal::swd_printf("Balance: 0x%x\n", s_balance_bitset.load());
         hal::swd_printf("Balance temperatures: [%d, %d, %d]\n", s_temperatures[0], s_temperatures[1],
                         s_temperatures[2]);
+        hal::swd_printf("RAIL voltage: %u\n", s_rail_voltage);
+        hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("I2C error count: %u\n", s_i2c_error_count.load());
-        hal::swd_printf("C[1, 6]:  [%u, %u, %u, %u, %u, %u]\n", s_correction_table[0], s_correction_table[1],
-                        s_correction_table[2], s_correction_table[3], s_correction_table[4], s_correction_table[5]);
-        hal::swd_printf("C[7, 12]: [%u, %u, %u, %u, %u, %u]\n", s_correction_table[6], s_correction_table[7],
-                        s_correction_table[8], s_correction_table[9], s_correction_table[10], s_correction_table[11]);
-        hal::swd_printf("V[1, 6]:  [%u, %u, %u, %u, %u, %u]\n", s_voltages[0], s_voltages[1], s_voltages[2],
-                        s_voltages[3], s_voltages[4], s_voltages[5]);
-        hal::swd_printf("V[7, 12]: [%u, %u, %u, %u, %u, %u]\n", s_voltages[6], s_voltages[7], s_voltages[8],
-                        s_voltages[9], s_voltages[10], s_voltages[11]);
+        hal::swd_printf("C[1, 8]:  [%u, %u, %u, %u, %u, %u, %u, %u]\n", s_correction_table[0], s_correction_table[1],
+                        s_correction_table[2], s_correction_table[3], s_correction_table[4], s_correction_table[5],
+                        s_correction_table[6], s_correction_table[7]);
+        hal::swd_printf("C[9, 16]: [%u, %u, %u, %u, %u, %u]\n", s_correction_table[8], s_correction_table[9],
+                        s_correction_table[10], s_correction_table[11], s_correction_table[12], s_correction_table[13],
+                        s_correction_table[14], s_correction_table[15]);
+        hal::swd_printf("V[1, 8]:  [%u, %u, %u, %u, %u, %u, %u, %u]\n", s_voltages[0], s_voltages[1], s_voltages[2],
+                        s_voltages[3], s_voltages[4], s_voltages[5], s_voltages[6], s_voltages[7]);
+        hal::swd_printf("V[9, 16]: [%u, %u, %u, %u, %u, %u, %u, %u]\n", s_voltages[8], s_voltages[9], s_voltages[10],
+                        s_voltages[11], s_voltages[12], s_voltages[13], s_voltages[14], s_voltages[15]);
         hal::swd_printf("T[1, 10]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[3], s_temperatures[4],
                         s_temperatures[5], s_temperatures[6], s_temperatures[7], s_temperatures[8], s_temperatures[9],
                         s_temperatures[10], s_temperatures[11], s_temperatures[12]);
@@ -627,18 +590,25 @@ void swd_task(void *) {
 
 } // namespace
 
+extern "C" void DMA1_Channel1_IRQHandler() {
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    DMA1->IFCR |= DMA_IFCR_CTCIF1;
+    xTaskNotifyFromISR(*s_sample_temperatures_task, 1, eIncrement, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
 extern "C" void I2C1_EV_IRQHandler() {
-    if (!s_i2c1_sm.event()) {
+    if (!s_i2c_sm.event()) {
         // State not changed.
         return;
     }
 
     BaseType_t higher_priority_task_woken = pdFALSE;
-    const auto state = s_i2c1_sm.state();
+    const auto state = s_i2c_sm.state();
     if (state == i2c::State::SlaveRx) {
-        s_i2c1_sm.set_buffer(std::span(s_i2c_buffer).subspan(0, 16));
+        s_i2c_sm.set_buffer(std::span(s_i2c_buffer).subspan(0, 16));
     } else if (state == i2c::State::SlaveRxFinish) {
-        if (xMessageBufferSendFromISR(*s_cmd_queue, s_i2c_buffer.data(), s_i2c1_sm.head(),
+        if (xMessageBufferSendFromISR(*s_cmd_queue, s_i2c_buffer.data(), s_i2c_sm.head(),
                                       &higher_priority_task_woken) == 0) {
             ++s_i2c_error_count;
         }
@@ -656,7 +626,7 @@ extern "C" void I2C1_EV_IRQHandler() {
             stream.write_byte(temperature);
         }
         stream.write_be<std::uint32_t>(hal::crc_compute(stream.bytes()));
-        s_i2c1_sm.set_buffer(stream.bytes());
+        s_i2c_sm.set_buffer(stream.bytes());
     }
 
     if (state == i2c::State::Idle || state == i2c::State::SlaveRxFinish || state == i2c::State::Error ||
@@ -667,7 +637,7 @@ extern "C" void I2C1_EV_IRQHandler() {
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
-    s_i2c1_sm.error();
+    s_i2c_sm.error();
     i2c_listen();
 }
 
