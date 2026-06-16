@@ -89,3 +89,6 @@
 	url = https://github.com/york-fs/ts-box-distribution.git
 	update = rebase
 	branch = master
+[submodule "kicad/rear-distribution"]
+	path = kicad/rear-distribution
+	url = https://github.com/york-fs/rear-distribution.git
