@@ -49,10 +49,10 @@ constexpr std::uint16_t k_cell_degraded_threshold = 10;
 constexpr std::uint16_t k_cell_open_threshold = 1000;
 
 /**
- * @brief Voltage threshold from the absolute endpoints (0 and Vref) in 100 uV resolution from when to consider a
+ * @brief Voltage threshold from the absolute endpoints (0 and Vref) in 1 mV resolution from when to consider a
 thermistor as being either open or short circuit.
 */
-constexpr std::uint32_t k_thermistor_range_threshold = 3000;
+constexpr std::uint32_t k_thermistor_range_threshold = 30;
 
 /**
  * @brief Product and die version bits for the MAX14921 AFE.
@@ -321,9 +321,9 @@ std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std:
 
     // Thermistor is connected, so we can calculate the temperature.
     // TODO: Use a lookup table/don't use floats here.
-    const auto resistance = (rail_voltage * 10000) / voltage - 10000;
+    const auto resistance = (rail_voltage * 1000) / voltage - 1000;
     const float t0 = 1.0f / 298.15f;
-    const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 10000.0f)) - 273.15f;
+    const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 1000.0f)) - 273.15f;
     return static_cast<std::int8_t>(temperature);
 }
 
@@ -338,7 +338,7 @@ void sample_temperatures_task(void *) {
     // Configure open-drain enable output. This pin controls the output enable line for each MUX, as well the P-channel
     // MOSFET powering the thermistors.
     s_mux_en.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    hal::gpio_set(s_mux_en);
+    // hal::gpio_set(s_mux_en);
 
     // Configure commoned MUX selection pins.
     for (const auto &pin : s_mux_control) {
@@ -363,8 +363,6 @@ void sample_temperatures_task(void *) {
         const auto period = s_is_charging ? 2000 : 1000;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
 
-        hal::gpio_reset(s_mux_en);
-
         std::uint32_t thermistor_bitset = 0;
         std::array<std::int8_t, s_temperatures.size()> temperatures{};
         for (std::uint32_t selection = 0; selection < 8; selection++) {
@@ -373,15 +371,24 @@ void sample_temperatures_task(void *) {
             s_mux_control[1].write((selection & 0b10u) != 0);
             s_mux_control[2].write((selection & 0b100u) != 0);
 
+            for (const auto &pin : s_mux_sample) {
+                pin.configure(hal::GpioInputMode::Analog);
+            }
+
             // Enable thermistor.
-            // hal::gpio_reset(s_mux_en);
+            hal::gpio_reset(s_mux_en);
 
             // Settle delay.
             // TODO
-            vTaskDelay(pdMS_TO_TICKS(1));
+            vTaskDelay(pdMS_TO_TICKS(50));
 
             hal::adc_start(ADC1);
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+            hal::gpio_set(s_mux_en);
+            for (const auto &pin : s_mux_sample) {
+                pin.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+            }
 
             const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
             for (std::uint32_t mux = 0; mux < 3; mux++) {
@@ -389,15 +396,16 @@ void sample_temperatures_task(void *) {
                 const auto beta = 1.0f / (index < 4 ? 3350.0f : 3950.0f);
                 const auto voltage = (k_mcu_vref * adc_buffer[mux + 1]) >> 12;
                 const auto temperature = calculate_thermistor(rail_voltage, voltage, beta);
+                // hal::swd_printf("t%u: %u %u %u\n", index, adc_buffer[mux + 1], voltage, rail_voltage);
                 if (temperature) {
                     // The temperature reading is viable.
                     s_thermistor_bitset |= 1u << index;
                     temperatures[index] = *temperature;
                 }
             }
-        }
 
-        hal::gpio_set(s_mux_en);
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
 
         // Calculate the external reference voltage. The input has a 2x divider.
         const auto ref_voltage = ((k_mcu_vref * adc_buffer[4]) >> 12) * 2;
@@ -563,8 +571,8 @@ void swd_task(void *) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Mode: %s\n", s_is_charging ? "charging" : "discharging");
         hal::swd_printf("Balance: 0x%x\n", s_balance_bitset.load());
-        hal::swd_printf("Balance temperatures: [%d, %d, %d]\n", s_temperatures[0], s_temperatures[1],
-                        s_temperatures[2]);
+        hal::swd_printf("Balance temperatures: [%d, %d, %d, %d]\n", s_temperatures[0], s_temperatures[1],
+                        s_temperatures[2], s_temperatures[3]);
         hal::swd_printf("RAIL voltage: %u\n", s_rail_voltage);
         hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("I2C error count: %u\n", s_i2c_error_count.load());
@@ -578,12 +586,12 @@ void swd_task(void *) {
                         s_voltages[3], s_voltages[4], s_voltages[5], s_voltages[6], s_voltages[7]);
         hal::swd_printf("V[9, 16]: [%u, %u, %u, %u, %u, %u, %u, %u]\n", s_voltages[8], s_voltages[9], s_voltages[10],
                         s_voltages[11], s_voltages[12], s_voltages[13], s_voltages[14], s_voltages[15]);
-        hal::swd_printf("T[1, 10]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[3], s_temperatures[4],
-                        s_temperatures[5], s_temperatures[6], s_temperatures[7], s_temperatures[8], s_temperatures[9],
-                        s_temperatures[10], s_temperatures[11], s_temperatures[12]);
-        hal::swd_printf("T[11, 20]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[13], s_temperatures[14],
-                        s_temperatures[15], s_temperatures[16], s_temperatures[17], s_temperatures[18],
-                        s_temperatures[19], s_temperatures[20], s_temperatures[21], s_temperatures[22]);
+        hal::swd_printf("T[1, 10]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[4], s_temperatures[5],
+                        s_temperatures[6], s_temperatures[7], s_temperatures[8], s_temperatures[9], s_temperatures[10],
+                        s_temperatures[11], s_temperatures[12], s_temperatures[13]);
+        hal::swd_printf("T[11, 20]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[14], s_temperatures[15],
+                        s_temperatures[16], s_temperatures[17], s_temperatures[18], s_temperatures[19],
+                        s_temperatures[20], s_temperatures[21], s_temperatures[22], s_temperatures[23]);
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
     }
 }
