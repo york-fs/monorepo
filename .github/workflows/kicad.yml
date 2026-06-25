@@ -18,6 +18,9 @@ jobs:
       - name: Install fonts
         run: cp kicad-library/fonts/* /usr/share/fonts/ && fc-cache -fv
 
+      - name: Clone IBOM tool
+        run: git clone --depth 1 https://github.com/openscopeproject/InteractiveHtmlBom.git
+
       - name: Get root name
         run: echo "PROJECT_NAME=$(basename -s .kicad_pro *.kicad_pro)" >> "$GITHUB_ENV"
 
@@ -105,6 +108,15 @@ jobs:
           --light-side-elevation 45
           "${PROJECT_NAME}.kicad_pcb"
 
+      - name: Generate IBOM
+        run: >-
+          INTERACTIVE_HTML_BOM_NO_DISPLAY=1
+          python3 InteractiveHtmlBom/InteractiveHtmlBom/generate_interactive_bom.py
+          --no-browser
+          --dest-dir .
+          --name-format "${PROJECT_NAME}-ibom"
+          "${PROJECT_NAME}.kicad_pcb"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -113,6 +125,7 @@ jobs:
             ${{ env.PROJECT_NAME }}-bom.csv
             ${{ env.PROJECT_NAME }}-schematic.pdf
             ${{ env.PROJECT_NAME }}-positions.csv
+            ${{ env.PROJECT_NAME }}-ibom.html
             ${{ env.PROJECT_NAME }}.step
             ${{ env.PROJECT_NAME }}.jpg
 
@@ -138,6 +151,7 @@ jobs:
             $([[ "$DRC_PASS" = 'true' ]] && echo 'passing' || echo 'failing') \
             $([[ "$DRC_PASS" = 'true' ]] && echo 'green' || echo 'red') > site/drc.json
           cp "${PROJECT_NAME}.jpg" site/render.jpg
+          cp "${PROJECT_NAME}-ibom.html" site/ibom.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
