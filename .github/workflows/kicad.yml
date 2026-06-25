@@ -80,6 +80,15 @@ jobs:
           --map-format gerberx2
           "${PROJECT_NAME}.kicad_pcb"
 
+      - name: Export STEP file
+        run: >-
+          kicad-cli pcb export step
+          --output "${PROJECT_NAME}.step"
+          --no-dnp
+          --include-pads
+          --include-silkscreen
+          "${PROJECT_NAME}.kicad_pcb"
+
       - name: Export preview render
         run: >-
           kicad-cli pcb render
@@ -104,6 +113,7 @@ jobs:
             ${{ env.PROJECT_NAME }}-bom.csv
             ${{ env.PROJECT_NAME }}-schematic.pdf
             ${{ env.PROJECT_NAME }}-positions.csv
+            ${{ env.PROJECT_NAME }}.step
             ${{ env.PROJECT_NAME }}.jpg
 
       - name: Upload gerbers
