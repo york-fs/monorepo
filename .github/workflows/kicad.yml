@@ -41,9 +41,7 @@ jobs:
         run: >-
           kicad-cli sch export bom
           --output bom.csv
-          --fields 'Reference,Value,Footprint,${QUANTITY},Mfr,Mfr #,Dist,Dist #,${DNP}'
-          --labels 'Refs,Value,Footprint,Qty,Mfr,Mfr #,Dist,Dist #,DNP'
-          --group-by 'Reference,Value,Mfr,Mfr #'
+          --fields 'Reference,Value,Footprint,Mfr,Mfr #,DigiKey #,LCSC #,Mouser #,${DNP}'
           "${PROJECT_NAME}.kicad_sch"
 
       - name: Export schematic PDF
