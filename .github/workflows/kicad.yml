@@ -40,20 +40,20 @@ jobs:
       - name: Export BOM
         run: >-
           kicad-cli sch export bom
-          --output bom.csv
+          --output "${PROJECT_NAME}-bom.csv"
           --fields 'Reference,Value,Footprint,Mfr,Mfr #,DigiKey #,LCSC #,Mouser #,${DNP}'
           "${PROJECT_NAME}.kicad_sch"
 
       - name: Export schematic PDF
         run: >-
           kicad-cli sch export pdf
-          --output schematic.pdf
+          --output "${PROJECT_NAME}-schematic.pdf"
           "${PROJECT_NAME}.kicad_sch"
 
       - name: Export positions
         run: >-
           kicad-cli pcb export pos
-          --output positions.csv
+          --output "${PROJECT_NAME}-positions.csv"
           --format csv
           "${PROJECT_NAME}.kicad_pcb"
 
@@ -83,7 +83,7 @@ jobs:
       - name: Export preview render
         run: >-
           kicad-cli pcb render
-          --output preview.jpg
+          --output "${PROJECT_NAME}.jpg"
           --width 3000
           --height 2000
           --side top
@@ -101,16 +101,15 @@ jobs:
         with:
           name: ${{ github.event.repository.name }}
           path: |
-            bom.csv
-            schematic.pdf
-            positions.csv
-            gerbers/
-            preview.jpg
+            ${{ env.PROJECT_NAME }}-bom.csv
+            ${{ env.PROJECT_NAME }}-schematic.pdf
+            ${{ env.PROJECT_NAME }}-positions.csv
+            ${{ env.PROJECT_NAME }}.jpg
 
       - name: Upload gerbers
         uses: actions/upload-artifact@v4
         with:
-          name: gerbers
+          name: ${{ env.PROJECT_NAME }}-gerbers
           path: gerbers/*
 
       - name: Extract PCB stats
@@ -128,7 +127,7 @@ jobs:
           printf '{"schemaVersion": 1, "label": "DRC", "message": "%s", "color": "%s"}\n' \
             $([[ "$DRC_PASS" = 'true' ]] && echo 'passing' || echo 'failing') \
             $([[ "$DRC_PASS" = 'true' ]] && echo 'green' || echo 'red') > site/drc.json
-          cp preview.jpg site/
+          cp "${PROJECT_NAME}.jpg" site/render.jpg
 
       - uses: actions/upload-pages-artifact@v3
         with:
