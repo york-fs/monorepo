@@ -91,6 +91,7 @@ jobs:
           --include-pads
           --include-silkscreen
           "${PROJECT_NAME}.kicad_pcb"
+          || touch "${PROJECT_NAME}.step"
 
       - name: Export preview render
         run: >-
