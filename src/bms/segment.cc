@@ -84,9 +84,6 @@ constexpr std::array<std::array<std::uint32_t, 3>, 8> k_thermistor_mapping{{
 }};
 static_assert(k_thermistor_mapping.size() * k_thermistor_mapping[0].size() == k_thermistor_count);
 
-// Lock for frontend access.
-freertos::Mutex s_afe_mutex;
-
 // I2C communication to master.
 i2c::StateMachine s_i2c_sm(i2c::Bus::_1);
 std::uint8_t s_i2c_address = 0;
@@ -233,12 +230,9 @@ std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::u
 }
 
 void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::uint16_t>>> samples, bool calib) {
-    xSemaphoreTake(*s_afe_mutex, portMAX_DELAY);
-
     // Configure the frontend. We want to sample the cells without any leakage paths.
     if (!afe_transfer(calib ? 0u : 0b01011000u, false)) {
         // Failed to configure frontend.
-        xSemaphoreGive(*s_afe_mutex);
         return;
     }
 
@@ -248,7 +242,6 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     // Enter hold mode early for charge injection calibration.
     if (calib && !afe_transfer(0b10000000, false)) {
         // Failed to configure frontend.
-        xSemaphoreGive(*s_afe_mutex);
         return;
     }
 
@@ -278,7 +271,6 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 
     // Re-enable leakage paths (diagnostic mode and balancing). Diagnostic mode helps to catch disconnected taps.
     static_cast<void>(afe_transfer(0b01011000u, true));
-    xSemaphoreGive(*s_afe_mutex);
 }
 
 void sample_voltages_task(void *) {
@@ -676,7 +668,6 @@ void app_main() {
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    s_afe_mutex.init();
     s_cmd_queue.init();
 
     s_cmd_task.init(&cmd_task, "cmd", 4);
