@@ -21,7 +21,7 @@ namespace {
 /**
  * @brief Whether to enable the SWD debug logging task.
  */
-constexpr bool k_enable_debug_logs = false;
+constexpr bool k_enable_debug_logs = true;
 
 /**
  * @brief Sleep timeout in milliseconds.
@@ -519,8 +519,11 @@ void cmd_task(void *) {
 
         // Enter stop mode. Disable SysTick to avoid an STM errata.
         SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-        hal::enter_stop_mode(hal::WakeupSource::Event);
+        // hal::enter_stop_mode(hal::WakeupSource::Event);
         SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
+
+        // TODO
+        vTaskDelay(pdMS_TO_TICKS(100));
 
         // Woken up from stop mode - enable the frontend and reference.
         hal::gpio_set(s_afe_en, s_ref_en, s_led);
@@ -557,6 +560,9 @@ void cmd_task(void *) {
                 s_correction_table[i] = (sample->first + 127) / 128;
             }
         }
+
+        // TODO
+        vTaskDelay(pdMS_TO_TICKS(1000000));
     }
 }
 
