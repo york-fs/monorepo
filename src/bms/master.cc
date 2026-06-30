@@ -322,10 +322,9 @@ hal::Gpio s_sck(hal::GpioPort::B, 13);
 hal::Gpio s_miso(hal::GpioPort::B, 14);
 
 std::uint32_t compute_crc(std::span<const std::uint8_t> data) {
-    taskENTER_CRITICAL();
-    const auto crc = hal::crc_compute(data);
-    taskEXIT_CRITICAL();
-    return crc;
+    return freertos::in_critical_section([&] {
+        return hal::crc_compute(data);
+    });
 }
 
 /**
@@ -799,9 +798,9 @@ void config_task(void *) {
 
     // Copy config to global config.
     if (newest_config) {
-        taskENTER_CRITICAL();
-        s_config = *newest_config;
-        taskEXIT_CRITICAL();
+        freertos::in_critical_section([&] {
+            s_config = *newest_config;
+        });
     }
 
     // Dump config.

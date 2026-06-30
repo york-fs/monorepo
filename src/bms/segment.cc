@@ -290,11 +290,11 @@ void sample_voltages_task(void *) {
         }
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
-        taskENTER_CRITICAL();
-        s_cell_tap_bitset = cell_tap_bitet;
-        s_degraded_bitset = degraded_bitset;
-        std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
-        taskEXIT_CRITICAL();
+        freertos::in_critical_section([&] {
+            s_cell_tap_bitset = cell_tap_bitet;
+            s_degraded_bitset = degraded_bitset;
+            std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
+        });
 
         const auto period = s_is_charging ? 2000 : 100;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
@@ -433,10 +433,10 @@ void sample_temperatures_task(void *) {
         }
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
-        taskENTER_CRITICAL();
-        s_thermistor_bitset = thermistor_bitset;
-        std::copy(temperatures.begin(), temperatures.end(), s_temperatures.begin());
-        taskEXIT_CRITICAL();
+        freertos::in_critical_section([&] {
+            s_thermistor_bitset = thermistor_bitset;
+            std::copy(temperatures.begin(), temperatures.end(), s_temperatures.begin());
+        });
     }
 }
 
@@ -470,9 +470,9 @@ void handle_command(std::span<std::uint8_t> bytes) {
     }
 
     // Compute and compare the actual CRC.
-    taskENTER_CRITICAL();
-    const auto crc = hal::crc_compute(bytes.subspan(0, bytes.size() - 4));
-    taskEXIT_CRITICAL();
+    const auto crc = freertos::in_critical_section([&] {
+        return hal::crc_compute(bytes.subspan(0, bytes.size() - 4));
+    });
     if (expected_crc != crc) {
         ++s_i2c_error_count;
         return;
