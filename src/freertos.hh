@@ -142,6 +142,19 @@ void Queue<T, Length>::init() {
     QueueBase<T>::m_handle = xQueueCreateStatic(Length, sizeof(T), m_storage.data(), &m_queue);
 }
 
+template <typename Func>
+decltype(auto) in_critical_section(Func &&func) {
+    taskENTER_CRITICAL();
+    if constexpr (std::is_void_v<std::invoke_result_t<Func>>) {
+        func();
+        taskEXIT_CRITICAL();
+    } else {
+        auto value = func();
+        taskEXIT_CRITICAL();
+        return value;
+    }
+}
+
 /**
  * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
  */
