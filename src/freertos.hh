@@ -20,6 +20,8 @@ class Mutex {
 
 public:
     void init();
+    void lock();
+    void unlock();
 
     explicit operator bool() const { return m_handle != nullptr; }
     SemaphoreHandle_t operator*() const { return m_handle; }

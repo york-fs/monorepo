@@ -17,6 +17,14 @@ void Mutex::init() {
     m_handle = xSemaphoreCreateMutexStatic(&m_mutex);
 }
 
+void Mutex::lock() {
+    xSemaphoreTake(m_handle, portMAX_DELAY);
+}
+
+void Mutex::unlock() {
+    xSemaphoreGive(m_handle);
+}
+
 } // namespace freertos
 
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer,
