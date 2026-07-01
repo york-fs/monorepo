@@ -10,7 +10,9 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <optional>
+#include <type_traits>
 
 namespace freertos {
 
@@ -22,6 +24,9 @@ public:
     void init();
     void lock();
     void unlock();
+
+    template <typename Func>
+    decltype(auto) with_locked(Func &&func);
 
     explicit operator bool() const { return m_handle != nullptr; }
     SemaphoreHandle_t operator*() const { return m_handle; }
@@ -85,6 +90,12 @@ class Queue : public QueueBase<T> {
 public:
     void init();
 };
+
+template <typename Func>
+decltype(auto) Mutex::with_locked(Func &&func) {
+    std::lock_guard lock(*this);
+    return func();
+}
 
 template <std::size_t Size>
 void MessageBuffer<Size>::init() {
