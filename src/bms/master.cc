@@ -16,6 +16,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <variant>
 
@@ -400,21 +401,21 @@ void supervisor_task(void *) {
 
         // Check segment data.
         std::size_t ready_segment_count = 0;
-        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
-        for (const auto &segment : s_segments) {
-            if (!segment.error_flags().is_set(SegmentError::Disconnected)) {
-                ready_segment_count++;
+        s_segments_mutex.with_locked([&] {
+            for (const auto &segment : s_segments) {
+                if (!segment.error_flags().is_set(SegmentError::Disconnected)) {
+                    ready_segment_count++;
 
-                // Check for stale data in case of unreliable communication, for example.
-                if (current_time - segment.last_update_time() >= k_schedule_tolerance) {
-                    master_flags.set(MasterError::DeadlineOverrun);
-                }
-                if (segment.error_flags().any_set()) {
-                    master_flags.set(MasterError::SegmentError);
+                    // Check for stale data in case of unreliable communication, for example.
+                    if (current_time - segment.last_update_time() >= k_schedule_tolerance) {
+                        master_flags.set(MasterError::DeadlineOverrun);
+                    }
+                    if (segment.error_flags().any_set()) {
+                        master_flags.set(MasterError::SegmentError);
+                    }
                 }
             }
-        }
-        xSemaphoreGive(*s_segments_mutex);
+        });
 
         // Check that we have the right amount of segments connected.
         if (ready_segment_count != s_config.segment_count) {
@@ -509,11 +510,10 @@ void supervisor_task(void *) {
             xTaskNotify(*s_control_task, 1, eIncrement);
         } else {
             // Make sure all balancers are off.
-            xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+            std::lock_guard segments_lock(s_segments_mutex);
             for (auto &segment : s_segments) {
                 segment.balance_bitset() = 0;
             }
-            xSemaphoreGive(*s_segments_mutex);
         }
 
         // Update SWD data.
@@ -548,8 +548,7 @@ void control_task(void *) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // TODO: Send inverter power limits.
-
-        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        std::lock_guard segments_lock(s_segments_mutex);
         if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
             for (auto &segment : s_segments) {
                 for (std::size_t cell = 0; cell < segment.cell_voltages().size(); cell++) {
@@ -563,7 +562,6 @@ void control_task(void *) {
                 }
             }
         }
-        xSemaphoreGive(*s_segments_mutex);
     }
 }
 
@@ -616,10 +614,9 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     const auto crc = compute_crc(stream.bytes());
     const auto expected_crc = *stream.read_be<std::uint32_t>();
 
-    xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+    std::lock_guard segments_lock(s_segments_mutex);
     if (crc != expected_crc) {
         ++m_master_error_count;
-        xSemaphoreGive(*s_segments_mutex);
         return;
     }
 
@@ -691,7 +688,6 @@ void Segment::update(std::span<std::uint8_t> bytes) {
             }
         }
     }
-    xSemaphoreGive(*s_segments_mutex);
 }
 
 bool i2c_wait(i2c::StateMachine &sm) {
@@ -871,14 +867,14 @@ void sample_segments_task(void *) {
         stream.write_byte(std::holds_alternative<std::monostate>(s_control_mode) ? 0xaa : 0x55);
 
         // Write balance bitsets.
-        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
-        for (std::size_t index = 0; index < k_max_segment_count; index++) {
-            if (s_segments[index].balance_bitset() != 0) {
-                stream.write_byte(s_config.segment_start_address + index);
-                stream.write_be(s_segments[index].balance_bitset());
+        s_segments_mutex.with_locked([&stream] {
+            for (std::size_t index = 0; index < k_max_segment_count; index++) {
+                if (s_segments[index].balance_bitset() != 0) {
+                    stream.write_byte(s_config.segment_start_address + index);
+                    stream.write_be(s_segments[index].balance_bitset());
+                }
             }
-        }
-        xSemaphoreGive(*s_segments_mutex);
+        });
 
         // Write CRC.
         stream.write_be<std::uint32_t>(compute_crc(stream.bytes()));
@@ -923,11 +919,11 @@ void sample_mcu_task(void *) {
         const auto temperature = ((1430 - temperature_voltage) * 10) / 43 + 25;
 
         // Update global values.
-        xSemaphoreTake(*s_mcu_mutex, portMAX_DELAY);
-        s_lvs_voltage = lvs_voltage;
-        s_ref_voltage = ref_voltage;
-        s_mcu_temperature = temperature;
-        xSemaphoreGive(*s_mcu_mutex);
+        s_mcu_mutex.with_locked([&] {
+            s_lvs_voltage = lvs_voltage;
+            s_ref_voltage = ref_voltage;
+            s_mcu_temperature = temperature;
+        });
 
         // Start next ADC sample.
         hal::adc_start(ADC1);
@@ -952,17 +948,17 @@ void swd_task(void *) {
         hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
                         can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
 
-        xSemaphoreTake(*s_mcu_mutex, portMAX_DELAY);
-        hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
-        hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
-        hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
-        xSemaphoreGive(*s_mcu_mutex);
+        s_mcu_mutex.with_locked([] {
+            hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
+            hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
+            hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
+        });
 
         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
         hal::swd_printf("Positive current: %d\n", positive_current);
 
         const auto current_time = xTaskGetTickCount();
-        xSemaphoreTake(*s_segments_mutex, portMAX_DELAY);
+        std::lock_guard segments_lock(s_segments_mutex);
         for (std::size_t i = 0; i < s_segments.size(); i++) {
             const auto &segment = s_segments[i];
             if (segment.error_flags().is_set(SegmentError::Disconnected)) {
@@ -999,7 +995,6 @@ void swd_task(void *) {
             }
             hal::swd_printf("]\n");
         }
-        xSemaphoreGive(*s_segments_mutex);
     }
 }
 
