@@ -8,6 +8,15 @@
 
 namespace {
 
+TEST(Util, BitReverse) {
+    EXPECT_EQ(util::bit_reverse<std::uint8_t>(0x55u), 0xaau);
+    EXPECT_EQ(util::bit_reverse<std::uint8_t>(0b11110000u), 0b1111u);
+    EXPECT_EQ(util::bit_reverse<std::uint16_t>(0x5555u), 0xaaaau);
+    EXPECT_EQ(util::bit_reverse<std::uint16_t>(0b11110000u), 0b111100000000u);
+    EXPECT_EQ(util::bit_reverse<std::uint16_t>(0b11110000u), 0b111100000000u);
+    EXPECT_EQ(util::bit_reverse<std::uint16_t>(0xf000u), 0xfu);
+}
+
 TEST(Util, Clamp) {
     EXPECT_EQ(util::clamp(1000, -1000, 2000), 1000);
     EXPECT_EQ(util::clamp(-50, 0, 1000), 0);

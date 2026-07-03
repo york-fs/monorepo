@@ -90,6 +90,21 @@ public:
 };
 
 /**
+ * @brief Reverses the order of bits in an unsigned integer.
+ *
+ * @param value the value to reverse
+ * @return bit-reversed value
+ */
+template <std::unsigned_integral T>
+constexpr T bit_reverse(T value) {
+    T reversed = 0;
+    for (std::size_t i = 0; i < sizeof(T) * 8; i++) {
+        reversed = (reversed << 1) | ((value >> i) & T(1));
+    }
+    return reversed;
+}
+
+/**
  * Clamps the given value to the range [min_value, max_value].
  *
  * @param value the value to clamp
