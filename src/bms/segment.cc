@@ -461,14 +461,7 @@ void handle_command(std::span<std::uint8_t> bytes) {
         ++s_i2c_error_count;
         return;
     }
-
-    std::uint16_t reversed_bitset = 0;
-    for (std::size_t i = 0; i < 16; i++) {
-        if ((balance_bitset & (1u << i)) != 0) {
-            reversed_bitset |= (1u << (15 - i));
-        }
-    }
-    s_balance_bitset.store(reversed_bitset);
+    s_balance_bitset.store(util::bit_reverse(balance_bitset));
     s_is_reduced_sample_rate.store(mode == SegmentMode::ReducedSampleRate);
 }
 
