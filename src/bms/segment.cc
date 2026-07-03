@@ -1,3 +1,4 @@
+#include <bms/segment_mode.hh>
 #include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
@@ -15,6 +16,8 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+
+using namespace bms;
 
 namespace {
 
@@ -91,7 +94,7 @@ std::array<std::uint8_t, 128> s_i2c_buffer;
 freertos::MessageBuffer<128> s_cmd_queue;
 
 // Command received from master.
-std::atomic<bool> s_is_charging;
+std::atomic<bool> s_is_reduced_sample_rate;
 std::atomic<std::uint16_t> s_balance_bitset;
 
 // Sampled data.
@@ -237,7 +240,7 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Wait for a sampling period. Use a slightly higher period when charging to allow for recovery from balancing drop.
-    vTaskDelay(pdMS_TO_TICKS(calib ? 1000 : s_is_charging ? 250 : 30));
+    vTaskDelay(pdMS_TO_TICKS(calib ? 1000 : s_is_reduced_sample_rate ? 250 : 30));
 
     // Enter hold mode early for charge injection calibration.
     if (calib && !afe_transfer(0b10000000, false)) {
@@ -310,7 +313,7 @@ void sample_voltages_task(void *) {
             std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
         });
 
-        const auto period = s_is_charging ? 2000 : 100;
+        const auto period = s_is_reduced_sample_rate ? 2000 : 100;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
     }
 }
@@ -362,7 +365,7 @@ void sample_temperatures_task(void *) {
 
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        const auto period = s_is_charging ? 2000 : 1000;
+        const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
 
         std::uint32_t thermistor_bitset = 0;
@@ -427,7 +430,8 @@ void handle_command(std::span<std::uint8_t> bytes) {
         ++s_i2c_error_count;
         return;
     }
-    if (*mode_byte != 0xaa && *mode_byte != 0x55) {
+    const auto mode = static_cast<SegmentMode>(*mode_byte);
+    if (mode != SegmentMode::Normal && mode != SegmentMode::ReducedSampleRate) {
         ++s_i2c_error_count;
         return;
     }
@@ -458,8 +462,6 @@ void handle_command(std::span<std::uint8_t> bytes) {
         return;
     }
 
-    s_is_charging.store(*mode_byte == 0x55);
-
     std::uint16_t reversed_bitset = 0;
     for (std::size_t i = 0; i < 16; i++) {
         if ((balance_bitset & (1u << i)) != 0) {
@@ -467,6 +469,7 @@ void handle_command(std::span<std::uint8_t> bytes) {
         }
     }
     s_balance_bitset.store(reversed_bitset);
+    s_is_reduced_sample_rate.store(mode == SegmentMode::ReducedSampleRate);
 }
 
 void i2c_listen() {
@@ -526,7 +529,7 @@ void cmd_task(void *) {
         hal::gpio_set(s_afe_en, s_ref_en, s_led);
 
         // Clear saved command.
-        s_is_charging.store(false);
+        s_is_reduced_sample_rate.store(false);
         s_balance_bitset.store(0);
 
         // Listen on I2C.
@@ -564,7 +567,7 @@ void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
         hal::swd_printf("--------------------------------\n");
-        hal::swd_printf("Mode: %s\n", s_is_charging ? "charging" : "discharging");
+        hal::swd_printf("Mode: %s\n", s_is_reduced_sample_rate ? "reduced rate" : "normal");
         hal::swd_printf("Balance: 0x%x\n", s_balance_bitset.load());
         hal::swd_printf("Balance temperatures: [%d, %d, %d, %d]\n", s_temperatures[0], s_temperatures[1],
                         s_temperatures[2], s_temperatures[3]);

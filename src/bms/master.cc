@@ -1,5 +1,6 @@
 #include <bms/can_messages.hh>
 #include <bms/error.hh>
+#include <bms/segment_mode.hh>
 #include <can.hh>
 #include <config.hh>
 #include <freertos.hh>
@@ -863,8 +864,11 @@ void sample_segments_task(void *) {
         // Build command which will be sent to all segments via the general call address.
         util::Stream stream(buffer);
 
-        // Set charging mode (reduced segment sampling period) if we are in a specific control mode.
-        stream.write_byte(std::holds_alternative<std::monostate>(s_control_mode) ? 0xaa : 0x55);
+        // Set reduced segment sampling period mode if we are in a specific control mode, i.e. charging or balancing is
+        // active and we want to sample less frequently.
+        const auto mode = std::holds_alternative<std::monostate>(s_control_mode) ? SegmentMode::Normal
+                                                                                 : SegmentMode::ReducedSampleRate;
+        stream.write_byte(util::to_underlying(mode));
 
         // Write balance bitsets.
         s_segments_mutex.with_locked([&stream] {
