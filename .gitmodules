@@ -74,3 +74,8 @@
 	url = https://github.com/york-fs/rear-distribution.git
 	update = rebase
 	branch = master
+[submodule "kicad/charger-distribution"]
+	path = kicad/charger-distribution
+	url = https://github.com/york-fs/charger-distribution.git
+	update = rebase
+	branch = master
