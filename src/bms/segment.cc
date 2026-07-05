@@ -477,7 +477,21 @@ void i2c_listen() {
 }
 
 void cmd_task(void *) {
+    // Read configured I2C address from the 4 solder jumper pins.
+    for (const auto &pin : s_address_pins) {
+        pin.configure(hal::GpioInputMode::PullUp);
+    }
     s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
+
+    // Configure otuputs.
+    s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    // Enable a pull-up on MISO to avoid it floating when no slave is selected.
+    s_miso.configure(hal::GpioInputMode::PullUp);
 
     s_i2c_sm.init();
     while (true) {
@@ -651,21 +665,7 @@ bool hal_low_power() {
 }
 
 void app_main() {
-    // Configure general GPIOs.
-    for (const auto &gpio : s_address_pins) {
-        gpio.configure(hal::GpioInputMode::PullUp);
-    }
-    s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-    // Configure SPI chip select pins and enable a pull-up on MISO to avoid floating when no slave is selected.
-    s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_miso.configure(hal::GpioInputMode::PullUp);
-
     s_cmd_queue.init();
-
     s_cmd_task.init(&cmd_task, "cmd", 4);
     s_sample_voltages_task.init(&sample_voltages_task, "voltages", 3);
     s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 2);
