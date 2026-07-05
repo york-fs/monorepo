@@ -84,6 +84,11 @@ public:
     template <std::integral T>
     bool write_be(T value);
 
+    template <std::integral T>
+    std::optional<T> read_le();
+    template <std::integral T>
+    bool write_le(T value);
+
     std::span<std::uint8_t> bytes() const { return m_span.subspan(0, m_head); };
     bool empty() const { return m_span.empty(); }
     std::size_t head() const { return m_head; }
@@ -134,6 +139,21 @@ constexpr T read_be(std::span<const std::uint8_t, sizeof(T)> bytes) {
 }
 
 /**
+ * Converts little endian bytes into a signed or unsigned integral.
+ *
+ * @param bytes a correctly sized span of little endian bytes
+ * @return the constructed integral
+ */
+template <std::integral T>
+constexpr T read_le(std::span<const std::uint8_t, sizeof(T)> bytes) {
+    std::make_unsigned_t<T> value = 0;
+    for (std::size_t i = 0; i < sizeof(T); i++) {
+        value |= static_cast<T>(bytes[i]) << (i * T(8));
+    }
+    return static_cast<T>(value);
+}
+
+/**
  * Converts a signed or unsigned integral into big endian bytes.
  *
  * @param value the value to convert
@@ -144,6 +164,22 @@ constexpr std::array<std::uint8_t, sizeof(T)> write_be(T value) {
     std::array<std::uint8_t, sizeof(T)> bytes;
     for (std::size_t i = 0; i < sizeof(T); i++) {
         const auto shift = (sizeof(T) - i - 1) * T(8);
+        bytes[i] = static_cast<std::uint8_t>((static_cast<std::make_unsigned_t<T>>(value) >> shift) & 0xffu);
+    }
+    return bytes;
+}
+
+/**
+ * Converts a signed or unsigned integral into little endian bytes.
+ *
+ * @param value the value to convert
+ * @return an array of little endian bytes
+ */
+template <std::integral T>
+constexpr std::array<std::uint8_t, sizeof(T)> write_le(T value) {
+    std::array<std::uint8_t, sizeof(T)> bytes;
+    for (std::size_t i = 0; i < sizeof(T); i++) {
+        const auto shift = i * T(8);
         bytes[i] = static_cast<std::uint8_t>((static_cast<std::make_unsigned_t<T>>(value) >> shift) & 0xffu);
     }
     return bytes;
@@ -187,6 +223,21 @@ std::optional<T> Stream::read_be() {
 template <std::integral T>
 bool Stream::write_be(T value) {
     const auto bytes = util::write_be<T>(value);
+    return write(bytes) == sizeof(T);
+}
+
+template <std::integral T>
+std::optional<T> Stream::read_le() {
+    std::array<std::uint8_t, sizeof(T)> bytes;
+    if (read(bytes) != sizeof(T)) {
+        return std::nullopt;
+    }
+    return util::read_le<T>(bytes);
+}
+
+template <std::integral T>
+bool Stream::write_le(T value) {
+    const auto bytes = util::write_le<T>(value);
     return write(bytes) == sizeof(T);
 }
 
