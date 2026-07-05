@@ -1,7 +1,9 @@
 #pragma once
 
+#include <util.hh>
+
 #include <cstdint>
-#include <variant>
+#include <optional>
 
 namespace can {
 
@@ -25,6 +27,22 @@ enum class FaultCode : std::uint8_t {
     AnalogInputError = 10,
 };
 
+enum class Limit : std::uint16_t {
+    CapacitorTemperature,
+    DcCurrent,
+    DriveEnable,
+    IgbtAcceleration,
+    IgbtTemperature,
+    InputVoltage,
+    MotorAccelerationTemperature,
+    MotorTemperature,
+    RpmMinimum,
+    RpmMaximum,
+    PowerLimit,
+};
+
+using LimitFlags = util::FlagBitset<Limit>;
+
 struct GeneralData1 {
     // Current electrical ERPM. 1x scale.
     std::int32_t erpm;
@@ -34,6 +52,11 @@ struct GeneralData1 {
 
     // Measured input DC voltage. 1x scale.
     std::int16_t input_voltage;
+
+    static constexpr std::uint32_t packet_id() { return 0x20; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    static std::optional<GeneralData1> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData2 {
@@ -42,6 +65,11 @@ struct GeneralData2 {
 
     // Current on DC side. Negative represents regeneration. 10x scale.
     std::int16_t dc_current;
+
+    static constexpr std::uint32_t packet_id() { return 0x21; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    static std::optional<GeneralData2> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData3 {
@@ -52,6 +80,11 @@ struct GeneralData3 {
     std::int16_t motor_temperature;
 
     FaultCode fault_code;
+
+    static constexpr std::uint32_t packet_id() { return 0x22; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    static std::optional<GeneralData3> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData5 {
@@ -67,28 +100,17 @@ struct GeneralData5 {
     // Current drive enable state.
     bool drive_enabled : 1;
 
-    // Various limit activation states.
-    bool capacitor_temperature_limit_active : 1;
-    bool dc_current_limit_active : 1;
-    bool drive_enable_limit_active : 1;
-    bool igbt_acceleration_limit_active : 1;
-    bool igbt_temperature_limit_active : 1;
-    bool input_voltage_limit_active : 1;
-    bool motor_acceleration_temperature_limit_active : 1;
-    bool motor_temperature_limit_active : 1;
-    bool rpm_min_limit_active : 1;
-    bool rpm_max_limit_active : 1;
-    bool power_limit_active : 1;
+    // Limit activation states.
+    LimitFlags limit_flags;
 
     // Configured CAN map version, e.g. 23 or 24.
     std::uint8_t can_map_version;
-};
 
-struct UnknownMessageType {
-    std::uint32_t packet_id;
+    static constexpr std::uint32_t packet_id() { return 0x24; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    static std::optional<GeneralData5> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const { return false; }
 };
-
-using Packet = std::variant<GeneralData1, GeneralData2, GeneralData3, GeneralData5, UnknownMessageType>;
 
 /**
  * Builds a CAN frame for the specified DTI inverter to set the absolute motor current. The value is in hundreds of
@@ -159,14 +181,5 @@ can::Frame build_set_relative_brake_current(std::uint8_t node_id, std::uint16_t 
  * @return the built CAN frame
  */
 can::Frame build_set_drive_enabled(std::uint8_t node_id, bool drive_enabled);
-
-/**
- * Attempts to parse the given CAN frame into a DTI status message.
- *
- * @param frame the CAN frame to parse
- * @return GeneralData if successful
- * @return UnkownMessageType if the packet ID is not known
- */
-Packet parse_packet(const can::Frame &frame);
 
 } // namespace dti
