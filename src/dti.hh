@@ -56,7 +56,6 @@ struct GeneralData1 {
     static constexpr std::uint32_t packet_id() { return 0x20; }
     static constexpr std::uint32_t default_priority() { return 7; }
     static std::optional<GeneralData1> decode(util::Stream &stream);
-    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData2 {
@@ -69,7 +68,6 @@ struct GeneralData2 {
     static constexpr std::uint32_t packet_id() { return 0x21; }
     static constexpr std::uint32_t default_priority() { return 7; }
     static std::optional<GeneralData2> decode(util::Stream &stream);
-    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData3 {
@@ -84,7 +82,6 @@ struct GeneralData3 {
     static constexpr std::uint32_t packet_id() { return 0x22; }
     static constexpr std::uint32_t default_priority() { return 7; }
     static std::optional<GeneralData3> decode(util::Stream &stream);
-    bool encode(util::Stream &stream) const { return false; }
 };
 
 struct GeneralData5 {
@@ -109,77 +106,79 @@ struct GeneralData5 {
     static constexpr std::uint32_t packet_id() { return 0x24; }
     static constexpr std::uint32_t default_priority() { return 7; }
     static std::optional<GeneralData5> decode(util::Stream &stream);
-    bool encode(util::Stream &stream) const { return false; }
 };
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the absolute motor current. The value is in hundreds of
- * milliamps and its sign specifies the motor direction.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param current an integer in the range [-10000, 10000]
- * @return the built CAN frame
- */
-can::Frame build_set_current(std::uint8_t node_id, std::int16_t current);
+struct SetCurrentMessage {
+    // Absolute AC motor current in hundreds of milliamps. The sign specifies the motor direction.
+    std::int16_t current;
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the absolute motor brake current. The value is in hundreds
- * of milliamps. This tells the inverter to apply a current opposite to the current direction of the motor.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param current an integer in the range [0, 10000]
- * @return the built CAN frame
- */
-can::Frame build_set_brake_current(std::uint8_t node_id, std::uint16_t current);
+    static constexpr std::uint32_t packet_id() { return 0x01; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the target ERPM of the inverter's speed control loop. The
- * value is absolute units of ERPM where ERPM is the product of RPM and the number of pole pairs on the motor. The
- * value's sign specifies the motor direction.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param erpm the desired ERPM
- * @return the built CAN frame
- */
-can::Frame build_set_erpm(std::uint8_t node_id, std::int32_t erpm);
+struct SetBrakeCurrentMessage {
+    // Absolute AC motor brake current in hundreds of milliamps. Unsigned as the inverter automatically applies the
+    // current opposite to the current motor direction.
+    std::uint16_t current;
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set an absolute position for the motor to hold. The value is
- * in tenths of a degree.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param position the desired position
- * @return the built CAN frame
- */
-can::Frame build_set_position(std::uint8_t node_id, std::int16_t position);
+    static constexpr std::uint32_t packet_id() { return 0x02; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the relative motor current. The value is in tenths of a
- * percent and its sign specifies the motor direction.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param percentage an integer in the range [-1000, 1000]
- * @return the built CAN frame
- */
-can::Frame build_set_relative_current(std::uint8_t node_id, std::int16_t percentage);
+struct SetSpeedMessage {
+    // Desired speed in ERPM. The sign specifies the motor direction.
+    std::int32_t erpm;
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the relative motor brake current. The value is in tenths
- * of a percent.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param percentage an integer in the range [0, 1000]
- * @return the built CAN frame
- */
-can::Frame build_set_relative_brake_current(std::uint8_t node_id, std::uint16_t percentage);
+    static constexpr std::uint32_t packet_id() { return 0x03; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
 
-/**
- * Builds a CAN frame for the specified DTI inverter to set the drive enabled status.
- *
- * @param node_id the target inverter's node id on the CAN bus
- * @param drive_enabled the desired drive enabled status
- * @return the built CAN frame
- */
-can::Frame build_set_drive_enabled(std::uint8_t node_id, bool drive_enabled);
+struct SetRelativeCurrentMessage {
+    // Relative AC motor current in tenths of a percent. The sign specifies the motor direction.
+    std::int16_t percentage;
+
+    static constexpr std::uint32_t packet_id() { return 0x05; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
+
+struct SetRelativeBrakeCurrentMessage {
+    // Relative AC motor brake current in tenths of a percent. Unsigned as the inverter automatically applies the
+    // current opposite to the current motor direction.
+    std::int16_t percentage;
+
+    static constexpr std::uint32_t packet_id() { return 0x06; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
+
+struct SetMaxDirectCurrentMessage {
+    // Maximum allowable current draw on the DC battery side in hundreds of milliamps.
+    std::uint16_t current;
+
+    static constexpr std::uint32_t packet_id() { return 0x0a; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
+
+struct SetMaxBrakeDirectCurrentMessage {
+    // Maximum allowable charge current on the DC battery side in hundreds of milliamps.
+    std::uint16_t current;
+
+    static constexpr std::uint32_t packet_id() { return 0x0b; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
+
+struct SetDriveEnableMessage {
+    bool drive_enable;
+
+    static constexpr std::uint32_t packet_id() { return 0x0c; }
+    static constexpr std::uint32_t default_priority() { return 7; }
+    bool encode(util::Stream &stream) const;
+};
 
 } // namespace dti

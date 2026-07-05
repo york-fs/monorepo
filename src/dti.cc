@@ -69,37 +69,36 @@ std::optional<GeneralData5> GeneralData5::decode(util::Stream &stream) {
     };
 }
 
-can::Frame build_set_current(std::uint8_t node_id, std::int16_t current) {
-    current = util::clamp(current, -10000, 10000);
-    return can::build_extended((0x01u << 8u) | node_id, util::write_be(current));
+bool SetCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(current);
 }
 
-can::Frame build_set_brake_current(std::uint8_t node_id, std::uint16_t current) {
-    current = util::clamp(current, 0, 10000);
-    return can::build_extended((0x02u << 8u) | node_id, util::write_be(current));
+bool SetBrakeCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(current);
 }
 
-can::Frame build_set_erpm(std::uint8_t node_id, std::int32_t erpm) {
-    return can::build_extended((0x03u << 8u) | node_id, util::write_be(erpm));
+bool SetSpeedMessage::encode(util::Stream &stream) const {
+    return stream.write_be(erpm);
 }
 
-can::Frame build_set_position(std::uint8_t node_id, std::int16_t position) {
-    return can::build_extended((0x04u << 8u) | node_id, util::write_be(position));
+bool SetRelativeCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(util::clamp(percentage, -1000, 1000));
 }
 
-can::Frame build_set_relative_current(std::uint8_t node_id, std::int16_t percentage) {
-    percentage = util::clamp(percentage, -1000, 1000);
-    return can::build_extended((0x05u << 8u) | node_id, util::write_be(percentage));
+bool SetRelativeBrakeCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(util::clamp(percentage, 0, 1000));
 }
 
-can::Frame build_set_relative_brake_current(std::uint8_t node_id, std::uint16_t percentage) {
-    percentage = util::clamp(percentage, 0, 1000);
-    return can::build_extended((0x06u << 8u) | node_id, util::write_be(percentage));
+bool SetMaxDirectCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(current);
 }
 
-can::Frame build_set_drive_enabled(std::uint8_t node_id, bool drive_enabled) {
-    std::array<std::uint8_t, 1> data{static_cast<std::uint8_t>(drive_enabled ? 1 : 0)};
-    return can::build_extended((0x0cu << 8u) | node_id, data);
+bool SetMaxBrakeDirectCurrentMessage::encode(util::Stream &stream) const {
+    return stream.write_be(-static_cast<std::int16_t>(current));
+}
+
+bool SetDriveEnableMessage::encode(util::Stream &stream) const {
+    return stream.write_byte(drive_enable ? 1 : 0);
 }
 
 } // namespace dti
