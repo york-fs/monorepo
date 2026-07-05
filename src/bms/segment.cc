@@ -139,6 +139,7 @@ std::array s_mux_control{
 };
 
 // General pins.
+hal::Gpio s_wakeup(hal::GpioPort::A, 0);
 hal::Gpio s_afe_en(hal::GpioPort::B, 0);
 hal::Gpio s_ref_en(hal::GpioPort::B, 1);
 hal::Gpio s_led(hal::GpioPort::B, 5);
@@ -496,6 +497,9 @@ void cmd_task(void *) {
 
     // Enable a pull-up on MISO to avoid it floating when no slave is selected.
     s_miso.configure(hal::GpioInputMode::PullUp);
+
+    // Configure PA0 wakeup pin to floating since it is directly connected to SCL.
+    s_wakeup.configure(hal::GpioInputMode::Floating);
 
     s_i2c_sm.init();
     while (true) {
