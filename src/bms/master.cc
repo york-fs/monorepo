@@ -3,6 +3,7 @@
 #include <bms/segment_mode.hh>
 #include <can.hh>
 #include <config.hh>
+#include <dti.hh>
 #include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
@@ -24,7 +25,6 @@
 // TODO: Send CAN status messages.
 // TODO: Implement current sensing for negative sensor and plausibility checks.
 // TODO: Receive CAN ready to drive message.
-// TODO: Implement inverter shutdown.
 // TODO: Control LED via DMA.
 // TODO: Charger control.
 // TODO: SOC estimation.
@@ -39,6 +39,11 @@ namespace {
  * @brief Whether to enable the SWD debug logging task.
  */
 constexpr bool k_enable_debug_logs = false;
+
+/**
+ * @brief Whether to enable communication with a DTI inverter.
+ */
+constexpr bool k_enable_dti = true;
 
 /**
  * @brief The I2C address of the onboard EEPROM.
@@ -506,6 +511,20 @@ void supervisor_task(void *) {
         // Update the shutdown pin as the first priority. The pin is inverted since active-high signals no fault.
         s_shutdown.write(!shutdown_time.has_value());
 
+        // Cut inverter power as the next priority.
+        if constexpr (k_enable_dti) {
+            if (shutdown_time) {
+                dti::SetMaxDirectCurrentMessage set_max_discharge{
+                    .current = 0,
+                };
+                dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
+                    .current = 0,
+                };
+                can::transmit(config::k_dti_can_id, set_max_discharge);
+                can::transmit(config::k_dti_can_id, set_max_charge);
+            }
+        }
+
         // Signal the control task to keep working.
         if (!shutdown_time) {
             xTaskNotify(*s_control_task, 1, eIncrement);
@@ -548,7 +567,19 @@ void control_task(void *) {
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_control_period));
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // TODO: Send inverter power limits.
+        // Send inverter DC-side power limits. We don't support regenerative braking yet, so always set max brake
+        // current to zero for now.
+        if constexpr (k_enable_dti) {
+            dti::SetMaxDirectCurrentMessage set_max_discharge{
+                .current = 2000,
+            };
+            dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
+                .current = 0,
+            };
+            can::transmit(config::k_dti_can_id, set_max_discharge);
+            can::transmit(config::k_dti_can_id, set_max_charge);
+        }
+
         std::lock_guard segments_lock(s_segments_mutex);
         if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
             for (auto &segment : s_segments) {
