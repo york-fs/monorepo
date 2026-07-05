@@ -53,7 +53,7 @@ constexpr std::uint16_t k_eeprom_page_size = 32;
 /**
  * @brief I2C message size received from a segment in bytes.
  */
-constexpr std::size_t k_segment_response_size = 63;
+constexpr std::size_t k_segment_response_size = 72;
 
 /**
  * @brief The maximum number of connected segments.
@@ -63,12 +63,12 @@ constexpr std::size_t k_max_segment_count = 10;
 /**
  * @brief The maximum number of cells per segment.
  */
-constexpr std::size_t k_max_cell_count = 12;
+constexpr std::size_t k_max_cell_count = 16;
 
 /**
  * @brief The maximum number of temperature sensors per segment.
  */
-constexpr std::size_t k_max_temperature_count = 23;
+constexpr std::size_t k_max_temperature_count = 24;
 
 /**
  * @brief The minimum allowed value for the undervoltage threshold in 100 uV resolution.
@@ -855,7 +855,7 @@ void config_task(void *) {
 }
 
 void sample_segments_task(void *) {
-    std::array<std::uint8_t, 64> buffer{};
+    std::array<std::uint8_t, 128> buffer{};
     s_last_segment_sample_time = xTaskGetTickCount();
     while (true) {
         // Wait segment sample period.
@@ -883,18 +883,20 @@ void sample_segments_task(void *) {
         // Write CRC.
         stream.write_be<std::uint32_t>(compute_crc(stream.bytes()));
 
+        // Send command to all segments via general call address.
         s_i2c1_sm.start_write(0x00, stream.bytes(), true);
         if (!i2c_wait(s_i2c1_sm)) {
             // Bus failure or no acknowledge from any segments - don't even bother trying to read the segments.
             continue;
         }
 
+        // Read data from all segments.
         for (std::size_t index = 0; index < k_max_segment_count; index++) {
-            std::fill(buffer.begin(), buffer.end(), 0);
-            auto sub_buffer = std::span(buffer).subspan(0, k_segment_response_size);
-            s_i2c1_sm.start_read(s_config.segment_start_address + index, sub_buffer, true);
+            auto response = std::span(buffer).subspan(0, k_segment_response_size);
+            std::fill(response.begin(), response.end(), 0);
+            s_i2c1_sm.start_read(s_config.segment_start_address + index, response, true);
             if (i2c_wait(s_i2c1_sm)) {
-                s_segments[index].update(sub_buffer);
+                s_segments[index].update(response);
             }
         }
     }

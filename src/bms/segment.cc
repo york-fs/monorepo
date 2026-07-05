@@ -627,7 +627,7 @@ extern "C" void I2C1_EV_IRQHandler() {
     BaseType_t higher_priority_task_woken = pdFALSE;
     const auto state = s_i2c_sm.state();
     if (state == i2c::State::SlaveRx) {
-        s_i2c_sm.set_buffer(std::span(s_i2c_buffer).subspan(0, 16));
+        s_i2c_sm.set_buffer(s_i2c_buffer);
     } else if (state == i2c::State::SlaveRxFinish) {
         if (xMessageBufferSendFromISR(*s_cmd_queue, s_i2c_buffer.data(), s_i2c_sm.head(),
                                       &higher_priority_task_woken) == 0) {
