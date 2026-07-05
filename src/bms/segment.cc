@@ -477,11 +477,15 @@ void i2c_listen() {
 }
 
 void cmd_task(void *) {
-    // Read configured I2C address from the 4 solder jumper pins.
+    // Read configured I2C address from the 4 solder jumper pins. Reset the pins back to a pull-down configuration
+    // afterwards to avoid pull-up power draw.
     for (const auto &pin : s_address_pins) {
         pin.configure(hal::GpioInputMode::PullUp);
     }
     s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
+    for (const auto &pin : s_address_pins) {
+        pin.configure(hal::GpioInputMode::PullDown);
+    }
 
     // Configure otuputs.
     s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
