@@ -1,5 +1,10 @@
+#include <can.hh>
+#include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <precharge/can_messages.hh>
+#include <precharge/error.hh>
+#include <precharge/state.hh>
 #include <util.hh>
 
 #include <FreeRTOS.h>
@@ -8,117 +13,224 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 
-// TODO: CAN.
-// TODO: Enable watchdog and PVD.
+using namespace precharge;
 
 namespace {
 
 /**
- * @brief ADC sampling task scheduling period in milliseconds.
+ * @brief Whether to enable the SWD debug logging task.
  */
-constexpr std::uint32_t k_sample_period = 50;
+constexpr bool k_enable_debug_logs = false;
+
+/**
+ * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
+ */
+constexpr std::uint32_t k_precharge_hold_time = 500;
 
 /**
  * @brief State machine task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_sm_period = 10;
 
-constexpr std::uint32_t k_precharge_hold_time = 500;
+/**
+ * @brief Hard-coded value of the 3V3 rail powering the STM's ADC in 1 mV resolution.
+ */
+constexpr std::uint32_t k_mcu_vref = 3300;
 
-constexpr std::uint32_t k_adc_vref = 3300;
+/**
+ * @brief Bitmask of all values in OutputBit.
+ */
+constexpr std::uint32_t k_output_mask = 0xfcf7;
 
-enum class Relay {
-    AirNegative,
-    AirPositive,
-    Precharge,
-    Discharge,
+/**
+ * @brief Port B output pins.
+ */
+enum class OutputBit : std::uint32_t {
+    ActiveStateLed = 0,
+    PrechargeStateLed = 1,
+    PrechargeCmd = 2,
+    DischargeErrorLed = 4,
+    AirPosCmd = 5,
+    AirNegCmd = 6,
+    McuShutdown = 7,
+    StandbyStateLed = 10,
+    PrecheckStateLed = 11,
+    DisconnectErrorLed = 12,
+    PrechargeErrorLed = 13,
+    AirPosErrorLed = 14,
+    AirNegErrorLed = 15,
 };
 
-enum class State {
-    Standby,
-    Precheck,
-    Precharge,
-    PrechargeHold,
-    Active,
-};
+using OutputBits = util::FlagBitset<OutputBit>;
 
-// Sampled values.
-std::uint16_t s_precharge_voltage = 0;
-std::uint16_t s_tractive_voltage = 0;
-std::int8_t s_mcu_temperature = 0;
-freertos::Mutex s_sample_mutex;
+// We want to print the same information over SWD as the status message sent out over CAN.
+using SwdData = StatusMessage;
+
+// CAN requests.
+std::atomic<bool> s_received_activate_request;
 
 // Tasks.
-freertos::Task<128> s_sample_task;
 freertos::Task<256> s_sm_task;
 freertos::Task<128> s_swd_task;
+freertos::Queue<SwdData, 1> s_swd_queue;
 
 // Input pins.
 hal::Gpio s_precharge_sample(hal::GpioPort::A, 1);
 hal::Gpio s_tractive_sample(hal::GpioPort::A, 2);
-hal::Gpio s_shutdown_in(hal::GpioPort::A, 8);
+hal::Gpio s_shutdown_sample(hal::GpioPort::A, 8);
 hal::Gpio s_precharge_act(hal::GpioPort::A, 9);
 hal::Gpio s_air_pos_act(hal::GpioPort::A, 10);
 hal::Gpio s_air_neg_act(hal::GpioPort::A, 11);
 
-consteval auto output_pins() {
-    return std::array{0, 1, 2, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15};
-}
-
-consteval std::uint32_t output_mask() {
-    std::uint32_t mask = 0;
-    for (std::uint32_t pin : output_pins()) {
-        mask |= 1u << pin;
-    }
-    return mask;
-}
-
-constexpr std::uint32_t led_bit(Relay relay) {
-    switch (relay) {
-    case Relay::AirNegative:
-        return 1u << 15;
-    case Relay::AirPositive:
-        return 1u << 14;
-    case Relay::Precharge:
-        return 1u << 13;
-    case Relay::Discharge:
-        return 1u << 4;
-    default:
-        return 0;
-    }
-}
-
-constexpr std::uint32_t led_bit(State state) {
-    switch (state) {
-    case State::Standby:
-        return 1u << 10;
-    case State::Precheck:
-        return 1u << 11;
-    case State::Precharge:
-        return 1u << 1;
-    case State::PrechargeHold:
-        return (1u << 1) | (1u << 0);
-    case State::Active:
-        return 1u << 0;
-    default:
-        return 0;
-    }
-}
-
 std::uint16_t convert_voltage(std::uint16_t adc_value) {
     // Convert ADC counts to voltage.
-    const auto sampled = (k_adc_vref * adc_value) >> 12;
+    const auto sampled = (k_mcu_vref * adc_value) >> 12;
 
-    // Convert single-ended conversion value to HV input.
+    // Convert single-ended conversion value to HV input voltage. The output value of the single-ended conversion op-amp
+    // circuit rides around 1.65 volts (VREF/2).
     // TODO: Handle negative values.
-    // TODO: Fix reference value to 3V3/2.
-    constexpr std::uint32_t ref_value = 1580;
+    constexpr std::uint32_t ref_value = k_mcu_vref / 2;
     return static_cast<std::uint16_t>(((std::max(sampled, ref_value) - ref_value) * 97) / 400);
 }
 
-void sample_task(void *) {
+std::pair<State, ErrorFlags> led_check(std::uint32_t elapsed_ms) {
+    return std::make_pair(elapsed_ms > 500 ? State::Precheck : State::LedCheck, ErrorFlags());
+}
+
+std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
+                                              std::uint16_t tractive_voltage) {
+    // Check relay actual states. They should all be open with shutdown low (discharge relay closed).
+    ErrorFlags error_flags;
+    if (s_shutdown_sample.read()) {
+        error_flags.set(Error::DischargeOpen);
+    }
+    if (!s_precharge_act.read()) {
+        error_flags.set(Error::PrechargeClosed);
+    }
+    if (!s_air_pos_act.read()) {
+        error_flags.set(Error::AirPosClosed);
+    }
+    if (!s_air_neg_act.read()) {
+        error_flags.set(Error::AirNegClosed);
+    }
+
+    // The voltage measured directly after the precharge relay should be zero. Wait for discharge of any residual
+    // voltage on the TS side before continuing.
+    // TODO: Tune thresholds.
+    if (precharge_voltage > 10) {
+        error_flags.set(Error::PrecheckVoltage);
+    }
+    if (tractive_voltage > 10) {
+        error_flags.set(Error::WaitingDischarge);
+    }
+    if (error_flags.any_set()) {
+        return std::make_pair(State::Precheck, error_flags);
+    }
+    if (!s_received_activate_request) {
+        return std::make_pair(State::Standby, ErrorFlags(Error::WaitingActivation));
+    }
+    return std::make_pair(State::Precharge, ErrorFlags());
+}
+
+std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms) {
+    ErrorFlags error_flags;
+    if (!s_shutdown_sample.read()) {
+        error_flags.set(Error::ShutdownOpen);
+    }
+    if (s_precharge_act.read()) {
+        error_flags.set(Error::PrechargeOpen);
+    }
+    if (!s_air_pos_act.read()) {
+        error_flags.set(Error::AirPosClosed);
+    }
+    if (s_air_neg_act.read()) {
+        error_flags.set(Error::AirNegOpen);
+    }
+
+    // Don't continue with bad relays.
+    if (error_flags.any_set()) {
+        if (elapsed_ms > 1000) {
+            return std::make_pair(State::Precheck, error_flags);
+        }
+        return std::make_pair(State::Precharge, error_flags);
+    }
+
+    // TODO: Calculate proper expected voltage at each instant.
+    return std::make_pair(elapsed_ms > 6500 ? State::PrechargeHold : State::Precharge, ErrorFlags());
+}
+
+std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
+    ErrorFlags error_flags;
+    if (!s_shutdown_sample.read()) {
+        error_flags.set(Error::ShutdownOpen);
+    }
+    if (s_precharge_act.read()) {
+        error_flags.set(Error::PrechargeOpen);
+    }
+    if (s_air_pos_act.read()) {
+        error_flags.set(Error::AirPosOpen);
+    }
+    if (s_air_neg_act.read()) {
+        error_flags.set(Error::AirNegOpen);
+    }
+
+    if (error_flags.any_set()) {
+        return std::make_pair(State::Precheck, error_flags);
+    }
+    return std::make_pair(elapsed_ms >= k_precharge_hold_time ? State::Active : State::PrechargeHold, error_flags);
+}
+
+std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms) {
+    ErrorFlags error_flags;
+    if (s_received_activate_request) {
+        error_flags.set(Error::Deactivation);
+    }
+    if (!s_shutdown_sample.read()) {
+        error_flags.set(Error::ShutdownOpen);
+    }
+    if (!s_precharge_act.read()) {
+        error_flags.set(Error::PrechargeClosed);
+    }
+    if (s_air_pos_act.read()) {
+        error_flags.set(Error::AirPosOpen);
+    }
+    if (s_air_neg_act.read()) {
+        error_flags.set(Error::AirNegOpen);
+    }
+    return std::make_pair(error_flags.any_set() ? State::Precheck : State::Active, error_flags);
+}
+
+std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
+                                           std::uint16_t tractive_voltage) {
+    switch (state) {
+    case State::LedCheck:
+        return led_check(elapsed_ms);
+    case State::Precharge:
+        return precharge(elapsed_ms);
+    case State::PrechargeHold:
+        return precharge_hold(elapsed_ms);
+    case State::Active:
+        return active(elapsed_ms);
+    default:
+        return precheck_standby(elapsed_ms, precharge_voltage, tractive_voltage);
+    }
+}
+
+void sm_task(void *) {
+    // Initialise CAN on port B.
+    can::init(can::Port::B, config::k_can_speed, 1);
+    can::listen<ActivateMessage, [](const ActivateMessage &) {
+        s_received_activate_request.store(true);
+    }>(config::k_precharge_can_id, 0);
+
+    // Enable CAN IRQs.
+    hal::enable_irq(CAN1_TX_IRQn, 7);
+    hal::enable_irq(CAN1_RX0_IRQn, 6);
+    hal::enable_irq(CAN1_SCE_IRQn, 5);
+
     // Sequence the two HV sampling inputs as well as the STM's internal temperature sensor.
     hal::adc_init(ADC1, 3);
     hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
@@ -128,121 +240,103 @@ void sample_task(void *) {
     std::array<std::uint16_t, 3> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
+    auto state = State::LedCheck;
+    ErrorFlags last_error_flags;
+    TickType_t state_epoch_time = xTaskGetTickCount();
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        // Calculate an approximate temperature using constants from the datasheet.
-        const auto temperature_voltage = (k_adc_vref * adc_buffer[2]) >> 12;
-        const auto temperature = ((1430 - temperature_voltage) * 10) / 43 + 25;
+        // Calculate an approximate MCU temperature using constants from the datasheet.
+        const auto mcu_temperature_voltage = static_cast<std::int32_t>((k_mcu_vref * adc_buffer[2]) >> 12);
+        const auto mcu_temperature = static_cast<std::int8_t>(((1430 - mcu_temperature_voltage) * 10) / 43 + 25);
 
         // Calculate HV sample inputs.
         const auto precharge_voltage = convert_voltage(adc_buffer[0]);
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
 
-        // Update global values.
-        xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
-        s_precharge_voltage = precharge_voltage;
-        s_tractive_voltage = tractive_voltage;
-        s_mcu_temperature = temperature;
-        xSemaphoreGive(*s_sample_mutex);
-
-        // Start next ADC sample.
-        hal::adc_start(ADC1);
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_sample_period));
-    }
-}
-
-// Notes for documentation
-// Input voltage range
-// CAN input and output
-// TSAL integration
-// State machine
-
-State update_state(State current_state, std::uint32_t elapsed_time) {
-    // TODO: Receive start command from CAN.
-    if (current_state == State::Standby) {
-        return elapsed_time >= 5000 ? State::Precheck : State::Standby;
-    }
-
-    if (current_state == State::Precheck) {
-        // Check that the shutdown circuit is fine for activation (discharge relay open).
-        // TODO: Check sampled voltages and relay actual states.
-        if (s_shutdown_in.read()) {
-            return State::Precharge;
-        }
-        return State::Standby;
-    }
-
-    xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
-    util::ScopeGuard mutex_release([&] {
-        xSemaphoreGive(*s_sample_mutex);
-    });
-
-    if (current_state == State::Precharge) {
-        return s_tractive_voltage > 50 ? State::PrechargeHold : State::Precharge;
-    }
-
-    if (current_state == State::PrechargeHold) {
-        // Move to active state if hold time expired.
-        return elapsed_time >= k_precharge_hold_time ? State::Active : State::PrechargeHold;
-    }
-    return State::Standby;
-}
-
-void sm_task(void *) {
-    auto state = State::Standby;
-    TickType_t state_epoch_time = xTaskGetTickCount();
-    TickType_t last_schedule_time = xTaskGetTickCount();
-    while (true) {
-        const auto state_elapsed = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
-        const auto old_state = state;
-        state = update_state(state, state_elapsed);
-        if (state != old_state) {
-            state_epoch_time = xTaskGetTickCount();
+        const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
+        const auto [new_state, error_flags] = advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage);
+        if (std::exchange(state, new_state) != new_state) {
+            s_received_activate_request.store(false);
+            last_error_flags = error_flags;
         }
 
-        // Calculate new output GPIO states.
-        std::uint32_t output_port = GPIOB->ODR & ~output_mask();
+        // Calculate outputs from current state and error flags.
+        OutputBits output_bits;
 
-        // Keep discharge relay closed in standby state.
-        if (state != State::Standby) {
-            output_port |= 1u << 7;
+        // First set the state LEDs.
+        if (state == State::Precheck || state == State::LedCheck) {
+            output_bits.set(OutputBit::PrecheckStateLed);
+        }
+        if (state == State::Standby || state == State::LedCheck) {
+            output_bits.set(OutputBit::StandbyStateLed);
+        }
+        if (state == State::Precharge || state == State::PrechargeHold || state == State::LedCheck) {
+            output_bits.set(OutputBit::PrechargeStateLed);
+        }
+        if (state == State::Active || state == State::PrechargeHold || state == State::LedCheck) {
+            output_bits.set(OutputBit::ActiveStateLed);
         }
 
-        // Close AIR- in precharge and active states.
+        // Set LED check error LEDs.
+        if (state == State::LedCheck) {
+            output_bits.set(OutputBit::AirNegErrorLed);
+            output_bits.set(OutputBit::AirPosErrorLed);
+            output_bits.set(OutputBit::PrechargeErrorLed);
+            output_bits.set(OutputBit::DisconnectErrorLed);
+            output_bits.set(OutputBit::DischargeErrorLed);
+        }
+
+        // Open discharge and close AIR- in precharge and active states.
         if (state == State::Precharge || state == State::PrechargeHold || state == State::Active) {
-            output_port |= 1u << 6;
+            output_bits.set(OutputBit::McuShutdown);
+            output_bits.set(OutputBit::AirNegCmd);
         }
 
         // Close AIR+ in precharge to active transition and active states.
         if (state == State::PrechargeHold || state == State::Active) {
-            output_port |= 1u << 5;
+            output_bits.set(OutputBit::AirPosCmd);
         }
 
         // Close precharge relay in precharge and precharge to active transition states.
         if (state == State::Precharge || state == State::PrechargeHold) {
-            output_port |= 1u << 2;
+            output_bits.set(OutputBit::PrechargeCmd);
         }
 
-        // Set the relay LEDs. The AIRs and precharge relays are inverted since low indicates closed relays. The
-        // discharge relay is normally closed, so is the inverse of the shutdown signal.
-        if (!s_air_neg_act.read()) {
-            output_port |= led_bit(Relay::AirNegative);
+        // Set some error LEDs.
+        // TODO: Add more as errors are figured out more.
+        if (error_flags.is_set(Error::WaitingDischarge)) {
+            output_bits.set(OutputBit::DischargeErrorLed);
         }
-        if (!s_air_pos_act.read()) {
-            output_port |= led_bit(Relay::AirPositive);
+        if (error_flags.is_set(Error::PrechargeClosed) || error_flags.is_set(Error::PrechargeOpen)) {
+            output_bits.set(OutputBit::PrechargeErrorLed);
         }
-        if (!s_precharge_act.read()) {
-            output_port |= led_bit(Relay::Precharge);
+        if (error_flags.is_set(Error::AirPosClosed) || error_flags.is_set(Error::AirPosOpen)) {
+            output_bits.set(OutputBit::AirPosErrorLed);
         }
-        if (!s_shutdown_in.read()) {
-            output_port |= led_bit(Relay::Discharge);
+        if (error_flags.is_set(Error::AirNegClosed) || error_flags.is_set(Error::AirNegOpen)) {
+            output_bits.set(OutputBit::AirNegErrorLed);
         }
 
-        // Set the LED for the current state.
-        output_port |= led_bit(state);
+        // Set bits all at once.
+        GPIOB->ODR = (GPIOB->ODR & ~k_output_mask) | output_bits.value();
 
-        // Update all output pins on GPIO port B.
-        GPIOB->ODR = output_port;
+        // Send status message over CAN.
+        StatusMessage status_message{
+            .precharge_voltage = precharge_voltage,
+            .tractive_voltage = tractive_voltage,
+            .last_error_flags = last_error_flags,
+            .state = state,
+            .mcu_temperature = mcu_temperature,
+        };
+        can::transmit(config::k_precharge_can_id, status_message);
+
+        // Update SWD data.
+        if constexpr (k_enable_debug_logs) {
+            s_swd_queue.overwrite(status_message);
+        }
+
+        // Start next ADC sample and delay until next state machine period.
+        hal::adc_start(ADC1);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_sm_period));
     }
 }
@@ -250,15 +344,16 @@ void sm_task(void *) {
 void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
-        hal::swd_printf("--------------------------------\n");
-
-        xSemaphoreTake(*s_sample_mutex, portMAX_DELAY);
-        hal::swd_printf("Precharge: %u\n", s_precharge_voltage);
-        hal::swd_printf("Tractive: %u\n", s_tractive_voltage);
-        hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
-        xSemaphoreGive(*s_sample_mutex);
-
+        const auto data = *s_swd_queue.receive(portMAX_DELAY);
         xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+
+        hal::swd_printf("--------------------------------\n");
+        hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
+        hal::swd_printf("State: %u\n", util::to_underlying(data.state));
+        hal::swd_printf("Last flags: 0x%x\n", data.last_error_flags.value());
+        hal::swd_printf("Precharge: %u\n", data.precharge_voltage);
+        hal::swd_printf("Tractive: %u\n", data.tractive_voltage);
+        hal::swd_printf("MCU temperature: %d\n", data.mcu_temperature);
     }
 }
 
@@ -274,21 +369,22 @@ void app_main() {
     s_tractive_sample.configure(hal::GpioInputMode::Analog);
 
     // Configure digital inputs. These all have external pull-ups/pull-downs.
-    s_shutdown_in.configure(hal::GpioInputMode::Floating);
+    s_shutdown_sample.configure(hal::GpioInputMode::Floating);
     s_precharge_act.configure(hal::GpioInputMode::Floating);
     s_air_pos_act.configure(hal::GpioInputMode::Floating);
     s_air_neg_act.configure(hal::GpioInputMode::Floating);
 
-    // Configure all simple output pins.
-    for (std::uint32_t pin : output_pins()) {
-        hal::Gpio(hal::GpioPort::B, pin).configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    // Configure outputs on port B.
+    for (std::uint32_t pin = 0; pin < 16; pin++) {
+        if ((k_output_mask & (1u << pin)) != 0) {
+            hal::Gpio(hal::GpioPort::B, pin).configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+        }
     }
 
-    s_sample_mutex.init();
-    s_sample_task.init(&sample_task, "sample", 3);
     s_sm_task.init(&sm_task, "sm", 2);
-    s_swd_task.init(&swd_task, "swd", 1);
-
-    // Start the scheduler which we shouldn't return from.
+    if constexpr (k_enable_debug_logs) {
+        s_swd_queue.init();
+        s_swd_task.init(&swd_task, "swd", 0);
+    }
     vTaskStartScheduler();
 }

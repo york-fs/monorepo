@@ -77,6 +77,7 @@ endfunction()
 add_library(shared OBJECT
     src/bms/can_messages.cc
     src/charger/can_messages.cc
+    src/precharge/can_messages.cc
     src/dti.cc)
 target_compile_features(shared PUBLIC cxx_std_20)
 target_include_directories(shared PUBLIC src)
@@ -115,7 +116,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     add_stm_executable(logging-board
         SOURCES src/logging_board.cc)
     add_stm_executable(precharge
-        SOURCES src/precharge/precharge.cc
+        SOURCES src/precharge/precharge.cc src/can.cc
         FREERTOS src/precharge/freertos_config.h)
     target_link_libraries(logging-board PRIVATE protodef)
 else()
