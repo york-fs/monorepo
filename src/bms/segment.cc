@@ -571,7 +571,7 @@ void cmd_task(void *) {
         hal::spi_init_master(SPI2, SPI_CR1_BR_0);
 
         // Wait for AFE and reference turn on.
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(250));
 
         // Perform a parasitic capacitance calibration.
         std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
