@@ -3,6 +3,7 @@
 #include <FreeRTOS.h>
 
 #include <cstdint>
+#include <span>
 
 using namespace freertos;
 
@@ -23,6 +24,25 @@ void Mutex::lock() {
 
 void Mutex::unlock() {
     xSemaphoreGive(m_handle);
+}
+
+std::span<std::uint8_t> MessageBufferBase::receive(std::span<std::uint8_t> buffer, TickType_t ticks_to_wait) {
+    const auto size = xMessageBufferReceive(m_handle, buffer.data(), buffer.size(), ticks_to_wait);
+    return buffer.subspan(0, size);
+}
+
+std::span<std::uint8_t> MessageBufferBase::receive_isr(std::span<std::uint8_t> buffer,
+                                                       BaseType_t *higher_priority_task_woken) {
+    const auto size = xMessageBufferReceiveFromISR(m_handle, buffer.data(), buffer.size(), higher_priority_task_woken);
+    return buffer.subspan(0, size);
+}
+
+bool MessageBufferBase::send(std::span<const std::uint8_t> buffer, TickType_t ticks_to_wait) {
+    return xMessageBufferSend(m_handle, buffer.data(), buffer.size(), ticks_to_wait) != 0;
+}
+
+bool MessageBufferBase::send_isr(std::span<const std::uint8_t> buffer, BaseType_t *higher_priority_task_woken) {
+    return xMessageBufferSendFromISR(m_handle, buffer.data(), buffer.size(), higher_priority_task_woken) != 0;
 }
 
 } // namespace freertos

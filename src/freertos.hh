@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 namespace freertos {
@@ -32,17 +33,28 @@ public:
     SemaphoreHandle_t operator*() const { return m_handle; }
 };
 
-template <std::size_t Size>
-class MessageBuffer {
+class MessageBufferBase {
+protected:
     MessageBufferHandle_t m_handle{nullptr};
+
+public:
+    std::span<std::uint8_t> receive(std::span<std::uint8_t> buffer, TickType_t ticks_to_wait);
+    std::span<std::uint8_t> receive_isr(std::span<std::uint8_t> buffer, BaseType_t *higher_priority_task_woken);
+
+    bool send(std::span<const std::uint8_t> buffer, TickType_t ticks_to_wait);
+    bool send_isr(std::span<const std::uint8_t> buffer, BaseType_t *higher_priority_task_woken);
+
+    explicit operator bool() const { return m_handle != nullptr; }
+    MessageBufferHandle_t operator*() const { return m_handle; }
+};
+
+template <std::size_t Size>
+class MessageBuffer : public MessageBufferBase {
     StaticMessageBuffer_t m_buffer;
     std::array<std::uint8_t, Size> m_storage;
 
 public:
     void init();
-
-    explicit operator bool() const { return m_handle != nullptr; }
-    MessageBufferHandle_t operator*() const { return m_handle; }
 };
 
 template <std::uint32_t StackDepth>
@@ -99,7 +111,7 @@ decltype(auto) Mutex::with_locked(Func &&func) {
 
 template <std::size_t Size>
 void MessageBuffer<Size>::init() {
-    m_handle = xMessageBufferCreateStatic(Size, m_storage.data(), &m_buffer);
+    MessageBufferBase::m_handle = xMessageBufferCreateStatic(Size, m_storage.data(), &m_buffer);
 }
 
 template <std::uint32_t StackDepth>
