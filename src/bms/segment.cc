@@ -403,7 +403,7 @@ void sample_temperatures_task(void *) {
                 const auto temperature = calculate_thermistor(rail_voltage, voltage, beta);
                 if (temperature) {
                     // The temperature reading is viable.
-                    s_thermistor_bitset |= 1u << index;
+                    thermistor_bitset |= 1u << index;
                     temperatures[index] = *temperature;
                 }
             }
