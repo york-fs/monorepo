@@ -289,6 +289,12 @@ void enter_sleep_mode(WakeupSource source);
 void enter_stop_mode(WakeupSource source);
 
 /**
+ * @brief Places the MCU into standby mode. In this mode, the entire 1.8 volt domain is depowered. The MCU is
+ * effectively reset when woken from standby.
+ */
+[[noreturn]] void enter_standby_mode();
+
+/**
  * @brief Enables and calibrates the given ADC.
  *
  * @param adc the target ADC peripheral

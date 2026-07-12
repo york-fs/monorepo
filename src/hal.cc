@@ -142,6 +142,14 @@ void enter_stop_mode(WakeupSource source) {
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
 }
 
+[[noreturn]] void enter_standby_mode() {
+    // Select standby mode.
+    PWR->CR |= PWR_CR_PDDS;
+    SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
+    __WFI();
+    __builtin_unreachable();
+}
+
 void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count) {
     // Enable clock for ADC.
     RCC->APB2ENR |= (adc == ADC1 ? RCC_APB2ENR_ADC1EN : RCC_APB2ENR_ADC2EN);
