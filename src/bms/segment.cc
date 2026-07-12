@@ -510,12 +510,11 @@ void cmd_task(void *) {
 
     s_i2c_sm.init();
     while (true) {
-        std::array<std::uint8_t, 64> cmd_bytes{};
-        const auto cmd_length =
-            xMessageBufferReceive(*s_cmd_queue, cmd_bytes.data(), cmd_bytes.size(), pdMS_TO_TICKS(k_sleep_timeout));
-        if (cmd_length != 0) {
+        std::array<std::uint8_t, 64> cmd_buffer{};
+        const auto cmd_bytes = s_cmd_queue.receive(cmd_buffer, pdMS_TO_TICKS(k_sleep_timeout));
+        if (!cmd_bytes.empty()) {
             // Received a master command - handle it and stay awake.
-            handle_command(std::span(cmd_bytes).subspan(0, cmd_length));
+            handle_command(cmd_bytes);
             continue;
         }
 
@@ -637,8 +636,7 @@ extern "C" void I2C1_EV_IRQHandler() {
     if (state == i2c::State::SlaveRx) {
         s_i2c_sm.set_buffer(s_i2c_buffer);
     } else if (state == i2c::State::SlaveRxFinish) {
-        if (xMessageBufferSendFromISR(*s_cmd_queue, s_i2c_buffer.data(), s_i2c_sm.head(),
-                                      &higher_priority_task_woken) == 0) {
+        if (!s_cmd_queue.send_isr(std::span(s_i2c_buffer).subspan(0, s_i2c_sm.head()), &higher_priority_task_woken)) {
             ++s_i2c_error_count;
         }
     } else if (state == i2c::State::SlaveTx) {
