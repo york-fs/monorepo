@@ -593,6 +593,7 @@ void swd_task(void *) {
         hal::swd_printf("Balance: 0x%x\n", s_balance_bitset.load());
         hal::swd_printf("Balance temperatures: [%d, %d, %d, %d]\n", s_temperatures[0], s_temperatures[1],
                         s_temperatures[2], s_temperatures[3]);
+        hal::swd_printf("Degraded: 0x%x\n", s_degraded_bitset);
         hal::swd_printf("RAIL voltage: %u\n", s_rail_voltage);
         hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("I2C error count: %u\n", s_i2c_error_count.load());
