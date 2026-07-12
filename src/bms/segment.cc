@@ -91,8 +91,8 @@ std::array<std::uint8_t, 128> s_i2c_buffer;
 freertos::MessageBuffer<128> s_cmd_queue;
 
 // Command received from master.
-std::atomic<bool> s_is_reduced_sample_rate;
-std::atomic<std::uint16_t> s_balance_bitset;
+std::atomic<bool> s_is_reduced_sample_rate{false};
+std::atomic<std::uint16_t> s_balance_bitset{0};
 
 // Sampled data.
 std::array<std::uint16_t, k_cell_count> s_correction_table{};
@@ -486,98 +486,100 @@ void cmd_task(void *) {
     for (const auto &pin : s_address_pins) {
         pin.configure(hal::GpioInputMode::PullUp);
     }
-    s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8u) & 0xfu;
+    s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8) & 0xfu;
     for (const auto &pin : s_address_pins) {
         pin.configure(hal::GpioInputMode::PullDown);
     }
 
-    // Configure otuputs.
+    // Configure simple outputs.
     s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
+    // Configure PA0 wakeup pin as floating since it is directly connected to SCL.
+    s_wakeup.configure(hal::GpioInputMode::Floating);
+
     // Enable a pull-up on MISO to avoid it floating when no slave is selected.
     s_miso.configure(hal::GpioInputMode::PullUp);
 
-    // Configure PA0 wakeup pin to floating since it is directly connected to SCL.
-    s_wakeup.configure(hal::GpioInputMode::Floating);
-
+    // Initialise I2C to the master.
     s_i2c_sm.init();
+    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    i2c_listen();
+
+    // Wake the external ADC.
+    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    hal::gpio_reset(s_sck, s_adc_cs);
+    hal::gpio_set(s_adc_cs, s_afe_cs);
+
+    // Reconfigure SCK and MOSI for use with the SPI peripheral.
+    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+
+    // Enable SPI2 in master mode at 2 MHz (4x divider).
+    hal::spi_init_master(SPI2, SPI_CR1_BR_0);
+
+    // Enable the frontend, reference, and indicator LED.
+    hal::gpio_set(s_afe_en, s_ref_en, s_led);
+
+    // Wait for the frontend and reference to turn on.
+    vTaskDelay(pdMS_TO_TICKS(250));
+
+    // Perform a parasitic capacitance calibration.
+    std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
+    sample_voltages_raw(samples, true);
+    for (std::size_t i = 0; i < k_cell_count; i++) {
+        if (const auto sample = samples[i]) {
+            s_correction_table[i] = (sample->first + 127) / 128;
+        }
+    }
+
+    // Start the sampling tasks.
+    s_sample_voltages_task.init(&sample_voltages_task, "voltages", 2);
+    s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 1);
+
+    // Receive master commands.
     while (true) {
         std::array<std::uint8_t, 64> cmd_buffer{};
         const auto cmd_bytes = s_cmd_queue.receive(cmd_buffer, pdMS_TO_TICKS(k_sleep_timeout));
-        if (!cmd_bytes.empty()) {
-            // Received a master command - handle it and stay awake.
-            handle_command(cmd_bytes);
-            continue;
+        if (cmd_bytes.empty()) {
+            break;
         }
 
-        // Reconfigure SCK and MOSI as regular GPIOs before going to sleep.
-        s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-        s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-        // Pull CS lines high by default (active-low) and put the ADC into shutdown.
-        hal::gpio_set(s_adc_cs, s_afe_cs, s_sck);
-        hal::gpio_reset(s_adc_cs);
-        hal::gpio_set(s_adc_cs);
-
-        // Disable the frontend and reference.
-        hal::gpio_reset(s_afe_en, s_ref_en, s_led);
-
-        // Reconfigure SCL as a regular input for use as an external event. Also reconfigure SDA to avoid the STM
-        // driving it low and upsetting the isolator.
-        s_scl.configure(hal::GpioInputMode::Floating);
-        s_sda.configure(hal::GpioInputMode::Floating);
-
-        // Setup external event on SCL (PB6).
-        // TODO: Make a HAL function for this.
-        AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
-        EXTI->EMR |= EXTI_EMR_MR6;
-        EXTI->FTSR |= EXTI_FTSR_TR6;
-
-        // Enter stop mode. Disable SysTick to avoid an STM errata.
-        SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-        hal::enter_stop_mode(hal::WakeupSource::Event);
-        SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
-
-        // Woken up from stop mode - enable the frontend and reference.
-        hal::gpio_set(s_afe_en, s_ref_en, s_led);
-
-        // Clear saved command.
-        s_is_reduced_sample_rate.store(false);
-        s_balance_bitset.store(0);
-
-        // Listen on I2C.
-        s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-        i2c_listen();
-
-        // Wake the external ADC.
-        hal::gpio_reset(s_sck, s_adc_cs);
-        hal::gpio_set(s_adc_cs, s_afe_cs);
-
-        // Configure SCK and MOSI for use with the SPI peripheral.
-        s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
-        s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
-
-        // Enable SPI2 in master mode at 2 MHz (4x divider).
-        hal::spi_init_master(SPI2, SPI_CR1_BR_0);
-
-        // Wait for AFE and reference turn on.
-        vTaskDelay(pdMS_TO_TICKS(250));
-
-        // Perform a parasitic capacitance calibration.
-        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
-        std::fill(s_correction_table.begin(), s_correction_table.end(), 0);
-        sample_voltages_raw(samples, true);
-        for (std::size_t i = 0; i < k_cell_count; i++) {
-            if (const auto sample = samples[i]) {
-                s_correction_table[i] = (sample->first + 127) / 128;
-            }
-        }
+        // Received a master command - handle it and stay awake.
+        handle_command(cmd_bytes);
     }
+
+    // Disable I2C and stop driving the lines.
+    I2C1->CR1 &= ~I2C_CR1_PE;
+    s_scl.configure(hal::GpioInputMode::Floating);
+    s_sda.configure(hal::GpioInputMode::Floating);
+
+    // Pull CS lines high (active-low) and put the ADC into shutdown.
+    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    hal::gpio_set(s_adc_cs, s_afe_cs, s_sck);
+    hal::gpio_reset(s_adc_cs);
+    hal::gpio_set(s_adc_cs);
+
+    // Disable the frontend and reference.
+    hal::gpio_reset(s_afe_en, s_ref_en, s_led);
+
+    // Setup an external event on SCL (PB6).
+    // TODO: Make a HAL function for this.
+    AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
+    EXTI->EMR |= EXTI_EMR_MR6;
+    EXTI->FTSR |= EXTI_FTSR_TR6;
+
+    // Enter stop mode. Disable SysTick to avoid an STM errata.
+    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
+    hal::enter_stop_mode(hal::WakeupSource::Event);
+    __disable_irq();
+    NVIC_SystemReset();
 }
 
 void swd_task(void *) {
@@ -665,7 +667,6 @@ extern "C" void I2C1_ER_IRQHandler() {
 }
 
 void vApplicationIdleHook() {
-    // TODO: Test power usage and disable some clocks.
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
 }
 
@@ -677,11 +678,9 @@ bool hal_low_power() {
 void app_main() {
     s_afe_mutex.init();
     s_cmd_queue.init();
-    s_cmd_task.init(&cmd_task, "cmd", 4);
-    s_sample_voltages_task.init(&sample_voltages_task, "voltages", 3);
-    s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 2);
+    s_cmd_task.init(&cmd_task, "cmd", 3);
     if constexpr (config::enable_debug_logs()) {
-        s_swd_task.init(&swd_task, "swd", 1);
+        s_swd_task.init(&swd_task, "swd", 0);
     }
     vTaskStartScheduler();
 }
