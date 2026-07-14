@@ -94,12 +94,12 @@ void gpio_lock(GPIO_TypeDef *port, std::uint16_t bitset) {
     port->LCKR;
 }
 
-void enable_irq(IRQn_Type irq, std::uint32_t priority) {
+void irq_enable(IRQn_Type irq, std::uint32_t priority) {
     NVIC_SetPriority(irq, priority);
     NVIC_EnableIRQ(irq);
 }
 
-void disable_irq(IRQn_Type irq) {
+void irq_disable(IRQn_Type irq) {
     NVIC_DisableIRQ(irq);
 }
 

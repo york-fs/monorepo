@@ -370,21 +370,21 @@ void supervisor_task(void *) {
     can::init(can::Port::B, config::k_can_speed, 2);
 
     // Enable all IRQs after enabling the watchdog.
-    hal::enable_irq(CAN1_SCE_IRQn, 6);
-    hal::enable_irq(I2C1_EV_IRQn, 7);
-    hal::enable_irq(I2C1_ER_IRQn, 7);
-    hal::enable_irq(CAN1_TX_IRQn, 8);
-    hal::enable_irq(CAN1_RX0_IRQn, 8);
-    hal::enable_irq(I2C2_EV_IRQn, 9);
-    hal::enable_irq(I2C2_ER_IRQn, 9);
+    hal::irq_enable(CAN1_SCE_IRQn, 6);
+    hal::irq_enable(I2C1_EV_IRQn, 7);
+    hal::irq_enable(I2C1_ER_IRQn, 7);
+    hal::irq_enable(CAN1_TX_IRQn, 8);
+    hal::irq_enable(CAN1_RX0_IRQn, 8);
+    hal::irq_enable(I2C2_EV_IRQn, 9);
+    hal::irq_enable(I2C2_ER_IRQn, 9);
 
     // The current sensing interrupts don't use RTOS functions, so can have a priority below
     // configMAX_SYSCALL_INTERRUPT_PRIORITY (5), which we do for the external interrupt on MISO and the RXNE handler to
     // ensure the fairly strict SPI timing. However, the timer interrupt which drives the current sensing is kept at a
     // low priority to make current sensing in general lower priority than CAN and segment I2C.
-    hal::enable_irq(TIM3_IRQn, 10);
-    hal::enable_irq(EXTI15_10_IRQn, 0);
-    hal::enable_irq(SPI2_IRQn, 1);
+    hal::irq_enable(TIM3_IRQn, 10);
+    hal::irq_enable(EXTI15_10_IRQn, 0);
+    hal::irq_enable(SPI2_IRQn, 1);
 
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {

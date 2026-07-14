@@ -227,9 +227,9 @@ void sm_task(void *) {
     }>(config::k_precharge_can_id, 0);
 
     // Enable CAN IRQs.
-    hal::enable_irq(CAN1_TX_IRQn, 7);
-    hal::enable_irq(CAN1_RX0_IRQn, 6);
-    hal::enable_irq(CAN1_SCE_IRQn, 5);
+    hal::irq_enable(CAN1_TX_IRQn, 7);
+    hal::irq_enable(CAN1_RX0_IRQn, 6);
+    hal::irq_enable(CAN1_SCE_IRQn, 5);
 
     // Sequence the two HV sampling inputs as well as the STM's internal temperature sensor.
     hal::adc_init(ADC1, 3);

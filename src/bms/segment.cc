@@ -369,7 +369,7 @@ void sample_temperatures_task(void *) {
     hal::adc_init_dma(adc_buffer);
 
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
-    hal::enable_irq(DMA1_Channel1_IRQn, 7);
+    hal::irq_enable(DMA1_Channel1_IRQn, 7);
 
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
@@ -474,8 +474,8 @@ void handle_command(std::span<std::uint8_t> bytes) {
 }
 
 void i2c_listen() {
-    hal::enable_irq(I2C1_EV_IRQn, 6);
-    hal::enable_irq(I2C1_ER_IRQn, 6);
+    hal::irq_enable(I2C1_EV_IRQn, 6);
+    hal::irq_enable(I2C1_ER_IRQn, 6);
     if (s_i2c_sm.state() == i2c::State::Error) {
         ++s_i2c_error_count;
         s_i2c_sm.init();

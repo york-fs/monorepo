@@ -263,14 +263,14 @@ void gpio_lock(Ts... list) {
  * @param irq the IRQ to unmask
  * @param priority the priority to set; must be in the range [0, 15]
  */
-void enable_irq(IRQn_Type irq, std::uint32_t priority);
+void irq_enable(IRQn_Type irq, std::uint32_t priority);
 
 /**
  * @brief Remasks the given IRQ in the NVIC interrupt controller.
  *
  * @param irq the IRQ to mask
  */
-void disable_irq(IRQn_Type irq);
+void irq_disable(IRQn_Type irq);
 
 /**
  * @brief Places the MCU into sleep mode. In this mode, only the core clock is stopped. The MCU will wake up on either
