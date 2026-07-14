@@ -554,10 +554,10 @@ int main() {
     RCC->APB2ENR |=
         RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPDEN | RCC_APB2ENR_IOPEEN;
 
-    // Default all pins to pull-down.
+    // Default all pins to analog input.
     for (auto *gpio : {GPIOA, GPIOB, GPIOC, GPIOD, GPIOE}) {
-        gpio->CRL = 0x88888888;
-        gpio->CRH = 0x88888888;
+        gpio->CRL = 0;
+        gpio->CRH = 0;
     }
 
     // Enable TIM2 for delay use.
