@@ -70,25 +70,28 @@ void adc_task(void *) {
 }
 
 void radio_task(void *) {
-    s_radio_cts.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    hal::gpio_set(s_radio_cts);
+    // Delay to allow the radio to leave its bootloader.
+    vTaskDelay(pdMS_TO_TICKS(50));
 
     // Configure GPIOs.
-    s_radio_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
-    s_radio_rx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max2);
+    s_radio_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    s_radio_rx.configure(hal::GpioInputMode::Floating);
+    s_radio_cts.configure(hal::GpioInputMode::PullUp);
+    s_radio_rts.configure(hal::GpioInputMode::PullUp);
 
+    // Enable peripheral clock.
     RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
-    USART1->CR1 |= USART_CR1_UE;
-    USART1->BRR = 972;
-    USART1->CR1 |= USART_CR1_RE | USART_CR1_TE;
+
+    // Program 57600 baud rate.
+    USART1->BRR = 56000000 / 57600;
+
+    // Enable transmit and receive with interrupts.
+    USART1->CR1 = USART_CR1_UE | USART_CR1_TXEIE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE;
+
+    // Enable the interrupt.
+    hal::irq_enable(USART1_IRQn, 7);
 
     while (true) {
-        std::string_view message("Hello world");
-        for (char ch : message) {
-            USART1->DR = ch;
-            while (!(USART1->SR & USART_SR_TC)) {
-            }
-        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
@@ -108,6 +111,16 @@ void swd_task(void *) {
 }
 
 } // namespace
+
+extern "C" void USART1_IRQHandler() {
+    const auto sr = USART1->SR;
+    if ((sr & USART_SR_TXE) != 0) {
+        USART1->DR = 'a';
+    }
+    if ((sr & USART_SR_RXNE) != 0) {
+        hal::swd_printf("received byte: 0x%x\n", USART1->DR);
+    }
+}
 
 void vApplicationIdleHook() {
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
