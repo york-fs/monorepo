@@ -3,6 +3,7 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <rear/can_messages.hh>
+#include <rear/fuse.hh>
 #include <stm32f103xb.h>
 
 #include <cstdint>
@@ -22,14 +23,48 @@ constexpr bool k_enable_debug_logs = false;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
+enum class ExpanderRegister : std::uint8_t {
+    InputPort0 = 0x00,
+    InputPort1 = 0x01,
+    OutputPort0 = 0x02,
+    OutputPort1 = 0x03,
+    PolarityPort0 = 0x04,
+    PolarityPort1 = 0x05,
+    ConfigurationPort0 = 0x06,
+    ConfigurationPort1 = 0x07,
+};
+
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
 hal::Gpio s_radio_cts(hal::GpioPort::A, 11);
 hal::Gpio s_radio_rts(hal::GpioPort::A, 12);
 
+// Expander I2C.
+hal::Gpio s_scl(hal::GpioPort::B, 6);
+hal::Gpio s_sda(hal::GpioPort::B, 7);
+
+hal::Gpio s_brake_switch(hal::GpioPort::B, 10);
+
 freertos::Task<128> s_adc_task;
+freertos::Task<128> s_expander_task;
 freertos::Task<128> s_radio_task;
 freertos::Task<128> s_swd_task;
+
+// TODO: Use async I2C.
+bool set_expander_register(ExpanderRegister reg, std::uint8_t value) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+        value,
+    };
+    if (const auto status = hal::i2c_wait_idle(I2C1, 5); status != hal::I2cStatus::Ok) {
+        return false;
+    }
+    if (const auto status = hal::i2c_master_write(I2C1, 0x20, data); status != hal::I2cStatus::Ok) {
+        return false;
+    }
+    hal::i2c_stop(I2C1);
+    return true;
+}
 
 void adc_task(void *) {
     // Initialise CAN on port B.
@@ -66,6 +101,26 @@ void adc_task(void *) {
 
         hal::adc_start(ADC1);
         vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void expander_task(void *) {
+    // Configure brake switch.
+    s_brake_switch.configure(hal::GpioInputMode::PullDown);
+
+    // Configure I2C for expander.
+    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    hal::i2c_init(I2C1, std::nullopt);
+
+    TickType_t last_schedule_time = xTaskGetTickCount();
+    while (true) {
+        // Port 0 has all shutdown inputs.
+        set_expander_register(ExpanderRegister::ConfigurationPort0, 0xff);
+        set_expander_register(ExpanderRegister::ConfigurationPort1, 0xee);
+        set_expander_register(ExpanderRegister::OutputPort1, s_brake_switch.read() ? 0xff : 0xef);
+
+        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(50));
     }
 }
 
@@ -128,6 +183,7 @@ void vApplicationIdleHook() {
 
 void app_main() {
     s_adc_task.init(&adc_task, "adc", 2);
+    s_expander_task.init(&expander_task, "expander", 1);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (k_enable_debug_logs) {
         s_swd_task.init(&swd_task, "swd", 0);
