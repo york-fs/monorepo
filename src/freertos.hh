@@ -103,6 +103,20 @@ public:
     void init();
 };
 
+class PeriodScheduler {
+    TickType_t m_last_schedule_time;
+
+public:
+    PeriodScheduler();
+    PeriodScheduler(const PeriodScheduler &) = delete;
+    PeriodScheduler(PeriodScheduler &&) = delete;
+
+    PeriodScheduler &operator=(const PeriodScheduler &) = delete;
+    PeriodScheduler &operator=(PeriodScheduler &&) = delete;
+
+    bool delay_until_ms(std::uint32_t period_ms);
+};
+
 template <typename Func>
 decltype(auto) Mutex::with_locked(Func &&func) {
     std::lock_guard lock(*this);

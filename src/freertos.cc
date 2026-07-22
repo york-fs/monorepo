@@ -45,6 +45,14 @@ bool MessageBufferBase::send_isr(std::span<const std::uint8_t> buffer, BaseType_
     return xMessageBufferSendFromISR(m_handle, buffer.data(), buffer.size(), higher_priority_task_woken) != 0;
 }
 
+PeriodScheduler::PeriodScheduler() {
+    m_last_schedule_time = xTaskGetTickCount();
+}
+
+bool PeriodScheduler::delay_until_ms(std::uint32_t period_ms) {
+    return xTaskDelayUntil(&m_last_schedule_time, pdMS_TO_TICKS(period_ms)) == pdTRUE;
+}
+
 } // namespace freertos
 
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer,
