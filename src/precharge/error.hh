@@ -9,8 +9,8 @@ namespace precharge {
 enum class Error : std::uint16_t {
     DischargeOpen,
     PrechargeClosed,
-    AirNegClosed,
     AirPosClosed,
+    AirNegClosed,
     PrecheckVoltage,
     WaitingDischarge,
     WaitingActivation,

@@ -22,7 +22,7 @@ struct StatusMessage {
 };
 
 struct ActivateMessage {
-    static constexpr std::uint32_t packet_id() { return 0x2001; }
+    static constexpr std::uint32_t packet_id() { return 0x2; }
     static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<ActivateMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
