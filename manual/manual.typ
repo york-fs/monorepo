@@ -228,7 +228,7 @@ A 29-bit CAN2.0B extended identifier is used for all frames with a format descri
     ),
 ))
 
-The default node IDs for each component in the car are specified in @can-node-ids.
+The node IDs for each component in the car are specified in @can-node-ids.
 
 #figure(
     table(
@@ -240,7 +240,7 @@ The default node IDs for each component in the car are specified in @can-node-id
         [Precharge], [0x4],
         [DTI HV-550 Inverter], [0x5],
     ),
-    caption: [CAN Default Node IDs],
+    caption: [CAN Node IDs],
 ) <can-node-ids>
 
 = Precharge and Discharge
@@ -309,7 +309,7 @@ The key specifications of the precharge circuit are summarised in @precharge-max
         bytes: (4, 5),
         name: "LAST_FLAGS",
         type: "flags",
-        desc: [The error flags of the last attempted precharge.],
+        desc: [The error flags of the last attempted precharge, described in @precharge-flags.],
     ),
     (
         byte: 6,
@@ -329,10 +329,11 @@ The key specifications of the precharge circuit are summarised in @precharge-max
         byte: 7,
         name: "MCU_TEMP",
         type: "int8_t",
+        desc: [Temperature measured from the #raw("STM32F103") in #unit("dC").],
     ),
 ))
 
-#describe-format("Precharge Flags", kind: "Bitset", max-col-count: 4, (
+#describe-format("Precharge Flags", kind: "Bitset", lbl: "precharge-flags", max-col-count: 4, (
     (
         bits: (15, 12),
         name: "RFU",
