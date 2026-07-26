@@ -255,7 +255,7 @@ void sm_task(void *) {
 
         const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
         const auto [new_state, error_flags] = advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage);
-        if (std::exchange(state, new_state) != new_state) {
+        if (std::exchange(state, new_state) != new_state || new_state == State::Precheck) {
             s_received_activate_request.store(false);
             last_error_flags = error_flags;
         }
