@@ -77,6 +77,8 @@ endfunction()
 add_library(shared OBJECT
     src/bms/can_messages.cc
     src/charger/can_messages.cc
+    src/front/apps.cc
+    src/front/can_messages.cc
     src/precharge/can_messages.cc
     src/rear/can_messages.cc
     src/dti.cc)
