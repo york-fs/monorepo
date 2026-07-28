@@ -269,10 +269,10 @@ void control_task(void *) {
 }
 
 void swd_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         const auto data = *s_swd_queue.receive(portMAX_DELAY);
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(200));
+        scheduler.delay_until_ms(200);
 
         hal::swd_printf("-------------------------\n");
         hal::swd_printf("Enabled: %s\n", data.enabled ? "yes" : "no");

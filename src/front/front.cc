@@ -40,10 +40,9 @@ void main_task(void *) {
 }
 
 void swd_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
-
+        scheduler.delay_until_ms(1000);
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
 

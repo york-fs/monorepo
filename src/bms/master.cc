@@ -386,7 +386,7 @@ void supervisor_task(void *) {
     hal::irq_enable(EXTI15_10_IRQn, 0);
     hal::irq_enable(SPI2_IRQn, 1);
 
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         // Calculate the latest master flags based on the most recent master state and segment data.
         MasterErrorFlags master_flags;
@@ -552,7 +552,7 @@ void supervisor_task(void *) {
         // before the timeout period.
         hal::gpio_reset(s_wdi);
         hal::gpio_set(s_wdi);
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_supervisor_period));
+        scheduler.delay_until_ms(k_supervisor_period);
     }
 }
 
@@ -562,9 +562,9 @@ void control_task(void *) {
         s_control_mode.emplace<StartFullDischargeMessage>(message);
     }>(config::k_bms_can_id, 0);
 
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_control_period));
+        scheduler.delay_until_ms(k_control_period);
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // Send inverter DC-side power limits. We don't support regenerative braking yet, so always set max brake

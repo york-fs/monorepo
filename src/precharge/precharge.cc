@@ -243,7 +243,7 @@ void sm_task(void *) {
     auto state = State::LedCheck;
     ErrorFlags last_error_flags;
     TickType_t state_epoch_time = xTaskGetTickCount();
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         // Calculate an approximate MCU temperature using constants from the datasheet.
         const auto mcu_temperature_voltage = static_cast<std::int32_t>((k_mcu_vref * adc_buffer[2]) >> 12);
@@ -337,15 +337,15 @@ void sm_task(void *) {
 
         // Start next ADC sample and delay until next state machine period.
         hal::adc_start(ADC1);
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(k_sm_period));
+        scheduler.delay_until_ms(k_sm_period);
     }
 }
 
 void swd_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         const auto data = *s_swd_queue.receive(portMAX_DELAY);
-        xTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+        scheduler.delay_until_ms(1000);
 
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
