@@ -32,25 +32,7 @@ The key specifications of the precharge circuit are summarised in @precharge-max
 ) <precharge-operating>
 
 == CAN Messages
-#util.describe-can-messages("Precharge", (
-    (
-        name: [#link(label("precharge-status-format"), "Status")],
-        id: [0x1],
-        prio: [1],
-        length: [8],
-        note: [Sent every #qty(10, "ms")],
-    ),
-    (
-        name: [Activate],
-        id: [0x2],
-        prio: [3],
-        length: [0],
-        note: [No data, toggles precharge state],
-    ),
-))
-
-=== Status Message
-#util.describe-format("Precharge Status", lbl: "precharge-status-format", (
+#let status-message-fields = (
     (
         bytes: (0, 1),
         name: "PRCHG_VOLTAGE",
@@ -89,9 +71,9 @@ The key specifications of the precharge circuit are summarised in @precharge-max
         type: "int8_t",
         desc: [Temperature measured from the #raw("STM32F103") in #unit("dC").],
     ),
-))
+)
 
-#util.describe-format("Precharge Flags", kind: "Bitset", lbl: "precharge-flags", max-col-count: 4, (
+#let flags-format = util.describe-format("Precharge Flags", kind: "Bitset", lbl: "precharge-flags", max-col-count: 4, (
     (
         bits: (15, 12),
         name: "RFU",
@@ -156,5 +138,28 @@ The key specifications of the precharge circuit are summarised in @precharge-max
         bit: 0,
         name: "DISCHG_OPEN",
         desc: [The shutdown circuit was measured as closed, meaning the discharge relay was assumed to be open when it should have been closed in the #raw("PRECHECK") or #raw("STANDBY") state.],
+    ),
+))
+
+#util.describe-can-messages("Precharge", (
+    (
+        name: "Status",
+        id: [0x1],
+        prio: [1],
+        length: [8],
+        desc: [
+            This message contains continuous status updates of the precharge, which is sent every #qty(10, "ms").
+        ],
+        fields: status-message-fields,
+        after: flags-format,
+    ),
+    (
+        name: "Activate",
+        id: [0x2],
+        prio: [3],
+        length: [0],
+        desc: [
+            This message contains no data but attempts a toggle of the precharge activation state when received.
+        ],
     ),
 ))

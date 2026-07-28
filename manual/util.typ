@@ -1,23 +1,5 @@
 #import "@preview/unify:0.8.1": num,qty,numrange,qtyrange,unit
 
-#let describe-can-messages(name, messages) = [
-    #figure(
-        table(
-            columns: (auto, auto, auto, auto, 1fr),
-            align: (left, right, right, right, left),
-            table.header([*Name*], [*Packet ID*], [*Default Priority*], [*Data Bytes*], [*Note*]),
-            ..messages.map(m => (
-                m.at("name"),
-                m.at("id"),
-                m.at("prio"),
-                m.at("length"),
-                if "note" in m { m.at("note") } else { [] },
-            )).flatten(),
-        ),
-        caption: [#name Message Summary],
-    )
-]
-
 #let map-range(field) = if "byte" in field or "bit" in field {
     num(field.at("byte", default: field.at("bit", default: "")))
 } else {
@@ -26,14 +8,14 @@
 }
 
 #let map-range-prefix(field) = if "byte" in field {
-    [Byte #field.at("byte")]
+    [Byte #field.byte]
 } else if "bit" in field {
-    [Bit #field.at("bit")]
+    [Bit #field.bit]
 } else if "bytes" in field {
-    let range = field.at("bytes")
+    let range = field.bytes
     [Bytes #range.at(0)-#range.at(1)]
 } else {
-    let range = field.at("bits")
+    let range = field.bits
     [Bits #range.at(0)-#range.at(1)]
 }
 
@@ -46,7 +28,7 @@
 }
 
 #let build-format-type-columns(fields) = if "type" in fields.at(0) {
-  ([Type], ..fields.map(f => raw(f.at("type"))))
+  ([Type], ..fields.map(f => raw(f.type)))
 } else {
   ()
 }
@@ -79,7 +61,7 @@
             if "byte" in row-fields.at(0) or "bytes" in row-fields.at(0) { [Byte] } else { [Bit] },
             ..row-fields.map(map-range),
             [Field],
-            ..row-fields.map(f => raw(f.at("name"))),
+            ..row-fields.map(f => raw(f.name)),
             ..build-format-type-columns(row-fields),
         ))
     }
@@ -101,16 +83,48 @@
     #enum(
         numbering: i => list-numbering.at(i),
         ..fields.map(f => [
-            #text(f.at("name"), font: "Fira Mono", weight: "bold")
+            #text(f.name, font: "Fira Mono", weight: "bold")
             #if "type" in f {
-                [--- #raw(f.at("type"))]
+                [--- #raw(f.type)]
             }
             #if "desc" in f {
                 linebreak()
                 box(inset: (left: 1.5em))[
-                    #f.at("desc")
+                    #f.desc
                 ]
             }
         ]),
     )
 ]
+
+#let describe-can-message(name-prefix, message) = {
+    message.at("desc", default: [])
+    if "fields" in message {
+        describe-format(name-prefix + " " + message.name,
+            message.fields,
+            kind: "Message")
+    }
+}
+
+#let describe-can-messages(name, messages) = {
+    figure(
+        table(
+            columns: (1fr, auto, auto, auto),
+            align: (left, right, right, right),
+            table.header([*Name*], [*Packet ID*], [*Default Priority*], [*Data Bytes*]),
+            ..messages.map(m => (
+                link(label(name + "-" + m.name), m.name),
+                m.id,
+                m.prio,
+                m.length,
+            )).flatten(),
+        ),
+        caption: [#name CAN Message Summary],
+    )
+    for message in messages [
+        #heading(depth: 3, [#message.name Message])
+        #label(name + "-" + message.name)
+        #describe-can-message(name, message)
+        #if "after" in message { message.after }
+    ]
+}
