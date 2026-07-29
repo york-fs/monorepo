@@ -130,3 +130,4 @@ The node IDs for each component in the car are specified in @can-node-ids.
 ) <can-node-ids>
 
 #include "sections/precharge.typ"
+#include "sections/dti.typ"
