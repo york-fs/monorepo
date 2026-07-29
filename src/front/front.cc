@@ -10,6 +10,8 @@
 #include <array>
 #include <cstdint>
 
+// TODO: Task notification wrapper which can set bits via FlagBitset.
+
 using namespace front;
 
 namespace {
@@ -39,13 +41,14 @@ std::array<std::uint16_t, 2> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
 freertos::Task<2048> s_throttle_task;
+freertos::Task<128> s_precharge_task;
 freertos::Task<128> s_swd_task;
 
 // Dashboard buttons with indicators.
 hal::Gpio s_ts_button(hal::GpioPort::B, 1);
 hal::Gpio s_ts_button_led(hal::GpioPort::B, 2);
-hal::Gpio s_rtd_button(hal::GpioPort::B, 14);
-hal::Gpio s_rtd_button_led(hal::GpioPort::B, 13);
+hal::Gpio s_rtd_button(hal::GpioPort::C, 14);
+hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
 
 hal::Gpio s_led(hal::GpioPort::B, 4);
 
@@ -77,10 +80,49 @@ void main_task(void *) {
     }
 }
 
+void precharge_task(void *) {
+    // Configure TS activate button input and associated indicator LED.
+    s_ts_button.configure(hal::GpioInputMode::Floating);
+    s_ts_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    // Enable an external interrupt for the button.
+    AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;
+    EXTI->IMR |= EXTI_IMR_MR1;
+    EXTI->FTSR |= EXTI_FTSR_FT1;
+    hal::irq_enable(EXTI1_IRQn, 8);
+
+    // TODO: Toggle real precharge activation and check status over CAN.
+    bool activation = false;
+    while (true) {
+        if (activation) {
+            hal::gpio_set(s_ts_button_led);
+
+            // Wait indefinitely for a disable request.
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            activation = false;
+
+            // Notify throttle task.
+            xTaskNotify(*s_throttle_task, 1u << 0, eSetBits);
+        } else {
+            s_ts_button_led.write(!s_ts_button_led.read());
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500)) != 0) {
+                activation = true;
+                xTaskNotify(*s_throttle_task, 1u << 1, eSetBits);
+            }
+        }
+    }
+}
+
 void throttle_task(void *) {
     // Configure ready to drive button input and associated indicator LED.
     s_rtd_button.configure(hal::GpioInputMode::Floating);
     s_rtd_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    // Enable an external interrupt for the button.
+    AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PC;
+    EXTI->IMR |= EXTI_IMR_MR14;
+    EXTI->FTSR |= EXTI_FTSR_FT14;
+    hal::irq_enable(EXTI15_10_IRQn, 8);
 
     freertos::PeriodScheduler scheduler;
     std::array<Sensor, 2> sensors;
@@ -104,15 +146,14 @@ void throttle_task(void *) {
         if (xTaskNotifyWait(0, UINT32_MAX, &notification, 0) == pdTRUE) {
             // Received a task notification.
             if ((notification & (1u << 0)) != 0) {
-                if (state == ThrottleState::AwaitingTractive) {
-                    // TS enabled.
-                    state = ThrottleState::AwaitingActivation;
-                } else {
-                    // TS disabled, go back to initial state.
-                    state = ThrottleState::AwaitingTractive;
-                }
+                // TS disabled, go back to initial state.
+                state = ThrottleState::AwaitingTractive;
             }
-            if ((notification & (1u << 1)) != 0) {
+            if ((notification & (1u << 1)) != 0 && state == ThrottleState::AwaitingTractive) {
+                // TS enabled.
+                state = ThrottleState::AwaitingActivation;
+            }
+            if ((notification & (1u << 2)) != 0) {
                 if (state == ThrottleState::AwaitingActivation) {
                     // TODO: Need to check that brake is pressed at the same time!
                     // RTD enabled.
@@ -170,12 +211,33 @@ void swd_task(void *) {
 
 } // namespace
 
+extern "C" void EXTI1_IRQHandler() {
+    // Clear pending bit.
+    EXTI->PR = EXTI_PR_PR1;
+
+    // Notify precharge task of button press.
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(*s_precharge_task, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
+extern "C" void EXTI15_10_IRQHandler() {
+    // Clear pending bit.
+    EXTI->PR = EXTI_PR_PR14;
+
+    // Notify throttle task of button press.
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    xTaskNotifyFromISR(*s_throttle_task, 1u << 2, eSetBits, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
 void vApplicationIdleHook() {
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
 }
 
 void app_main() {
-    s_main_task.init(&main_task, "main", 2);
+    s_main_task.init(&main_task, "main", 3);
+    s_precharge_task.init(&precharge_task, "precharge", 2);
     s_throttle_task.init(&throttle_task, "throttle", 1);
     if constexpr (k_enable_debug_logs) {
         s_swd_task.init(&swd_task, "swd", 0);
