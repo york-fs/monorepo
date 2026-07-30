@@ -258,6 +258,7 @@ void sm_task(void *) {
         if (std::exchange(state, new_state) != new_state || new_state == State::Precheck) {
             s_received_activate_request.store(false);
             last_error_flags = error_flags;
+            state_epoch_time = xTaskGetTickCount();
         }
 
         // Calculate outputs from current state and error flags.
