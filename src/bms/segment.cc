@@ -23,6 +23,11 @@ using namespace bms;
 namespace {
 
 /**
+ * @brief The high bits of the I2C address.
+ */
+constexpr std::uint8_t k_i2c_address_base = 0x40u;
+
+/**
  * @brief Sleep timeout in milliseconds.
  */
 constexpr std::uint32_t k_sleep_timeout = 2000;
@@ -479,7 +484,7 @@ void cmd_task(void *) {
     for (const auto &pin : s_address_pins) {
         pin.configure(hal::GpioInputMode::PullUp);
     }
-    s_i2c_address = 0x40u | ~(GPIOA->IDR >> 8) & 0xfu;
+    s_i2c_address = k_i2c_address_base | util::bit_reverse<std::uint8_t>(~GPIOA->IDR >> 4) & 0xfu;
     for (const auto &pin : s_address_pins) {
         pin.configure(hal::GpioInputMode::PullDown);
     }
