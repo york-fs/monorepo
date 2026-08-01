@@ -16,7 +16,6 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
-#include <mutex>
 #include <optional>
 
 using namespace bms;
@@ -106,9 +105,6 @@ std::uint32_t s_thermistor_bitset = 0;
 
 // Error tracking.
 std::atomic<std::uint32_t> s_i2c_error_count = 0;
-
-// Mutex for frontend access.
-freertos::Mutex s_afe_mutex;
 
 // Tasks.
 freertos::Task<256> s_cmd_task;
@@ -234,9 +230,6 @@ std::optional<std::pair<std::uint16_t, std::uint16_t>> adc_sample_voltage(std::u
 }
 
 void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::uint16_t>>> samples, bool calib) {
-    // Take a lock to ensure that AFE access is serialised.
-    std::lock_guard lock(s_afe_mutex);
-
     // Configure the frontend. We want to sample the cells without any leakage paths.
     if (!afe_transfer(calib ? 0u : 0b01011000u, false)) {
         // Failed to configure frontend.
@@ -676,7 +669,6 @@ bool hal_low_power() {
 }
 
 void app_main() {
-    s_afe_mutex.init();
     s_cmd_queue.init();
     s_cmd_task.init(&cmd_task, "cmd", 3);
     if constexpr (config::enable_debug_logs()) {
