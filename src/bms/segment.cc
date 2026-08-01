@@ -284,7 +284,7 @@ void sample_voltages_task(void *) {
         std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
         sample_voltages_raw(samples, false);
 
-        std::uint16_t cell_tap_bitet = 0;
+        std::uint16_t cell_tap_bitset = 0;
         std::uint16_t degraded_bitset = 0;
         std::array<std::uint16_t, k_cell_count> voltages{};
         for (std::size_t index = 0; index < voltages.size(); index++) {
@@ -298,7 +298,7 @@ void sample_voltages_task(void *) {
                 }
 
                 // Cell tap is connected. Apply parasitic capacitance correction factor.
-                cell_tap_bitet |= 1u << index;
+                cell_tap_bitset |= 1u << index;
                 voltages[index] = voltage - s_correction_table[index];
 
                 // Check if the cell tap is degraded (noisy).
@@ -310,7 +310,7 @@ void sample_voltages_task(void *) {
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         freertos::in_critical_section([&] {
-            s_cell_tap_bitset = cell_tap_bitet;
+            s_cell_tap_bitset = cell_tap_bitset;
             s_degraded_bitset = degraded_bitset;
             std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
         });
