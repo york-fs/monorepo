@@ -17,11 +17,6 @@ using namespace front;
 namespace {
 
 /**
- * @brief Whether to enable the SWD debug logging task.
- */
-constexpr bool k_enable_debug_logs = false;
-
-/**
  * @brief Status sending period in milliseconds.
  */
 constexpr std::uint32_t k_status_period = 1000;
@@ -239,7 +234,7 @@ void app_main() {
     s_main_task.init(&main_task, "main", 3);
     s_precharge_task.init(&precharge_task, "precharge", 2);
     s_throttle_task.init(&throttle_task, "throttle", 1);
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
     }
     vTaskStartScheduler();

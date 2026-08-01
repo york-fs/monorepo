@@ -36,11 +36,6 @@ using namespace bms;
 namespace {
 
 /**
- * @brief Whether to enable the SWD debug logging task.
- */
-constexpr bool k_enable_debug_logs = false;
-
-/**
  * @brief Whether to enable communication with a DTI inverter.
  */
 constexpr bool k_enable_dti = true;
@@ -451,13 +446,13 @@ void supervisor_task(void *) {
         if (should_shutdown && !shutdown_request_time) {
             // Start a new shutdown request.
             shutdown_request_time.emplace(xTaskGetTickCount());
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 hal::swd_printf("%u: Started shutdown request with flags 0x%x\n", *shutdown_request_time,
                                 master_flags.value());
             }
         } else if (!should_shutdown && !shutdown_time && k_allow_shutdown_cancellation) {
             // Cancel the request if it hasn't been fulfilled already.
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 if (shutdown_request_time) {
                     hal::swd_printf("%u: Cancelling request made at time %u\n", xTaskGetTickCount(),
                                     *shutdown_request_time);
@@ -479,7 +474,7 @@ void supervisor_task(void *) {
         // Assert shutdown if we should and haven't already.
         if (!shutdown_time && should_shutdown_now) {
             shutdown_time.emplace(xTaskGetTickCount());
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 hal::swd_printf("%u: Asserted shutdown\n", *shutdown_time);
             }
         }
@@ -487,13 +482,13 @@ void supervisor_task(void *) {
         // Keep track of the time elapsed since all faults have cleared.
         if (!fault_cleared_time && shutdown_time && !should_shutdown) {
             fault_cleared_time.emplace(xTaskGetTickCount());
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 hal::swd_printf("%u: Fault cleared\n", *fault_cleared_time);
             }
         } else if (fault_cleared_time && should_shutdown) {
             // A fault has reappeared.
             fault_cleared_time.reset();
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 hal::swd_printf("%u: Fault reappeared\n", xTaskGetTickCount());
             }
         }
@@ -503,7 +498,7 @@ void supervisor_task(void *) {
             shutdown_request_time.reset();
             fault_cleared_time.reset();
             shutdown_time.reset();
-            if constexpr (k_enable_debug_logs) {
+            if constexpr (config::enable_debug_logs()) {
                 hal::swd_printf("%u: Deasserted shutdown\n", xTaskGetTickCount());
             }
         }
@@ -537,7 +532,7 @@ void supervisor_task(void *) {
         }
 
         // Update SWD data.
-        if constexpr (k_enable_debug_logs) {
+        if constexpr (config::enable_debug_logs()) {
             SwdData swd_data{
                 .master_flags = master_flags,
             };
@@ -832,7 +827,7 @@ void config_task(void *) {
     }
 
     // Dump config.
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         hal::swd_printf("\nUsing config version %u in slot %u\n", s_config.counter, config_index);
         hal::swd_printf("segment_start_address: 0x%x\n", s_config.segment_start_address);
         hal::swd_printf("segment_count: %u\n", s_config.segment_count);
@@ -872,7 +867,7 @@ void config_task(void *) {
         config_index = (config_index + 1) % k_config_offsets.size();
         s_config.magic = k_config_magic;
         s_config.counter++;
-        if constexpr (k_enable_debug_logs) {
+        if constexpr (config::enable_debug_logs()) {
             hal::swd_printf("Saving config version %u to slot %u\n", s_config.counter, config_index);
         }
 
@@ -1204,7 +1199,7 @@ void app_main() {
     s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 3);
     s_control_task.init(&control_task, "control", 2);
     s_config_task.init(&config_task, "config", 1);
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         s_swd_queue.init();
         s_swd_task.init(&swd_task, "swd", 0);
     }

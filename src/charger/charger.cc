@@ -17,11 +17,6 @@ using namespace charger;
 namespace {
 
 /**
- * @brief Whether to enable the SWD debug logging task.
- */
-constexpr bool k_enable_debug_logs = true;
-
-/**
  * @brief The maximum allowed value for the current setpoint in 1 mA resolution.
  */
 constexpr std::uint32_t k_current_limit = 3000;
@@ -300,7 +295,7 @@ void app_main() {
     s_swd_queue.init();
 
     s_control_task.init(&control_task, "control", 4);
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 1);
     }
     vTaskStartScheduler();

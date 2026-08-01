@@ -1,4 +1,5 @@
 #include <bms/segment_mode.hh>
+#include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
@@ -21,11 +22,6 @@
 using namespace bms;
 
 namespace {
-
-/**
- * @brief Whether to enable the SWD debug logging task.
- */
-constexpr bool k_enable_debug_logs = false;
 
 /**
  * @brief Sleep timeout in milliseconds.
@@ -684,7 +680,7 @@ void app_main() {
     s_cmd_task.init(&cmd_task, "cmd", 4);
     s_sample_voltages_task.init(&sample_voltages_task, "voltages", 3);
     s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 2);
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 1);
     }
     vTaskStartScheduler();

@@ -21,11 +21,6 @@ using namespace precharge;
 namespace {
 
 /**
- * @brief Whether to enable the SWD debug logging task.
- */
-constexpr bool k_enable_debug_logs = false;
-
-/**
  * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
  */
 constexpr std::uint32_t k_precharge_hold_time = 500;
@@ -332,7 +327,7 @@ void sm_task(void *) {
         can::transmit(config::k_precharge_can_id, status_message);
 
         // Update SWD data.
-        if constexpr (k_enable_debug_logs) {
+        if constexpr (config::enable_debug_logs()) {
             s_swd_queue.overwrite(status_message);
         }
 
@@ -383,7 +378,7 @@ void app_main() {
     }
 
     s_sm_task.init(&sm_task, "sm", 2);
-    if constexpr (k_enable_debug_logs) {
+    if constexpr (config::enable_debug_logs()) {
         s_swd_queue.init();
         s_swd_task.init(&swd_task, "swd", 0);
     }
