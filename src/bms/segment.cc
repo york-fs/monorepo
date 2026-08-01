@@ -570,17 +570,10 @@ void cmd_task(void *) {
     // Disable the frontend and reference.
     hal::gpio_reset(s_afe_en, s_ref_en, s_led);
 
-    // Setup an external event on SCL (PB6).
-    // TODO: Make a HAL function for this.
-    AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
-    EXTI->EMR |= EXTI_EMR_MR6;
-    EXTI->FTSR |= EXTI_FTSR_TR6;
-
-    // Enter stop mode. Disable SysTick to avoid an STM errata.
-    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-    hal::enter_stop_mode(hal::WakeupSource::Event);
-    __disable_irq();
-    NVIC_SystemReset();
+    // Enable the wake-up pin, connected to SCL, and enter standby mode.
+    PWR->CR |= PWR_CR_CWUF;
+    PWR->CSR |= PWR_CSR_EWUP;
+    hal::enter_standby_mode();
 }
 
 void swd_task(void *) {
