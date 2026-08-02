@@ -23,7 +23,7 @@ The key specifications of the precharge circuit are summarised in @precharge-max
         columns: (auto, 3fr,) + (1fr,) * 4,
         align: (center, left, right, right, right, center),
         table.header([*Symbol*], [*Specification*], [*Min*], [*Typ*], [*Max*], [*Unit*]),
-        [$upright(V)_"LVS"$], [Low voltage input], num(9), num(12), num(16), unit("volt"),
+        [$upright(V)_"LVS"$], [Low voltage input], num(9), num(12), num(15), unit("volt"),
         [$upright(V)_"ACC"$], [High voltage input], num(36), [-], num(480), unit("volt"),
         [$upright(R)_"PRE"$], [Precharge resistance], num(950), num(1000), num(1050), unit("ohm"),
         [$upright(tau)_"PRE"$], [Precharge time to #qty(95, "%") at #qty(300, "volt") & #qty(200, "uF")], [-], num(600), [-], unit("ms"),
