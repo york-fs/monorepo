@@ -55,39 +55,20 @@
 ]
 #pagebreak()
 
-// Front matter numbering.
-#set page(numbering: "i")
-#counter(page).update(1)
-
+// Front matter.
+#show: util.front-matter
 #outline(title: "Contents")
-#pagebreak()
-
 #outline(
     title: "List of Figures",
     target: figure.where(kind: image),
 )
-#pagebreak()
-
 #outline(
     title: "List of Tables",
     target: figure.where(kind: table),
 )
-#pagebreak()
 
 // Main matter.
-#set page(numbering: "1")
-#set heading(numbering: "1.")
-#counter(page).update(1)
-
-// Footer.
-#set page(
-    footer: context [
-        #set text(size: 10pt, fill: gray)
-        Electronics Manual --- York Formula Student --- v#version
-        #h(1fr)
-        Page #counter(page).display() of #counter(page).final().first()
-    ]
-)
+#show: content => util.main-matter(version, content)
 
 = System Overview
 

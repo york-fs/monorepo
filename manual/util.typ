@@ -1,5 +1,31 @@
 #import "@preview/unify:0.8.1": num,qty,numrange,qtyrange,unit
 
+#let front-matter(content) = {
+    set heading(numbering: none, outlined: false, bookmarked: true)
+    set page(numbering: "i")
+    show outline: it => {
+        it
+        pagebreak()
+    }
+    counter(page).update(1)
+    content
+}
+
+#let main-matter(version, content) = {
+    set heading(numbering: "1.", outlined: true, bookmarked: true)
+    set page(
+        numbering: "1",
+        footer: context [
+            #set text(size: 10pt, fill: gray)
+            Electronics Manual --- York Formula Student --- v#version
+            #h(1fr)
+            Page #counter(page).display() of #counter(page).final().first()
+        ],
+    )
+    counter(page).update(1)
+    content
+}
+
 #let map-range(field) = if "byte" in field or "bit" in field {
     num(field.at("byte", default: field.at("bit", default: "")))
 } else {
