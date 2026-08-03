@@ -352,12 +352,13 @@ void sample_temperatures_task(void *) {
         pin.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     }
 
+    // Use the maximum sample time since we have a fairly high source impedance from the thermistors.
     hal::adc_init(ADC1, 5);
-    hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
-    hal::adc_sequence_channel(ADC1, 2, 2, 0b010u);
-    hal::adc_sequence_channel(ADC1, 3, 3, 0b010u);
-    hal::adc_sequence_channel(ADC1, 4, 4, 0b010u);
-    hal::adc_sequence_channel(ADC1, 5, 7, 0b010u);
+    hal::adc_sequence_channel(ADC1, 1, 1, 0b111u);
+    hal::adc_sequence_channel(ADC1, 2, 2, 0b111u);
+    hal::adc_sequence_channel(ADC1, 3, 3, 0b111u);
+    hal::adc_sequence_channel(ADC1, 4, 4, 0b111u);
+    hal::adc_sequence_channel(ADC1, 5, 7, 0b111u);
 
     std::array<std::uint16_t, 5> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
@@ -370,6 +371,12 @@ void sample_temperatures_task(void *) {
         const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
 
+        // Enable the thermistors and MUX outputs.
+        hal::gpio_reset(s_mux_en);
+
+        // Give some time for the MOSFET to turn on, the thermistors and rail voltage to settle.
+        vTaskDelay(pdMS_TO_TICKS(50));
+
         std::uint32_t thermistor_bitset = 0;
         std::array<std::int8_t, k_thermistor_count> temperatures{};
         for (std::uint32_t selection = 0; selection < 8; selection++) {
@@ -378,23 +385,12 @@ void sample_temperatures_task(void *) {
             s_mux_control[1].write((selection & 0b10u) != 0);
             s_mux_control[2].write((selection & 0b100u) != 0);
 
-            // Enable thermistors.
-            for (const auto &pin : s_mux_sample) {
-                pin.configure(hal::GpioInputMode::Analog);
-            }
-            hal::gpio_reset(s_mux_en);
+            // Allow a very small delay to allow the small amount of capacitance to discharge from the previous sample.
+            vTaskDelay(pdMS_TO_TICKS(1));
 
-            // Settle delay.
-            // TODO: Lower this.
-            vTaskDelay(pdMS_TO_TICKS(50));
-
+            // Start the ADC sample and wait for its completion.
             hal::adc_start(ADC1);
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-            hal::gpio_set(s_mux_en);
-            for (const auto &pin : s_mux_sample) {
-                pin.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-            }
 
             const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
             for (std::uint32_t mux = 0; mux < 3; mux++) {
@@ -409,6 +405,9 @@ void sample_temperatures_task(void *) {
                 }
             }
         }
+
+        // Disable the thermistors.
+        hal::gpio_set(s_mux_en);
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         freertos::in_critical_section([&] {
