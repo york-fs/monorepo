@@ -19,6 +19,7 @@ enum class Error : std::uint16_t {
     AirPosOpen,
     AirNegOpen,
     Deactivation,
+    Deviation,
 };
 
 using ErrorFlags = util::FlagBitset<Error>;

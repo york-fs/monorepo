@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 using namespace precharge;
@@ -115,10 +116,10 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     // The voltage measured directly after the precharge relay should be zero. Wait for discharge of any residual
     // voltage on the TS side before continuing.
     // TODO: Tune thresholds.
-    if (precharge_voltage > 10) {
+    if (precharge_voltage > 5) {
         error_flags.set(Error::PrecheckVoltage);
     }
-    if (tractive_voltage > 10) {
+    if (tractive_voltage > 5) {
         error_flags.set(Error::WaitingDischarge);
     }
     if (error_flags.any_set()) {
@@ -130,7 +131,8 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     return std::make_pair(State::Precharge, ErrorFlags());
 }
 
-std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms) {
+std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
+                                       std::uint16_t tractive_voltage) {
     ErrorFlags error_flags;
     if (!s_shutdown_sample.read()) {
         error_flags.set(Error::ShutdownOpen);
@@ -147,14 +149,22 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms) {
 
     // Don't continue with bad relays.
     if (error_flags.any_set()) {
-        if (elapsed_ms > 1000) {
+        if (elapsed_ms > 500) {
             return std::make_pair(State::Precheck, error_flags);
         }
         return std::make_pair(State::Precharge, error_flags);
     }
 
-    // TODO: Calculate proper expected voltage at each instant.
-    return std::make_pair(elapsed_ms > 6500 ? State::PrechargeHold : State::Precharge, ErrorFlags());
+    const auto t = static_cast<float>(elapsed_ms) / 1000.0f;
+    const auto R = 1000.0f;
+    const auto C = 3300.0e-6f;
+    const auto expected_tractive = static_cast<std::uint32_t>(precharge_voltage * (1.0f - std::exp(-t / (R * C))));
+    const auto deviation = (expected_tractive > tractive_voltage) ? (expected_tractive - tractive_voltage)
+                                                                  : (tractive_voltage - expected_tractive);
+    if (deviation > 10) {
+        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
+    }
+    return std::make_pair(t > (5 * R * C) ? State::PrechargeHold : State::Precharge, ErrorFlags());
 }
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
@@ -173,7 +183,10 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
     }
 
     if (error_flags.any_set()) {
-        return std::make_pair(State::Precheck, error_flags);
+        if (elapsed_ms > 500) {
+            return std::make_pair(State::Precheck, error_flags);
+        }
+        return std::make_pair(State::PrechargeHold, error_flags);
     }
     return std::make_pair(elapsed_ms >= k_precharge_hold_time ? State::Active : State::PrechargeHold, error_flags);
 }
@@ -204,7 +217,7 @@ std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms
     case State::LedCheck:
         return led_check(elapsed_ms);
     case State::Precharge:
-        return precharge(elapsed_ms);
+        return precharge(elapsed_ms, precharge_voltage, tractive_voltage);
     case State::PrechargeHold:
         return precharge_hold(elapsed_ms);
     case State::Active:
