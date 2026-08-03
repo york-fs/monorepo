@@ -569,6 +569,9 @@ void cmd_task(void *) {
     // Disable the frontend and reference.
     hal::gpio_reset(s_afe_en, s_ref_en, s_led);
 
+    // Ensure that the thermistor MOSFET and MUX outputs are off.
+    hal::gpio_set(s_mux_en);
+
     // Setup an external event on SCL (PB6).
     // TODO: Make a HAL function for this.
     AFIO->EXTICR[1] |= AFIO_EXTICR2_EXTI6_PB;
