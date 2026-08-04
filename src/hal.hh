@@ -303,6 +303,13 @@ void enter_stop_mode(WakeupSource source);
 void adc_init(ADC_TypeDef *adc, std::uint32_t channel_count);
 
 /**
+ * @brief Disables the given ADC to reduce power usage.
+ *
+ * @param adc the target ADC peripheral
+ */
+void adc_deinit(ADC_TypeDef *adc);
+
+/**
  * @brief Enables DMA in a circular, memory-increment mode for ADC1. Note that ADC2 doesn't support DMA.
  *
  * @param data the DMA destination buffer

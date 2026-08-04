@@ -552,7 +552,7 @@ void cmd_task(void *) {
     }
 
     // Disable the STM's ADC.
-    ADC1->CR2 &= ~ADC_CR2_ADON;
+    hal::adc_deinit(ADC1);
 
     // Disable I2C and stop driving the lines.
     I2C1->CR1 &= ~I2C_CR1_PE;
