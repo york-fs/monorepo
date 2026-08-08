@@ -225,14 +225,14 @@ void adc_start(ADC_TypeDef *adc) {
 
 std::uint32_t crc_compute(std::span<const std::uint8_t> data) {
     RCC->AHBENR |= RCC_AHBENR_CRCEN;
-    CRC->CR |= CRC_CR_RESET;
+    CRC->CR = CRC_CR_RESET;
 
     std::uint32_t i = 0;
     while (i < data.size()) {
         std::uint32_t word = 0;
         for (std::uint32_t j = 0; j < 4; j++) {
             if (i < data.size()) {
-                word |= data[i++] << (j * 8);
+                word |= data[i++] << (24 - (j * 8));
             }
         }
         CRC->DR = word;
