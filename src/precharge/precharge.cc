@@ -162,9 +162,11 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
     const auto deviation = (expected_tractive > tractive_voltage) ? (expected_tractive - tractive_voltage)
                                                                   : (tractive_voltage - expected_tractive);
     if (deviation > 10) {
-        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
+        // TODO: Check whether matches against welded discharge curve.
+        // TODO: If precharge_voltage == tractive_voltage at t=0 then likely TS+ open circuit.
+        return std::make_pair(elapsed_ms > 500 ? State::Precheck : State::Precharge, ErrorFlags(Error::Deviation));
     }
-    return std::make_pair(t > (5 * R * C) ? State::PrechargeHold : State::Precharge, ErrorFlags());
+    return std::make_pair(t > (3 * R * C) ? State::PrechargeHold : State::Precharge, ErrorFlags());
 }
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
@@ -263,10 +265,18 @@ void sm_task(void *) {
 
         const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
         const auto [new_state, error_flags] = advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage);
-        if (std::exchange(state, new_state) != new_state || new_state == State::Precheck) {
+        if (state != new_state) {
             s_received_activate_request.store(false);
-            last_error_flags = error_flags;
             state_epoch_time = xTaskGetTickCount();
+            if (state != State::Precheck && state != State::Standby) {
+                last_error_flags = error_flags;
+            }
+            state = new_state;
+        }
+
+        // Ignore any requests outside of when we want them.
+        if (state != State::Standby && state != State::Active) {
+            s_received_activate_request.store(false);
         }
 
         // Calculate outputs from current state and error flags.
@@ -330,10 +340,13 @@ void sm_task(void *) {
         GPIOB->ODR = (GPIOB->ODR & ~k_output_mask) | output_bits.value();
 
         // Send status message over CAN.
+        ErrorFlags send_flags;
+        send_flags.set_all(last_error_flags);
+        send_flags.set_all(error_flags);
         StatusMessage status_message{
             .precharge_voltage = precharge_voltage,
             .tractive_voltage = tractive_voltage,
-            .last_error_flags = last_error_flags,
+            .last_error_flags = send_flags,
             .state = state,
             .mcu_temperature = mcu_temperature,
         };
@@ -359,7 +372,7 @@ void swd_task(void *) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
         hal::swd_printf("State: %u\n", util::to_underlying(data.state));
-        hal::swd_printf("Last flags: 0x%x\n", data.last_error_flags.value());
+        hal::swd_printf("Flags: 0x%x\n", data.last_error_flags.value());
         hal::swd_printf("Precharge: %u\n", data.precharge_voltage);
         hal::swd_printf("Tractive: %u\n", data.tractive_voltage);
         hal::swd_printf("MCU temperature: %d\n", data.mcu_temperature);
