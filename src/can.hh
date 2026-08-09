@@ -258,8 +258,7 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
  * mailbox. The transmitted frame has a 29-bit extended identifier with the following format:
  *   PRIO[2:0] | PACKET_ID[17:0] | NODE_ID[7:0]
  *
- * Priority is ascending, unlike in the final CAN frame format, meaning 0 has the lowest arbitration priority, and
- * 7 has the highest priority.
+ * Priority is descending, meaning 7 has the lowest arbitration priority, and 0 has the highest priority.
  *
  * @param node_id 8-bit node ID
  * @param data the data payload to encode into the frame
@@ -267,9 +266,6 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
  */
 template <Encodable T>
 void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::default_priority()) {
-    // Invert the priority direction since 0 is highest priority in CAN.
-    priority = ~priority & 0b111u;
-
     // Build extended identifier with 3 bits of priority, 18 bits of packet ID, and 8 bits of source node ID.
     const auto ext_id =
         (static_cast<std::uint32_t>(priority) << 26) | (static_cast<std::uint32_t>(T::packet_id()) << 8) | node_id;

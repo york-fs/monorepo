@@ -54,7 +54,7 @@ struct GeneralData1 {
     std::int16_t input_voltage;
 
     static constexpr std::uint32_t packet_id() { return 0x20; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     static std::optional<GeneralData1> decode(util::Stream &stream);
 };
 
@@ -66,7 +66,7 @@ struct GeneralData2 {
     std::int16_t dc_current;
 
     static constexpr std::uint32_t packet_id() { return 0x21; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     static std::optional<GeneralData2> decode(util::Stream &stream);
 };
 
@@ -80,7 +80,7 @@ struct GeneralData3 {
     FaultCode fault_code;
 
     static constexpr std::uint32_t packet_id() { return 0x22; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     static std::optional<GeneralData3> decode(util::Stream &stream);
 };
 
@@ -104,7 +104,7 @@ struct GeneralData5 {
     std::uint8_t can_map_version;
 
     static constexpr std::uint32_t packet_id() { return 0x24; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     static std::optional<GeneralData5> decode(util::Stream &stream);
 };
 
@@ -113,7 +113,7 @@ struct SetCurrentMessage {
     std::int16_t current;
 
     static constexpr std::uint32_t packet_id() { return 0x01; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -123,7 +123,7 @@ struct SetBrakeCurrentMessage {
     std::uint16_t current;
 
     static constexpr std::uint32_t packet_id() { return 0x02; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -132,7 +132,7 @@ struct SetSpeedMessage {
     std::int32_t erpm;
 
     static constexpr std::uint32_t packet_id() { return 0x03; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -141,7 +141,7 @@ struct SetRelativeCurrentMessage {
     std::int16_t percentage;
 
     static constexpr std::uint32_t packet_id() { return 0x05; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -151,7 +151,7 @@ struct SetRelativeBrakeCurrentMessage {
     std::int16_t percentage;
 
     static constexpr std::uint32_t packet_id() { return 0x06; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -160,7 +160,7 @@ struct SetMaxDirectCurrentMessage {
     std::uint16_t current;
 
     static constexpr std::uint32_t packet_id() { return 0x0a; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -169,7 +169,7 @@ struct SetMaxBrakeDirectCurrentMessage {
     std::uint16_t current;
 
     static constexpr std::uint32_t packet_id() { return 0x0b; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 
@@ -177,7 +177,7 @@ struct SetDriveEnableMessage {
     bool drive_enable;
 
     static constexpr std::uint32_t packet_id() { return 0x0c; }
-    static constexpr std::uint32_t default_priority() { return 7; }
+    static constexpr std::uint32_t default_priority() { return 0; }
     bool encode(util::Stream &stream) const;
 };
 

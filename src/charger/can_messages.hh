@@ -14,7 +14,7 @@ struct StatusMessage {
     bool enabled;
 
     static constexpr std::uint32_t packet_id() { return 0x1; }
-    static constexpr std::uint32_t default_priority() { return 5; }
+    static constexpr std::uint32_t default_priority() { return 2; }
     static std::optional<StatusMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -25,7 +25,7 @@ struct ControlMessage {
     bool enable;
 
     static constexpr std::uint32_t packet_id() { return 0x2; }
-    static constexpr std::uint32_t default_priority() { return 4; }
+    static constexpr std::uint32_t default_priority() { return 3; }
     static std::optional<ControlMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
