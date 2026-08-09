@@ -1,4 +1,6 @@
 #import "@preview/unify:0.8.1": num, qty
+#import "abbrev.typ"
+#import "abbrevs.typ": abbr
 #import "util.typ"
 
 #let version = 0.1
@@ -67,15 +69,18 @@
     target: figure.where(kind: table),
 )
 
+// List of abbreviations.
+#abbrev.list(abbr)
+
 // Main matter.
 #show: content => util.main-matter(version, content)
 
 = System Overview
 
 == CAN Format
-The default CAN bus speed is set to #qty(500, "kb/s", per: "fraction-short").
+The default #abbr.can.a bus speed is set to #qty(500, "kb/s", per: "fraction-short").
 Frames contain between #num(0) and #num(8) bytes of message data, with integer data stored in a big-endian format.
-A 29-bit CAN2.0B extended identifier is used for all frames with a format described in @can-id-format.
+A 29-bit #abbr.can.a version 2.0B extended identifier is used for all frames with a format described in @can-id-format.
 
 #util.describe-format("CAN Frame", kind: "Extended ID", lbl: "can-id-format", (
     (

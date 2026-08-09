@@ -1,10 +1,11 @@
 #import "@preview/unify:0.8.1": num, qty, numrange, unit
+#import "../abbrevs.typ": abbr
 #import "../util.typ"
 
 = Precharge and Discharge
-The precharge circuit is responsible for charging the large capacitance of the motor inverter in a controlled manner through the utilisation of a dedicated precharge resistor in order to avoid a large current spike when the AIRs close, which could weld or otherwise damage the contacts.
-It has a secondary function of controlling the AIRs with a combination of the shutdown circuit on the coil's high side and software control of the coil's low side.
-Additionally, the precharge board senses the AIR and precharge relay intended and actual (mechanical) states for use in the software logic and output to the TSAL's hardware logic.
+The precharge circuit is responsible for charging the large capacitance of the motor inverter in a controlled manner through the utilisation of a dedicated precharge resistor in order to avoid a large current spike when the #abbr.air.pla close, which could weld or otherwise damage the contacts.
+It has a secondary function of controlling the #abbr.air.pla with a combination of the shutdown circuit on the coil's high side and software control of the coil's low side.
+Additionally, the precharge board senses the #abbr.air.a and precharge relay intended and actual (mechanical) states for use in the software logic and output to the #abbr.tsal.a hardware logic.
 The key specifications of the precharge circuit are summarised in @precharge-maximum and @precharge-operating.
 
 #figure(

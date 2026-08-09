@@ -1,4 +1,5 @@
 #import "@preview/unify:0.8.1": unit
+#import "../abbrevs.typ": abbr
 #import "../util.typ"
 
 = DTI HV-550 Inverter
@@ -158,7 +159,7 @@
         byte: 7,
         name: "CAN_MAP",
         type: "uint8_t",
-        desc: [The configured CAN map version.],
+        desc: [The configured #abbr.can.a map version.],
     ),
 )
 
