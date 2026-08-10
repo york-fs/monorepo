@@ -12,8 +12,7 @@ std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream) {
     const auto tractive_voltage = stream.read_be<std::uint16_t>();
     const auto last_error_flags = stream.read_be<ErrorFlags::type_t>();
     const auto state = stream.read_byte();
-    const auto mcu_temperature = stream.read_be<std::int8_t>();
-    if (!precharge_voltage || !tractive_voltage || !last_error_flags || !state || !mcu_temperature) {
+    if (!precharge_voltage || !tractive_voltage || !last_error_flags || !state) {
         return std::nullopt;
     }
     return StatusMessage{
@@ -21,7 +20,6 @@ std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream) {
         .tractive_voltage = *tractive_voltage,
         .last_error_flags = ErrorFlags(*last_error_flags),
         .state = State(*state),
-        .mcu_temperature = *mcu_temperature,
     };
 }
 
@@ -35,10 +33,7 @@ bool StatusMessage::encode(util::Stream &stream) const {
     if (!stream.write_be(last_error_flags.value())) {
         return false;
     }
-    if (!stream.write_byte(static_cast<std::uint8_t>(state))) {
-        return false;
-    }
-    return stream.write_be(mcu_temperature);
+    return stream.write_be(util::to_underlying(state));
 }
 
 std::optional<ActivateMessage> ActivateMessage::decode(util::Stream &) {

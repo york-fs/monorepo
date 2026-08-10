@@ -122,7 +122,7 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     add_stm_executable(logging-board
         SOURCES src/logging_board.cc)
     add_stm_executable(precharge
-        SOURCES src/precharge/precharge.cc src/can.cc
+        SOURCES src/precharge/precharge.cc src/can.cc src/node_status.cc
         FREERTOS src/precharge/freertos_config.h)
     add_stm_executable(rear
         SOURCES src/rear/rear.cc src/can.cc

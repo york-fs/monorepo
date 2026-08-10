@@ -2,6 +2,7 @@
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/error.hh>
 #include <precharge/state.hh>
@@ -236,6 +237,9 @@ void sm_task(void *) {
         s_received_activate_request.store(true);
     }>(config::k_precharge_can_id, 0);
 
+    // Initialise periodic node status transmission.
+    node_status::init(config::k_precharge_can_id);
+
     // Enable CAN IRQs.
     hal::irq_enable(CAN1_TX_IRQn, 7);
     hal::irq_enable(CAN1_RX0_IRQn, 6);
@@ -255,10 +259,6 @@ void sm_task(void *) {
     TickType_t state_epoch_time = xTaskGetTickCount();
     freertos::PeriodScheduler scheduler;
     while (true) {
-        // Calculate an approximate MCU temperature using constants from the datasheet.
-        const auto mcu_temperature_voltage = static_cast<std::int32_t>((k_mcu_vref * adc_buffer[2]) >> 12);
-        const auto mcu_temperature = static_cast<std::int8_t>(((1430 - mcu_temperature_voltage) * 10) / 43 + 25);
-
         // Calculate HV sample inputs.
         const auto precharge_voltage = convert_voltage(adc_buffer[0]);
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
@@ -348,9 +348,12 @@ void sm_task(void *) {
             .tractive_voltage = tractive_voltage,
             .last_error_flags = send_flags,
             .state = state,
-            .mcu_temperature = mcu_temperature,
         };
         can::transmit(config::k_precharge_can_id, status_message);
+
+        // Update node status temperature.
+        const auto mcu_temp_voltage = (k_mcu_vref * adc_buffer[2]) >> 12;
+        node_status::update(mcu_temp_voltage);
 
         // Update SWD data.
         if constexpr (config::enable_debug_logs()) {
@@ -375,7 +378,6 @@ void swd_task(void *) {
         hal::swd_printf("Flags: 0x%x\n", data.last_error_flags.value());
         hal::swd_printf("Precharge: %u\n", data.precharge_voltage);
         hal::swd_printf("Tractive: %u\n", data.tractive_voltage);
-        hal::swd_printf("MCU temperature: %d\n", data.mcu_temperature);
     }
 }
 
