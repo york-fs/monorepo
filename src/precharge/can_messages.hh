@@ -1,9 +1,11 @@
 #pragma once
 
 #include <precharge/error.hh>
+#include <precharge/relay.hh>
 #include <precharge/state.hh>
 #include <util.hh>
 
+#include <cstdint>
 #include <optional>
 
 namespace precharge {
@@ -11,7 +13,8 @@ namespace precharge {
 struct StatusMessage {
     std::uint16_t precharge_voltage;
     std::uint16_t tractive_voltage;
-    ErrorFlags last_error_flags;
+    ErrorFlags error_flags;
+    RelayStates relay_states;
     State state;
 
     static constexpr std::uint32_t packet_id() { return 0x200; }

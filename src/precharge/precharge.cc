@@ -5,6 +5,7 @@
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/error.hh>
+#include <precharge/relay.hh>
 #include <precharge/state.hh>
 #include <util.hh>
 
@@ -339,6 +340,21 @@ void sm_task(void *) {
         // Set bits all at once.
         GPIOB->ODR = (GPIOB->ODR & ~k_output_mask) | output_bits.value();
 
+        // Build a flag bitset of relay actual states.
+        RelayStates relay_states;
+        if (!s_shutdown_sample.read()) {
+            relay_states.set(RelayState::DischargeClosed);
+        }
+        if (!s_precharge_act.read()) {
+            relay_states.set(RelayState::PrechargeClosed);
+        }
+        if (!s_air_pos_act.read()) {
+            relay_states.set(RelayState::AirPosClosed);
+        }
+        if (!s_air_neg_act.read()) {
+            relay_states.set(RelayState::AirNegClosed);
+        }
+
         // Send status message over CAN.
         ErrorFlags send_flags;
         send_flags.set_all(last_error_flags);
@@ -346,7 +362,8 @@ void sm_task(void *) {
         StatusMessage status_message{
             .precharge_voltage = precharge_voltage,
             .tractive_voltage = tractive_voltage,
-            .last_error_flags = send_flags,
+            .error_flags = send_flags,
+            .relay_states = relay_states,
             .state = state,
         };
         can::transmit(config::k_precharge_can_id, status_message);
@@ -375,9 +392,10 @@ void swd_task(void *) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
         hal::swd_printf("State: %u\n", util::to_underlying(data.state));
-        hal::swd_printf("Flags: 0x%x\n", data.last_error_flags.value());
+        hal::swd_printf("Flags: 0x%x\n", data.error_flags.value());
         hal::swd_printf("Precharge: %u\n", data.precharge_voltage);
         hal::swd_printf("Tractive: %u\n", data.tractive_voltage);
+        hal::swd_printf("Relay states: 0x%x\n", data.relay_states.value());
     }
 }
 
