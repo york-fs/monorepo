@@ -2,7 +2,9 @@
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <precharge/can_messages.hh>
 #include <rear/can_messages.hh>
+#include <rear/time_tracked.hh>
 #include <stm32f103xb.h>
 
 #include <bit>
@@ -12,6 +14,11 @@
 using namespace rear;
 
 namespace {
+
+/**
+ * @brief A timeout in milliseconds of when to consider another CAN node offline.
+ */
+constexpr std::uint32_t k_online_timeout = 100;
 
 /**
  * @brief The configured baud rate of the radio's UART.
@@ -28,6 +35,9 @@ constexpr std::uint32_t k_radio_period = 100;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
+// Latest received precharge status.
+TimeTracked<precharge::StatusMessage> s_precharge_status;
+
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
 hal::Gpio s_radio_cts(hal::GpioPort::A, 11);
@@ -39,9 +49,15 @@ freertos::Task<128> s_swd_task;
 
 void adc_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 1);
+    can::init(can::Port::B, config::k_can_speed, 2);
+
+    // Setup CAN listeners.
+    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
+        s_precharge_status.receive(precharge_status);
+    }>(config::k_precharge_can_id, 0);
 
     // Enable CAN IRQs.
+    hal::irq_enable(CAN1_RX0_IRQn, 7);
     hal::irq_enable(CAN1_TX_IRQn, 6);
     hal::irq_enable(CAN1_SCE_IRQn, 5);
 
@@ -121,8 +137,20 @@ void radio_task(void *) {
         // Build a telemetry frame with the data offset by one byte to allow for the first COBS code. The size is also
         // limited to 3 bytes fewer to allow for the overall COBS overhead.
         util::Stream stream(std::span<std::uint8_t>(tx_bytes).subspan(1, 253));
-        stream.write_be<std::uint16_t>(freertos::uptime_ms() / 1000);
+
+        // Append general information.
+        stream.write_be(freertos::uptime_ms());
         stream.write_byte(missed_tx_count);
+
+        // Append online statuses for each component.
+        stream.write_byte(s_precharge_status.has_elapsed(k_online_timeout) ? 0 : 1);
+
+        // Append precharge information.
+        stream.write_be(util::to_underlying(s_precharge_status->state));
+        stream.write_be(s_precharge_status->error_flags.value());
+        stream.write_be(s_precharge_status->precharge_voltage);
+        stream.write_be(s_precharge_status->tractive_voltage);
+        stream.write_be(s_precharge_status->relay_states.value());
 
         // Append a checksum.
         stream.write_be(freertos::in_critical_section([&] {
