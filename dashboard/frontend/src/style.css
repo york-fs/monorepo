@@ -1,4 +1,33 @@
 @charset "UTF-8";
+@import url('https://fonts.googleapis.com/css?family=Inter');
+
+:root {
+    /* Light/dark follows the OS preference only — no in-app toggle. Every
+       themed token below is defined once via light-dark(light, dark). */
+    color-scheme: light dark;
+
+    --surface-page: light-dark(#f9f9f7, #0d0d0d);
+    --surface-card: light-dark(#fcfcfb, #1a1a19);
+    --surface-inset: light-dark(#f1f0ec, #111110);
+    --ink-primary: light-dark(#0b0b0b, #ffffff);
+    --ink-secondary: light-dark(#52514e, #c3c2b7);
+    --ink-muted: #898781;
+    --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+
+    /* Darker steps for coloring text directly (dots/icons pair with a label
+       and only need 3:1; a large word standing alone needs real contrast). */
+    --status-good-text: light-dark(#006300, #0ca30c);
+    --status-warning-text: light-dark(#8a5a00, #fab219);
+    --status-critical-text: light-dark(#d03b3b, #e66767);
+
+    /* Categorical slots for charts with 2+ series (e.g. two voltage traces). */
+    --series-1: light-dark(#2a78d6, #3987e5);
+    --series-2: light-dark(#eb6834, #d95926);
+}
 
 *,
 *::before,
@@ -7,5 +36,9 @@
 }
 
 body {
+    background: var(--surface-page);
+    color: var(--ink-primary);
+    font-family: Inter, sans-serif;
+    margin: 0;
     text-rendering: optimizeLegibility;
 }
