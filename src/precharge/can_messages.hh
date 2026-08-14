@@ -23,10 +23,10 @@ struct StatusMessage {
     bool encode(util::Stream &stream) const;
 };
 
-struct ActivateMessage {
+struct HeartbeatMessage {
     static constexpr std::uint32_t packet_id() { return 0x300; }
     static constexpr std::uint32_t default_priority() { return 3; }
-    static std::optional<ActivateMessage> decode(util::Stream &stream);
+    static std::optional<HeartbeatMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
 

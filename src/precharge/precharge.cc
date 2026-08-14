@@ -7,6 +7,7 @@
 #include <precharge/error.hh>
 #include <precharge/relay.hh>
 #include <precharge/state.hh>
+#include <time_tracked.hh>
 #include <util.hh>
 
 #include <FreeRTOS.h>
@@ -67,8 +68,8 @@ using OutputBits = util::FlagBitset<OutputBit>;
 // We want to print the same information over SWD as the status message sent out over CAN.
 using SwdData = StatusMessage;
 
-// CAN requests.
-std::atomic<bool> s_received_activate_request;
+// CAN heartbeat.
+TimeTracked<std::monostate> s_heartbeat(25);
 
 // Tasks.
 freertos::Task<256> s_sm_task;
@@ -127,7 +128,7 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     if (error_flags.any_set()) {
         return std::make_pair(State::Precheck, error_flags);
     }
-    if (!s_received_activate_request) {
+    if (!s_heartbeat) {
         return std::make_pair(State::Standby, ErrorFlags(Error::WaitingActivation));
     }
     return std::make_pair(State::Precharge, ErrorFlags());
@@ -136,6 +137,9 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
 std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
                                        std::uint16_t tractive_voltage) {
     ErrorFlags error_flags;
+    if (!s_heartbeat) {
+        error_flags.set(Error::Deactivation);
+    }
     if (!s_shutdown_sample.read()) {
         error_flags.set(Error::ShutdownOpen);
     }
@@ -151,7 +155,7 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
 
     // Don't continue with bad relays.
     if (error_flags.any_set()) {
-        if (elapsed_ms > 500) {
+        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > 500) {
             return std::make_pair(State::Precheck, error_flags);
         }
         return std::make_pair(State::Precharge, error_flags);
@@ -173,6 +177,9 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
     ErrorFlags error_flags;
+    if (!s_heartbeat) {
+        error_flags.set(Error::Deactivation);
+    }
     if (!s_shutdown_sample.read()) {
         error_flags.set(Error::ShutdownOpen);
     }
@@ -187,7 +194,7 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
     }
 
     if (error_flags.any_set()) {
-        if (elapsed_ms > 500) {
+        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > 500) {
             return std::make_pair(State::Precheck, error_flags);
         }
         return std::make_pair(State::PrechargeHold, error_flags);
@@ -197,7 +204,7 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
 
 std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms) {
     ErrorFlags error_flags;
-    if (s_received_activate_request) {
+    if (!s_heartbeat) {
         error_flags.set(Error::Deactivation);
     }
     if (!s_shutdown_sample.read()) {
@@ -234,8 +241,8 @@ std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms
 void sm_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 1);
-    can::listen<ActivateMessage, [](const ActivateMessage &) {
-        s_received_activate_request.store(true);
+    can::listen<HeartbeatMessage, [](const HeartbeatMessage &) {
+        s_heartbeat.receive({});
     }>(config::k_precharge_can_id, 0);
 
     // Initialise periodic node status transmission.
@@ -264,20 +271,17 @@ void sm_task(void *) {
         const auto precharge_voltage = convert_voltage(adc_buffer[0]);
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
 
+        // Update heartbeat expiry.
+        s_heartbeat.update();
+
         const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
         const auto [new_state, error_flags] = advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage);
         if (state != new_state) {
-            s_received_activate_request.store(false);
             state_epoch_time = xTaskGetTickCount();
             if (state != State::Precheck && state != State::Standby) {
                 last_error_flags = error_flags;
             }
             state = new_state;
-        }
-
-        // Ignore any requests outside of when we want them.
-        if (state != State::Standby && state != State::Active) {
-            s_received_activate_request.store(false);
         }
 
         // Calculate outputs from current state and error flags.

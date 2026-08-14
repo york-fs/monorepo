@@ -10,6 +10,11 @@
 #include <type_traits>
 
 namespace precharge {
+namespace {
+
+constexpr std::uint32_t k_heartbeat_magic = 0x8d3c4437;
+
+} // namespace
 
 std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream) {
     const auto precharge_voltage = stream.read_be<std::uint16_t>();
@@ -45,12 +50,16 @@ bool StatusMessage::encode(util::Stream &stream) const {
     return stream.write_be(util::to_underlying(state));
 }
 
-std::optional<ActivateMessage> ActivateMessage::decode(util::Stream &) {
-    return ActivateMessage{};
+std::optional<HeartbeatMessage> HeartbeatMessage::decode(util::Stream &stream) {
+    const auto magic = stream.read_be<std::uint32_t>();
+    if (!magic || *magic != k_heartbeat_magic) {
+        return std::nullopt;
+    }
+    return HeartbeatMessage{};
 }
 
-bool ActivateMessage::encode(util::Stream &) const {
-    return true;
+bool HeartbeatMessage::encode(util::Stream &stream) const {
+    return stream.write_be(k_heartbeat_magic);
 }
 
 } // namespace precharge
