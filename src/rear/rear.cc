@@ -38,11 +38,11 @@ hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
 hal::Gpio s_radio_cts(hal::GpioPort::A, 11);
 hal::Gpio s_radio_rts(hal::GpioPort::A, 12);
 
-freertos::Task<128> s_adc_task;
+freertos::Task<128> s_main_task;
 freertos::Task<256> s_radio_task;
 freertos::Task<128> s_swd_task;
 
-void adc_task(void *) {
+void main_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 2);
 
@@ -206,7 +206,7 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
-    s_adc_task.init(&adc_task, "adc", 2);
+    s_main_task.init(&main_task, "main", 3);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
