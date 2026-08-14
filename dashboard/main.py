@@ -78,8 +78,10 @@ class TelemetryFrame:
     # Online statuses.
     online_flags: OnlineFlags = attrs.field(converter=OnlineFlags)
 
-    # Fuses.
+    # Distribution.
     fuses: FuseFlags = attrs.field(converter=FuseFlags)
+    lvs_min_voltage: float = attrs.field(converter=lambda V: V / 1000)
+    lvs_max_voltage: float = attrs.field(converter=lambda V: V / 1000)
 
     # Precharge status.
     precharge_state: PrechargeState = attrs.field(converter=PrechargeState)
@@ -106,7 +108,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIHHBHHHBI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:

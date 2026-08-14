@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useTelemetry } from '@/composables/useTelemetry'
+import AccentTile from '@/components/AccentTile.vue'
 import UptimeDisplay from '@/components/status-bar/UptimeDisplay.vue'
 import { useLastSeen } from '@/composables/useLastSeen'
 
@@ -19,6 +20,11 @@ const props = withDefaults(
 const { frame } = useTelemetry()
 const { status, relativeText } = useLastSeen(() => props.online)
 
+// `status` is still binary (online/offline) — `fault` isn't wired up to any
+// real logic yet, see PLAN.md. Mapped through `AccentTile`'s generic
+// good/warning/critical severity vocabulary once it is.
+const severity = computed(() => (status.value === 'online' ? 'good' : 'critical'))
+
 const statusLabel = computed(() => (status.value === 'online' ? 'Online' : 'Offline'))
 const lastSeenText = computed(() => `last seen ${relativeText.value}`)
 
@@ -29,63 +35,11 @@ const hasTiming = computed(() => props.online === undefined)
 </script>
 
 <template>
-    <div class="tile" :data-status="status">
-        <span class="name">{{ props.name }}</span>
-        <span class="status-text">{{ statusLabel }}</span>
-        <div class="timing">
+    <AccentTile :name="props.name" :severity="severity">
+        {{ statusLabel }}
+        <template #sub>
             <UptimeDisplay v-if="hasTiming && status === 'online'" :ms="frame.uptime" prefix="up" />
             <UptimeDisplay v-else-if="hasTiming" :text="lastSeenText" />
-        </div>
-    </div>
+        </template>
+    </AccentTile>
 </template>
-
-<style scoped>
-.tile {
-    background: var(--surface-card);
-    border: 1px solid var(--border);
-    border-left-width: 0.25rem;
-    border-radius: 0.375rem;
-    padding: 0.875rem 1.125rem;
-    display: grid;
-    grid-template-rows: auto auto auto;
-    gap: 0.25rem;
-}
-
-/* Reserves the uptime/last-seen line's height on every tile, even the
-   ones with nothing to show there, so a tile with timing data (currently
-   only rear distribution/overall link) doesn't end up taller than its
-   siblings. */
-.timing {
-    min-height: 1.1875rem;
-}
-
-.tile[data-status='online'] {
-    --status-text-color: var(--status-good-text);
-    border-left-color: var(--status-good);
-}
-.tile[data-status='offline'] {
-    --status-text-color: var(--status-critical-text);
-    border-left-color: var(--status-critical);
-}
-/* Not wired up to any real logic yet — `status` is still binary
-   (`online`/`offline`). Styling only, ready for when a component can
-   report "online but flagging a fault to investigate". */
-.tile[data-status='fault'] {
-    --status-text-color: var(--status-warning-text);
-    border-left-color: var(--status-warning);
-}
-
-.name {
-    font-size: 0.6875rem;
-    color: var(--ink-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.status-text {
-    font-size: 1.375rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
-    color: var(--status-text-color);
-}
-</style>

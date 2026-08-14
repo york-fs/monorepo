@@ -49,6 +49,8 @@ export interface TelemetryFrame {
     precharge_ts_voltage?: number
     online_flags?: OnlineFlag[]
     fuses?: FuseFlag[]
+    lvs_min_voltage?: number
+    lvs_max_voltage?: number
     [key: string]: unknown
 }
 

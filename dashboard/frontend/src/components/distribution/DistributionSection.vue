@@ -3,6 +3,7 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { isFlagOnline } from '@/types/telemetry'
 import StaleSection from '@/components/StaleSection.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
+import LvVoltageTile from '@/components/distribution/LvVoltageTile.vue'
 
 const { frame } = useTelemetry()
 </script>
@@ -17,11 +18,19 @@ const { frame } = useTelemetry()
             <h2>Distribution</h2>
         </template>
 
-        <FuseGrid :fuses="frame.fuses" />
+        <section class="distribution">
+            <LvVoltageTile :min-voltage="frame.lvs_min_voltage" />
+            <FuseGrid :fuses="frame.fuses" />
+        </section>
     </StaleSection>
 </template>
 
 <style scoped>
+.distribution {
+    display: grid;
+    gap: 1.25rem;
+}
+
 h2 {
     font-size: 1rem;
     margin: 0;
