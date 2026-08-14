@@ -20,6 +20,33 @@ class PrechargeState(Enum):
     ACTIVE = 5
 
 
+class OnlineFlags(Flag):
+    FRONT_ONLINE = enum.auto()
+    BMS_ONLINE = enum.auto()
+    PRECHARGE_ONLINE = enum.auto()
+    INVERTER_ONLINE = enum.auto()
+
+
+class FuseFlags(Flag):
+    BMS = enum.auto()
+    IMD = enum.auto()
+    TSAC_FANS = enum.auto()
+    PRECHARGE = enum.auto()
+    COOLANT_PUMP = enum.auto()
+    BRAKE_LIGHT = enum.auto()
+    TSAL_LED = enum.auto()
+    INVERTER = enum.auto()
+    SHUTDOWN_LATCH = enum.auto()
+    ENERGY_METER = enum.auto()
+    RTD_HORN = enum.auto()
+    APPS_1 = enum.auto()
+    APPS_2 = enum.auto()
+    FRONT = enum.auto()
+    DWIN = enum.auto()
+    AUX_1 = enum.auto()
+    AUX_2 = enum.auto()
+
+
 class PrechargeErrorFlags(Flag):
     DISCHARGE_OPEN = enum.auto()
     PRECHARGE_CLOSED = enum.auto()
@@ -49,7 +76,10 @@ class TelemetryFrame:
     missed_tx_count: int
 
     # Online statuses.
-    precharge_online: bool = attrs.field(converter=bool)
+    online_flags: OnlineFlags = attrs.field(converter=OnlineFlags)
+
+    # Fuses.
+    fuses: FuseFlags = attrs.field(converter=FuseFlags)
 
     # Precharge status.
     precharge_state: PrechargeState = attrs.field(converter=PrechargeState)
@@ -76,7 +106,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIBHHHBI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:

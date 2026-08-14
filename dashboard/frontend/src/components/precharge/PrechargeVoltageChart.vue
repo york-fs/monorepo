@@ -64,6 +64,13 @@ function handleThemeChange() {
 onMounted(() => {
     media = window.matchMedia('(prefers-color-scheme: dark)')
     media.addEventListener('change', handleThemeChange)
+
+    // The initial read above can race the stylesheet defining these custom
+    // properties (e.g. a slow/blocked webfont @import used to delay it —
+    // removed now, but any future stylesheet-loading hiccup could do the
+    // same). Re-read once more after mount as a cheap self-correction; if
+    // the first read was already correct this is a no-op.
+    handleThemeChange()
 })
 onUnmounted(() => {
     media?.removeEventListener('change', handleThemeChange)

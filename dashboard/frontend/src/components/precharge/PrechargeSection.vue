@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
+import { isFlagOnline } from '@/types/telemetry'
 import StaleSection from '@/components/StaleSection.vue'
 import PrechargeStateStepper from '@/components/precharge/PrechargeStateStepper.vue'
 import PrechargeFlagsList from '@/components/precharge/PrechargeFlagsList.vue'
@@ -11,7 +12,7 @@ const { frame } = useTelemetry()
 </script>
 
 <template>
-    <StaleSection :online="frame.precharge_online">
+    <StaleSection :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')">
         <template #header>
             <h2>Precharge</h2>
         </template>

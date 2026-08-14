@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
 import ConnectionStatusTile from '@/components/status-bar/ConnectionStatusTile.vue'
+import { isFlagOnline } from '@/types/telemetry'
 
 const { frame } = useTelemetry()
 </script>
@@ -8,7 +9,19 @@ const { frame } = useTelemetry()
 <template>
     <div class="status-bar">
         <ConnectionStatusTile name="Rear distribution" />
-        <ConnectionStatusTile name="Precharge" :online="frame.precharge_online" />
+        <ConnectionStatusTile
+            name="Front distribution"
+            :online="isFlagOnline(frame.online_flags, 'FRONT_ONLINE')"
+        />
+        <ConnectionStatusTile name="BMS" :online="isFlagOnline(frame.online_flags, 'BMS_ONLINE')" />
+        <ConnectionStatusTile
+            name="Precharge"
+            :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')"
+        />
+        <ConnectionStatusTile
+            name="Inverter"
+            :online="isFlagOnline(frame.online_flags, 'INVERTER_ONLINE')"
+        />
     </div>
 </template>
 
