@@ -4,11 +4,16 @@
 #include <front/apps.hh>
 #include <front/can_messages.hh>
 #include <hal.hh>
+#include <node_status.hh>
+#include <precharge/can_messages.hh>
+#include <precharge/state.hh>
 #include <rear/can_messages.hh>
 #include <stm32f103xb.h>
+#include <time_tracked.hh>
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 // TODO: Task notification wrapper which can set bits via FlagBitset.
 
@@ -19,24 +24,25 @@ namespace {
 /**
  * @brief Status sending period in milliseconds.
  */
-constexpr std::uint32_t k_status_period = 1000;
+constexpr std::uint32_t k_status_period = 100;
 
 /**
  * @brief Throttle sensing period in milliseconds.
  */
 constexpr std::uint32_t k_throttle_period = 10;
 
-enum class ThrottleState {
-    AwaitingTractive,
-    AwaitingActivation,
-    Active,
-};
+/**
+ * @brief Hard-coded value of the 3V3 rail powering the STM's ADC in 1 mV resolution.
+ */
+constexpr std::uint32_t k_mcu_vref = 3300;
 
-std::array<std::uint16_t, 2> s_adc_buffer;
+TimeTracked<precharge::State> s_precharge_state(25);
+std::array<std::uint16_t, 9> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
 freertos::Task<2048> s_throttle_task;
-freertos::Task<128> s_precharge_task;
+freertos::Task<128> s_debounce_task;
+freertos::Task<128> s_led_task;
 freertos::Task<128> s_swd_task;
 
 // Dashboard buttons with indicators.
@@ -45,80 +51,131 @@ hal::Gpio s_ts_button_led(hal::GpioPort::B, 2);
 hal::Gpio s_rtd_button(hal::GpioPort::C, 14);
 hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
 
+hal::Gpio s_rtd_buzzer(hal::GpioPort::A, 8);
 hal::Gpio s_led(hal::GpioPort::B, 4);
+
+std::uint16_t adc_voltage(std::uint32_t index) {
+    return static_cast<std::uint16_t>((k_mcu_vref * s_adc_buffer[index]) >> 12);
+}
 
 void main_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 1);
+    can::init(can::Port::B, config::k_can_speed, 4);
+
+    // Setup CAN listeners.
+    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        const auto previous = s_precharge_state.receive(precharge_status.state);
+        if (!previous || *previous != precharge_status.state) {
+            vTaskNotifyGiveFromISR(*s_led_task, &higher_priority_task_woken);
+        }
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }>(config::k_precharge_can_id, 0);
+
+    // Initialise periodic node status transmission.
+    node_status::init(config::k_front_can_id);
 
     // Enable CAN IRQs.
     hal::irq_enable(CAN1_RX0_IRQn, 7);
     hal::irq_enable(CAN1_TX_IRQn, 6);
     hal::irq_enable(CAN1_SCE_IRQn, 5);
 
-    // Sequence the APPS sampling.
-    hal::adc_init(ADC1, 2);
+    // Sequence the fuse, APPS, and temperature sensor sampling.
+    hal::adc_init(ADC1, 9);
     hal::adc_init_dma(s_adc_buffer);
-    hal::adc_sequence_channel(ADC1, 1, 7, 0b010u);
-    hal::adc_sequence_channel(ADC1, 2, 8, 0b010u);
+    for (std::uint32_t i = 0; i < 9; i++) {
+        hal::adc_sequence_channel(ADC1, i + 1, i, 0b111u);
+    }
+    hal::adc_sequence_channel(ADC1, 10, 16, 0b111u);
 
-    // Enable automatic continuous ADC sampling.
+    // Enable continuous ADC sampling.
     ADC1->CR2 |= ADC_CR2_CONT;
     hal::adc_start(ADC1);
 
+    // Configure outputs.
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_rtd_buzzer.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
-    freertos::PeriodScheduler scheduler;
-    while (true) {
-        s_led.write(!s_led.read());
-        scheduler.delay_until_ms(k_status_period);
-    }
-}
-
-void precharge_task(void *) {
-    // Configure TS activate button input and associated indicator LED.
+    // Configure TS button.
     s_ts_button.configure(hal::GpioInputMode::Floating);
-    s_ts_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-    // Enable an external interrupt for the button.
     AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;
     EXTI->IMR |= EXTI_IMR_MR1;
     EXTI->FTSR |= EXTI_FTSR_FT1;
     hal::irq_enable(EXTI1_IRQn, 8);
 
-    // TODO: Toggle real precharge activation and check status over CAN.
-    bool activation = false;
-    while (true) {
-        if (activation) {
-            hal::gpio_set(s_ts_button_led);
-
-            // Wait indefinitely for a disable request.
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-            activation = false;
-
-            // Notify throttle task.
-            xTaskNotify(*s_throttle_task, 1u << 0, eSetBits);
-        } else {
-            s_ts_button_led.write(!s_ts_button_led.read());
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500)) != 0) {
-                activation = true;
-                xTaskNotify(*s_throttle_task, 1u << 1, eSetBits);
-            }
-        }
-    }
-}
-
-void throttle_task(void *) {
-    // Configure ready to drive button input and associated indicator LED.
+    // Configure RTD button.
     s_rtd_button.configure(hal::GpioInputMode::Floating);
-    s_rtd_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-    // Enable an external interrupt for the button.
     AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PC;
     EXTI->IMR |= EXTI_IMR_MR14;
     EXTI->FTSR |= EXTI_FTSR_FT14;
     hal::irq_enable(EXTI15_10_IRQn, 8);
 
+    std::optional<TickType_t> ts_activation_desired;
+    std::optional<TickType_t> rtd_activation_desired;
+    freertos::PeriodScheduler scheduler;
+    while (true) {
+        // Handle dashboard button presses.
+        std::uint32_t notification = 0;
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 0);
+        if ((notification & (1u << 0)) != 0) {
+            if (ts_activation_desired) {
+                ts_activation_desired.reset();
+            } else {
+                ts_activation_desired.emplace(xTaskGetTickCount());
+            }
+        }
+        if ((notification & (1u << 1)) != 0) {
+            if (rtd_activation_desired) {
+                rtd_activation_desired.reset();
+            } else {
+                rtd_activation_desired.emplace(xTaskGetTickCount());
+            }
+        }
+
+        // Update precharge data expiration.
+        s_precharge_state.update();
+        if (!s_precharge_state) {
+            // Update LED task since CAN messages are not being received.
+            xTaskNotifyGive(*s_led_task);
+        }
+
+        // Desired state timeouts if the TS and RTD actual states don't activate in time.
+        if (ts_activation_desired && xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(500) &&
+            (!s_precharge_state || !precharge::is_state_active(*s_precharge_state))) {
+            ts_activation_desired.reset();
+        }
+        // TODO: RTD check and buzzer activation.
+
+        // TODO: Transmit shutdown input states.
+        StatusMessage desired_activation_message{
+            .ts_activation_desired = ts_activation_desired.has_value(),
+            .rtd_activation_desired = rtd_activation_desired.has_value(),
+        };
+        can::transmit(config::k_front_can_id, desired_activation_message);
+
+        LvsSampleMessage1 lvs_sample_message_1{
+            .rtd_voltage = adc_voltage(0),
+            .apps_1_voltage = adc_voltage(1),
+            .apps_2_voltage = adc_voltage(2),
+            .front_voltage = adc_voltage(3),
+        };
+        can::transmit(config::k_front_can_id, lvs_sample_message_1);
+
+        LvsSampleMessage2 lvs_sample_message_2{
+            .dwin_voltage = adc_voltage(4),
+            .aux_1_voltage = adc_voltage(5),
+            .aux_2_voltage = adc_voltage(6),
+        };
+        can::transmit(config::k_front_can_id, lvs_sample_message_2);
+
+        // Update node status temperature.
+        node_status::update(adc_voltage(9));
+
+        scheduler.delay_until_ms(k_status_period);
+    }
+}
+
+void throttle_task(void *) {
     freertos::PeriodScheduler scheduler;
     std::array<Sensor, 2> sensors;
 
@@ -134,52 +191,14 @@ void throttle_task(void *) {
     // Create a default throttle map.
     auto throttle_map = ThrottleMap::create_default();
 
-    std::uint32_t led_counter = 0;
-    auto state = ThrottleState::AwaitingTractive;
     while (true) {
-        std::uint32_t notification = 0;
-        if (xTaskNotifyWait(0, UINT32_MAX, &notification, 0) == pdTRUE) {
-            // Received a task notification.
-            if ((notification & (1u << 0)) != 0) {
-                // TS disabled, go back to initial state.
-                state = ThrottleState::AwaitingTractive;
-            }
-            if ((notification & (1u << 1)) != 0 && state == ThrottleState::AwaitingTractive) {
-                // TS enabled.
-                state = ThrottleState::AwaitingActivation;
-            }
-            if ((notification & (1u << 2)) != 0) {
-                if (state == ThrottleState::AwaitingActivation) {
-                    // TODO: Need to check that brake is pressed at the same time!
-                    // RTD enabled.
-                    state = ThrottleState::Active;
-                } else {
-                    // RTD disabled.
-                    state = ThrottleState::AwaitingActivation;
-                }
-            }
-        }
-
-        // Set button LED.
-        if (state == ThrottleState::AwaitingActivation) {
-            led_counter = (led_counter + 1) % 50;
-            if (led_counter == 0) {
-                s_rtd_button_led.write(!s_rtd_button_led.read());
-            }
-        } else {
-            s_rtd_button_led.write(state == ThrottleState::Active);
-        }
-
         // Read sensors and calculate a desired current.
-        std::uint16_t desired_current = 0;
-        if (state == ThrottleState::Active) {
-            // TODO: Do proper plausibility cross checking as well as taking the minimum.
-            // TODO: Deadzone.
-            // TODO: Current preload.
-            const auto current_1 = throttle_map(sensors[0].normalise(s_adc_buffer[0]).value_or(0));
-            const auto current_2 = throttle_map(sensors[1].normalise(s_adc_buffer[1]).value_or(0));
-            desired_current = std::min(current_1, current_2);
-        }
+        // TODO: Do proper plausibility cross checking as well as taking the minimum.
+        // TODO: Deadzone.
+        // TODO: Current preload.
+        const auto current_1 = throttle_map(sensors[0].normalise(s_adc_buffer[0]).value_or(0));
+        const auto current_2 = throttle_map(sensors[1].normalise(s_adc_buffer[1]).value_or(0));
+        const auto desired_current = std::min(current_1, current_2);
 
         ThrottleMessage throttle_message{
             .desired_current = desired_current,
@@ -187,7 +206,78 @@ void throttle_task(void *) {
             .raw_2 = s_adc_buffer[1],
         };
         can::transmit(config::k_front_can_id, throttle_message);
+
         scheduler.delay_until_ms(k_throttle_period);
+    }
+}
+
+void debounce_task(void *) {
+    TickType_t last_ts_button_time = 0;
+    TickType_t last_rtd_button_time = 0;
+    while (true) {
+        // Wait for either button to be pressed. Clearing on both entry and exit is important here.
+        std::uint32_t notification = 0;
+        xTaskNotifyWait(UINT32_MAX, UINT32_MAX, &notification, portMAX_DELAY);
+
+        // Only trigger if the button has been held for a minimum period.
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        // Button triggered if it's still pressed after the delay period and hasn't been pressed twice in the same
+        // second.
+        if ((notification & (1u << 0)) != 0 && !s_ts_button.read() &&
+            xTaskGetTickCount() - last_ts_button_time >= pdMS_TO_TICKS(1000)) {
+            last_ts_button_time = xTaskGetTickCount();
+            xTaskNotify(*s_main_task, 1u << 0, eSetBits);
+        }
+        if ((notification & (1u << 1)) != 0 && !s_rtd_button.read() &&
+            xTaskGetTickCount() - last_rtd_button_time >= pdMS_TO_TICKS(1000)) {
+            last_rtd_button_time = xTaskGetTickCount();
+            xTaskNotify(*s_main_task, 1u << 1, eSetBits);
+        }
+    }
+}
+
+void led_task(void *) {
+    s_ts_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_rtd_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+
+    RCC->AHBENR |= RCC_AHBENR_DMA1EN;
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+    TIM3->DIER |= TIM_DIER_UDE;
+    TIM3->PSC = 1999;
+    TIM3->ARR = 2799;
+    TIM3->CR1 |= TIM_CR1_CEN;
+
+    std::array<std::uint32_t, 10> dma_buffer{};
+    DMA1_Channel3->CPAR = std::bit_cast<std::uint32_t>(&GPIOB->BSRR);
+    DMA1_Channel3->CMAR = std::bit_cast<std::uint32_t>(dma_buffer.data());
+    DMA1_Channel3->CCR = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_DIR;
+
+    xTaskNotifyGive(xTaskGetCurrentTaskHandle());
+    while (true) {
+        // Wait for a state change.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Set TS button LED.
+        DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+        if (!s_precharge_state) {
+            // Off.
+            dma_buffer[0] = 1u << (s_ts_button_led.pin() + 16);
+            DMA1_Channel3->CNDTR = 1;
+        } else if (s_precharge_state == precharge::State::Active) {
+            // Solid.
+            dma_buffer[0] = 1u << s_ts_button_led.pin();
+            DMA1_Channel3->CNDTR = 1;
+        } else {
+            // Slow flash for standby and fast for everything else.
+            const auto count = s_precharge_state == precharge::State::Standby ? 5 : 1;
+            for (std::uint32_t i = 0; i < count; i++) {
+                dma_buffer[i] = 1u << s_ts_button_led.pin();
+                dma_buffer[count + i] = 1u << (s_ts_button_led.pin() + 16);
+            }
+            DMA1_Channel3->CNDTR = count * 2;
+        }
+        DMA1_Channel3->CCR |= DMA_CCR_EN;
     }
 }
 
@@ -210,9 +300,9 @@ extern "C" void EXTI1_IRQHandler() {
     // Clear pending bit.
     EXTI->PR = EXTI_PR_PR1;
 
-    // Notify precharge task of button press.
+    // Notify debounce task of button press.
     BaseType_t higher_priority_task_woken = pdFALSE;
-    vTaskNotifyGiveFromISR(*s_precharge_task, &higher_priority_task_woken);
+    xTaskNotifyFromISR(*s_debounce_task, 1u << 0, eSetBits, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -220,9 +310,9 @@ extern "C" void EXTI15_10_IRQHandler() {
     // Clear pending bit.
     EXTI->PR = EXTI_PR_PR14;
 
-    // Notify throttle task of button press.
+    // Notify debounce task of button press.
     BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(*s_throttle_task, 1u << 2, eSetBits, &higher_priority_task_woken);
+    xTaskNotifyFromISR(*s_debounce_task, 1u << 1, eSetBits, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -231,9 +321,10 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
-    s_main_task.init(&main_task, "main", 3);
-    s_precharge_task.init(&precharge_task, "precharge", 2);
-    s_throttle_task.init(&throttle_task, "throttle", 1);
+    s_main_task.init(&main_task, "main", 5);
+    s_throttle_task.init(&throttle_task, "throttle", 3);
+    s_debounce_task.init(&debounce_task, "debounce", 2);
+    s_led_task.init(&led_task, "led", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
     }
