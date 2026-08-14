@@ -99,6 +99,8 @@ stm_crc = crcmod.mkCrcFun(
 
 
 def pad_data(data: bytes) -> bytes:
+    if len(data) % 4 == 0:
+        return data
     return data[:-4] + bytes(4 - len(data) % 4) + data[-4:]
 
 
