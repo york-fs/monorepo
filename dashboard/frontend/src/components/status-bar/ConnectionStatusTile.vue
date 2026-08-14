@@ -32,8 +32,10 @@ const hasTiming = computed(() => props.online === undefined)
     <div class="tile" :data-status="status">
         <span class="name">{{ props.name }}</span>
         <span class="status-text">{{ statusLabel }}</span>
-        <UptimeDisplay v-if="hasTiming && status === 'online'" :ms="frame.uptime" prefix="up" />
-        <UptimeDisplay v-else-if="hasTiming" :text="lastSeenText" />
+        <div class="timing">
+            <UptimeDisplay v-if="hasTiming && status === 'online'" :ms="frame.uptime" prefix="up" />
+            <UptimeDisplay v-else-if="hasTiming" :text="lastSeenText" />
+        </div>
     </div>
 </template>
 
@@ -44,13 +46,17 @@ const hasTiming = computed(() => props.online === undefined)
     border-left-width: 0.25rem;
     border-radius: 0.375rem;
     padding: 0.875rem 1.125rem;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto auto auto;
     gap: 0.25rem;
-    min-width: 10.5rem;
-    /* Sits in a grid/flex layout that would otherwise stretch it to the
-       full container width for no reason, given how little it contains. */
-    justify-self: start;
+}
+
+/* Reserves the uptime/last-seen line's height on every tile, even the
+   ones with nothing to show there, so a tile with timing data (currently
+   only rear distribution/overall link) doesn't end up taller than its
+   siblings. */
+.timing {
+    min-height: 1.1875rem;
 }
 
 .tile[data-status='online'] {

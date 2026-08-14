@@ -27,8 +27,8 @@ const { frame } = useTelemetry()
 
 <style scoped>
 .status-bar {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
     gap: 1rem;
 }
 </style>
