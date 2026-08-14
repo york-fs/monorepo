@@ -3,6 +3,7 @@
 #include <freertos.hh>
 #include <front/can_messages.hh>
 #include <hal.hh>
+#include <i2c.hh>
 #include <precharge/can_messages.hh>
 #include <rear/can_messages.hh>
 #include <rear/fuse.hh>
@@ -39,6 +40,22 @@ constexpr std::uint32_t k_radio_period = 100;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
+/**
+ * @brief I2C address of the GPIO expander.
+ */
+constexpr std::uint8_t k_expander_address = 0x20;
+
+enum class ExpanderRegister : std::uint8_t {
+    InputPort0 = 0x00,
+    InputPort1 = 0x01,
+    OutputPort0 = 0x02,
+    OutputPort1 = 0x03,
+    PolarityPort0 = 0x04,
+    PolarityPort1 = 0x05,
+    ConfigurationPort0 = 0x06,
+    ConfigurationPort1 = 0x07,
+};
+
 struct RadioData {
     FuseBitset fuse_bitset;
     std::uint16_t lvs_min_voltage;
@@ -52,21 +69,37 @@ TimeTracked<precharge::StatusMessage> s_precharge_status(25);
 // Front LVS voltages.
 std::array<std::uint16_t, 7> s_front_lvs_voltages{};
 
+// Shutdown samples from expander.
+std::uint8_t s_rear_shutdown_samples = 0;
+bool s_bms_ok = false;
+bool s_imd_ok = false;
+bool s_dti_ok = false;
+
 // Queue for consistent radio data.
 freertos::Queue<RadioData, 1> s_radio_data;
+
+// I2C state machine for GPIO expander.
+i2c::StateMachine s_i2c_sm(i2c::Bus::_1);
 
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
 hal::Gpio s_radio_cts(hal::GpioPort::A, 11);
 hal::Gpio s_radio_rts(hal::GpioPort::A, 12);
 
-freertos::Task<128> s_main_task;
+hal::Gpio s_scl(hal::GpioPort::B, 6);
+hal::Gpio s_sda(hal::GpioPort::B, 7);
+
+hal::Gpio s_dti_ok_sample(hal::GpioPort::B, 2);
+hal::Gpio s_brake_switch(hal::GpioPort::B, 10);
+
+freertos::Task<256> s_main_task;
+freertos::Task<128> s_expander_task;
 freertos::Task<256> s_radio_task;
 freertos::Task<128> s_swd_task;
 
 void main_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 2);
+    can::init(can::Port::B, config::k_can_speed, 3);
 
     // Setup CAN listeners.
     can::listen<front::StatusMessage, [](const front::StatusMessage &front_status) {
@@ -102,6 +135,9 @@ void main_task(void *) {
 
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
     hal::irq_enable(DMA1_Channel1_IRQn, 8);
+
+    // Configure brake switch input.
+    s_brake_switch.configure(hal::GpioInputMode::Floating);
 
     // Main loop which handles fuse and shutdown sampling, precharge heartbeat, and inverter control.
     freertos::PeriodScheduler scheduler;
@@ -161,6 +197,90 @@ void main_task(void *) {
             continue;
         }
         can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
+    }
+}
+
+bool expander_wait() {
+    const bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10)) == 0;
+    const auto state = s_i2c_sm.state();
+    if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
+        return state == i2c::State::Idle;
+    }
+    // Reset the I2C periphral.
+    s_i2c_sm.init();
+    return false;
+}
+
+std::optional<std::uint8_t> expander_read(ExpanderRegister reg) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+    };
+    s_i2c_sm.start_write(k_expander_address, data, false);
+    if (!expander_wait()) {
+        return std::nullopt;
+    }
+    s_i2c_sm.start_read(k_expander_address, data, true);
+    if (!expander_wait()) {
+        return std::nullopt;
+    }
+    return data[0];
+}
+
+bool expander_write(ExpanderRegister reg, std::uint8_t value) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+        value,
+    };
+    s_i2c_sm.start_write(k_expander_address, data, true);
+    return expander_wait();
+}
+
+void expander_task(void *) {
+    // Configure I2C pins for peripheral use.
+    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+
+    // Initialise peripheral and unmask interrupts.
+    s_i2c_sm.init();
+    hal::irq_enable(I2C1_EV_IRQn, 9);
+    hal::irq_enable(I2C1_ER_IRQn, 9);
+
+    // Enable an interrupt on the brake switch line.
+    AFIO->EXTICR[2] |= AFIO_EXTICR3_EXTI10_PB;
+    EXTI->IMR |= EXTI_IMR_MR10;
+    EXTI->RTSR |= EXTI_RTSR_RT10;
+    EXTI->FTSR |= EXTI_FTSR_FT10;
+    hal::irq_enable(EXTI15_10_IRQn, 10);
+
+    // Configure DTI_OK pin which is not on the expander.
+    s_dti_ok_sample.configure(hal::GpioInputMode::Floating);
+
+    while (true) {
+        // TODO: This could be purely interrupt driven with an interrupt from the GPIO expander.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+
+        // Set pin config.
+        expander_write(ExpanderRegister::PolarityPort0, 0);
+        expander_write(ExpanderRegister::PolarityPort1, 0);
+        expander_write(ExpanderRegister::ConfigurationPort0, 0xff);
+        expander_write(ExpanderRegister::ConfigurationPort1, 0xee);
+
+        // Set brake switch output.
+        std::uint8_t port_1_out = 0;
+        if (s_brake_switch.read()) {
+            port_1_out |= 1u << 4;
+        }
+        expander_write(ExpanderRegister::OutputPort1, port_1_out);
+
+        // Read shutdown inputs.
+        const auto port_0_in = expander_read(ExpanderRegister::InputPort0).value_or(0);
+        const auto port_1_in = expander_read(ExpanderRegister::InputPort1).value_or(0);
+        freertos::in_critical_section([&] {
+            s_rear_shutdown_samples = port_0_in;
+            s_bms_ok = (port_1_in & (1u << 2)) != 0;
+            s_imd_ok = (port_1_in & (1u << 3)) != 0;
+            s_dti_ok = s_dti_ok_sample.read();
+        });
     }
 }
 
@@ -297,13 +417,46 @@ extern "C" void DMA1_Channel4_IRQHandler() {
     DMA1_Channel4->CCR &= ~DMA_CCR_EN;
 }
 
+extern "C" void EXTI15_10_IRQHandler() {
+    // Clear pending bit.
+    EXTI->PR = EXTI_PR_PR10;
+
+    // Notify expander task of brake switch change.
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
+extern "C" void I2C1_EV_IRQHandler() {
+    if (!s_i2c_sm.event()) {
+        // State not changed.
+        return;
+    }
+
+    const auto state = s_i2c_sm.state();
+    if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
+        // Signal transaction completion.
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
+        portYIELD_FROM_ISR(higher_priority_task_woken);
+    }
+}
+
+extern "C" void I2C1_ER_IRQHandler() {
+    s_i2c_sm.error();
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
 void vApplicationIdleHook() {
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
 }
 
 void app_main() {
     s_radio_data.init();
-    s_main_task.init(&main_task, "main", 3);
+    s_main_task.init(&main_task, "main", 4);
+    s_expander_task.init(&expander_task, "expander", 2);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
