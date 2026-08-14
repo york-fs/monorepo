@@ -1,9 +1,11 @@
 #include <can.hh>
 #include <config.hh>
 #include <freertos.hh>
+#include <front/can_messages.hh>
 #include <hal.hh>
 #include <precharge/can_messages.hh>
 #include <rear/can_messages.hh>
+#include <rear/fuse.hh>
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
 
@@ -14,6 +16,11 @@
 using namespace rear;
 
 namespace {
+
+/**
+ * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
+ */
+constexpr std::uint16_t k_fuse_threshold = 1000;
 
 /**
  * @brief The configured baud rate of the radio's UART.
@@ -30,8 +37,19 @@ constexpr std::uint32_t k_radio_period = 100;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
+struct RadioData {
+    FuseBitset fuse_bitset;
+};
+
 // Latest received statuses from other components.
+TimeTracked<front::StatusMessage> s_front_status(250);
 TimeTracked<precharge::StatusMessage> s_precharge_status(25);
+
+// Front LVS voltages.
+std::array<std::uint16_t, 7> s_front_lvs_voltages{};
+
+// Queue for consistent radio data.
+freertos::Queue<RadioData, 1> s_radio_data;
 
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
@@ -47,45 +65,94 @@ void main_task(void *) {
     can::init(can::Port::B, config::k_can_speed, 2);
 
     // Setup CAN listeners.
+    can::listen<front::StatusMessage, [](const front::StatusMessage &front_status) {
+        s_front_status.receive(front_status);
+    }>(config::k_front_can_id, 0);
     can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
         s_precharge_status.receive(precharge_status);
-    }>(config::k_precharge_can_id, 0);
+    }>(config::k_precharge_can_id, 1);
+    can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &lvs_1) {
+        s_front_lvs_voltages[0] = lvs_1.rtd_voltage;
+        s_front_lvs_voltages[1] = lvs_1.apps_1_voltage;
+        s_front_lvs_voltages[2] = lvs_1.apps_2_voltage;
+        s_front_lvs_voltages[3] = lvs_1.front_voltage;
+    }>(config::k_front_can_id, 2);
+    can::listen<front::LvsSampleMessage2, [](const front::LvsSampleMessage2 &lvs_2) {
+        s_front_lvs_voltages[4] = lvs_2.dwin_voltage;
+        s_front_lvs_voltages[5] = lvs_2.aux_1_voltage;
+        s_front_lvs_voltages[6] = lvs_2.aux_2_voltage;
+    }>(config::k_front_can_id, 3);
 
     // Enable CAN IRQs.
     hal::irq_enable(CAN1_RX0_IRQn, 7);
     hal::irq_enable(CAN1_TX_IRQn, 6);
     hal::irq_enable(CAN1_SCE_IRQn, 5);
 
-    // Configure analog inputs.
-    for (std::uint32_t i = 0; i < 8; i++) {
-        hal::Gpio(hal::GpioPort::A, i).configure(hal::GpioInputMode::Analog);
-    }
-    for (std::uint32_t i = 0; i < 2; i++) {
-        hal::Gpio(hal::GpioPort::B, i).configure(hal::GpioInputMode::Analog);
-    }
-
     hal::adc_init(ADC1, 10);
     for (std::uint32_t i = 0; i < 10; i++) {
-        hal::adc_sequence_channel(ADC1, i, i, 0b010u);
+        hal::adc_sequence_channel(ADC1, i + 1, i, 0b010u);
     }
 
     std::array<std::uint16_t, 10> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
-    while (true) {
-        for (std::uint32_t i = 0; i < adc_buffer.size(); i++) {
-            const auto voltage = (((k_mcu_vref * adc_buffer[i]) >> 12) * 57) / 10;
-            hal::swd_printf("%u: %u\n", i, voltage);
-        }
+    DMA1_Channel1->CCR |= DMA_CCR_TCIE;
+    hal::irq_enable(DMA1_Channel1_IRQn, 8);
 
-        rear::FlashMessage flash_message{};
-        can::transmit(config::k_rear_can_id, flash_message);
+    // Main loop which handles fuse and shutdown sampling, precharge heartbeat, and inverter control.
+    freertos::PeriodScheduler scheduler;
+    while (true) {
+        scheduler.delay_until_ms(10);
 
         // Update all message expiry detections.
+        s_front_status.update();
         s_precharge_status.update();
 
+        // Sample all ADC channels.
         hal::adc_start(ADC1);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Create an array of rear and front measured fuse voltages.
+        std::array<std::uint16_t, 17> fuse_voltages{};
+        if (s_front_status) {
+            freertos::in_critical_section([&] {
+                auto out_it = std::next(fuse_voltages.begin(), 10);
+                std::copy(s_front_lvs_voltages.begin(), s_front_lvs_voltages.end(), out_it);
+            });
+        }
+        std::transform(adc_buffer.begin(), adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
+            return (k_mcu_vref * adc_value) >> 12;
+        });
+
+        // Reverse 5.7x divider on each measured fuse voltage.
+        std::transform(fuse_voltages.begin(), fuse_voltages.end(), fuse_voltages.begin(), [](std::uint16_t voltage) {
+            return (voltage * 57) / 10;
+        });
+
+        // Rate fuse soundness based on the highest voltage we measure.
+        const auto max_voltage = *std::max_element(fuse_voltages.begin(), fuse_voltages.end());
+        FuseBitset fuse_bitset;
+        for (std::uint16_t fuse = 0; fuse < fuse_voltages.size(); fuse++) {
+            if (max_voltage - fuse_voltages[fuse] <= k_fuse_threshold) {
+                // The fuse is deemed working.
+                fuse_bitset.set(Fuse(fuse));
+            }
+        }
+
+        // Update radio data.
+        s_radio_data.overwrite(RadioData{
+            .fuse_bitset = fuse_bitset,
+        });
+
+        // TODO: Enum with TS and RTD off reason.
+
+        if (!s_front_status || !s_precharge_status) {
+            continue;
+        }
+        if (!s_front_status->ts_activation_desired) {
+            continue;
+        }
+        can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
     }
 }
 
@@ -132,6 +199,8 @@ void radio_task(void *) {
             continue;
         }
 
+        const auto data = *s_radio_data.receive(portMAX_DELAY);
+
         // Build a telemetry frame with the data offset by one byte to allow for the first COBS code. The size is also
         // limited to 3 bytes fewer to allow for the overall COBS overhead.
         util::Stream stream(std::span<std::uint8_t>(tx_bytes).subspan(1, 253));
@@ -140,8 +209,18 @@ void radio_task(void *) {
         stream.write_be(freertos::uptime_ms());
         stream.write_byte(missed_tx_count);
 
-        // Append online statuses for each component.
-        stream.write_byte(s_precharge_status.has_value());
+        // Append online status bitset for each component.
+        std::uint8_t online_bitset = 0;
+        if (s_front_status) {
+            online_bitset |= 1u << 0;
+        }
+        if (s_precharge_status) {
+            online_bitset |= 1u << 2;
+        }
+        stream.write_byte(online_bitset);
+
+        // Append distribution information.
+        stream.write_be(data.fuse_bitset.value());
 
         // Append precharge information.
         stream.write_be(util::to_underlying(s_precharge_status->state));
@@ -195,6 +274,13 @@ void swd_task(void *) {
 
 } // namespace
 
+extern "C" void DMA1_Channel1_IRQHandler() {
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    DMA1->IFCR |= DMA_IFCR_CTCIF1;
+    vTaskNotifyGiveFromISR(*s_main_task, &higher_priority_task_woken);
+    portYIELD_FROM_ISR(higher_priority_task_woken);
+}
+
 extern "C" void DMA1_Channel4_IRQHandler() {
     // Clear the pending flag and disable the channel.
     DMA1->IFCR |= DMA_IFCR_CTCIF4;
@@ -206,6 +292,7 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
+    s_radio_data.init();
     s_main_task.init(&main_task, "main", 3);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
