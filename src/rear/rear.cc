@@ -4,8 +4,8 @@
 #include <hal.hh>
 #include <precharge/can_messages.hh>
 #include <rear/can_messages.hh>
-#include <rear/time_tracked.hh>
 #include <stm32f103xb.h>
+#include <time_tracked.hh>
 
 #include <bit>
 #include <cstdint>
@@ -14,11 +14,6 @@
 using namespace rear;
 
 namespace {
-
-/**
- * @brief A timeout in milliseconds of when to consider another CAN node offline.
- */
-constexpr std::uint32_t k_online_timeout = 100;
 
 /**
  * @brief The configured baud rate of the radio's UART.
@@ -35,8 +30,8 @@ constexpr std::uint32_t k_radio_period = 100;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
-// Latest received precharge status.
-TimeTracked<precharge::StatusMessage> s_precharge_status;
+// Latest received statuses from other components.
+TimeTracked<precharge::StatusMessage> s_precharge_status(25);
 
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
@@ -85,6 +80,9 @@ void adc_task(void *) {
 
         rear::FlashMessage flash_message{};
         can::transmit(config::k_rear_can_id, flash_message);
+
+        // Update all message expiry detections.
+        s_precharge_status.update();
 
         hal::adc_start(ADC1);
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -143,7 +141,7 @@ void radio_task(void *) {
         stream.write_byte(missed_tx_count);
 
         // Append online statuses for each component.
-        stream.write_byte(s_precharge_status.has_elapsed(k_online_timeout) ? 0 : 1);
+        stream.write_byte(s_precharge_status.has_value());
 
         // Append precharge information.
         stream.write_be(util::to_underlying(s_precharge_status->state));
