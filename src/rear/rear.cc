@@ -9,8 +9,10 @@
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 using namespace rear;
@@ -39,6 +41,8 @@ constexpr std::uint32_t k_mcu_vref = 3300;
 
 struct RadioData {
     FuseBitset fuse_bitset;
+    std::uint16_t lvs_min_voltage;
+    std::uint16_t lvs_max_voltage;
 };
 
 // Latest received statuses from other components.
@@ -130,18 +134,22 @@ void main_task(void *) {
         });
 
         // Rate fuse soundness based on the highest voltage we measure.
-        const auto max_voltage = *std::max_element(fuse_voltages.begin(), fuse_voltages.end());
+        std::uint16_t lvs_min_voltage = std::numeric_limits<std::uint16_t>::max();
+        const auto lvs_max_voltage = *std::max_element(fuse_voltages.begin(), fuse_voltages.end());
         FuseBitset fuse_bitset;
         for (std::uint16_t fuse = 0; fuse < fuse_voltages.size(); fuse++) {
-            if (max_voltage - fuse_voltages[fuse] <= k_fuse_threshold) {
+            if (lvs_max_voltage - fuse_voltages[fuse] <= k_fuse_threshold) {
                 // The fuse is deemed working.
                 fuse_bitset.set(Fuse(fuse));
+                lvs_min_voltage = std::min(lvs_min_voltage, fuse_voltages[fuse]);
             }
         }
 
         // Update radio data.
         s_radio_data.overwrite(RadioData{
             .fuse_bitset = fuse_bitset,
+            .lvs_min_voltage = lvs_min_voltage,
+            .lvs_max_voltage = lvs_max_voltage,
         });
 
         // TODO: Enum with TS and RTD off reason.
@@ -221,6 +229,8 @@ void radio_task(void *) {
 
         // Append distribution information.
         stream.write_be(data.fuse_bitset.value());
+        stream.write_be(data.lvs_min_voltage);
+        stream.write_be(data.lvs_max_voltage);
 
         // Append precharge information.
         stream.write_be(util::to_underlying(s_precharge_status->state));
