@@ -1,5 +1,6 @@
 #include <front/can_messages.hh>
 
+#include <front/shutdown.hh>
 #include <util.hh>
 
 #include <cstdint>
@@ -8,18 +9,23 @@
 namespace front {
 
 std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream) {
+    const auto shutdown_samples = stream.read_be<ShutdownSamples::type_t>();
     const auto ts_activation_desired = stream.read_byte();
     const auto rtd_activation_desired = stream.read_byte();
-    if (!ts_activation_desired || !rtd_activation_desired) {
+    if (!shutdown_samples || !ts_activation_desired || !rtd_activation_desired) {
         return std::nullopt;
     }
     return StatusMessage{
+        .shutdown_samples = ShutdownSamples(*shutdown_samples),
         .ts_activation_desired = *ts_activation_desired == 0xaa,
         .rtd_activation_desired = *rtd_activation_desired == 0xaa,
     };
 }
 
 bool StatusMessage::encode(util::Stream &stream) const {
+    if (!stream.write_be(shutdown_samples.value())) {
+        return false;
+    }
     if (!stream.write_byte(ts_activation_desired ? 0xaa : 0)) {
         return false;
     }

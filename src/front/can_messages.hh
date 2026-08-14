@@ -1,5 +1,6 @@
 #pragma once
 
+#include <front/shutdown.hh>
 #include <util.hh>
 
 #include <cstdint>
@@ -7,6 +8,7 @@
 namespace front {
 
 struct StatusMessage {
+    ShutdownSamples shutdown_samples;
     bool ts_activation_desired;
     bool rtd_activation_desired;
 

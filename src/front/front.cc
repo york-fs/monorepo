@@ -3,6 +3,7 @@
 #include <freertos.hh>
 #include <front/apps.hh>
 #include <front/can_messages.hh>
+#include <front/shutdown.hh>
 #include <hal.hh>
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
@@ -45,14 +46,21 @@ freertos::Task<128> s_debounce_task;
 freertos::Task<128> s_led_task;
 freertos::Task<128> s_swd_task;
 
-// Dashboard buttons with indicators.
+// Shutdown inputs.
+hal::Gpio s_sdn_estop(hal::GpioPort::B, 12);
+hal::Gpio s_sdn_bots(hal::GpioPort::B, 13);
+hal::Gpio s_sdn_inertia(hal::GpioPort::B, 14);
+hal::Gpio s_sdn_aux(hal::GpioPort::B, 15);
+
+// General outputs.
+hal::Gpio s_rtd_buzzer(hal::GpioPort::A, 8);
+hal::Gpio s_led(hal::GpioPort::B, 4);
+
+// Dashboard buttons with indicator LEDs.
 hal::Gpio s_ts_button(hal::GpioPort::B, 1);
 hal::Gpio s_ts_button_led(hal::GpioPort::B, 2);
 hal::Gpio s_rtd_button(hal::GpioPort::C, 14);
 hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
-
-hal::Gpio s_rtd_buzzer(hal::GpioPort::A, 8);
-hal::Gpio s_led(hal::GpioPort::B, 4);
 
 std::uint16_t adc_voltage(std::uint32_t index) {
     return static_cast<std::uint16_t>((k_mcu_vref * s_adc_buffer[index]) >> 12);
@@ -91,6 +99,12 @@ void main_task(void *) {
     // Enable continuous ADC sampling.
     ADC1->CR2 |= ADC_CR2_CONT;
     hal::adc_start(ADC1);
+
+    // Configure shutdown sampling inputs.
+    s_sdn_estop.configure(hal::GpioInputMode::Floating);
+    s_sdn_bots.configure(hal::GpioInputMode::Floating);
+    s_sdn_inertia.configure(hal::GpioInputMode::Floating);
+    s_sdn_aux.configure(hal::GpioInputMode::Floating);
 
     // Configure outputs.
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
@@ -146,8 +160,23 @@ void main_task(void *) {
         }
         // TODO: RTD check and buzzer activation.
 
-        // TODO: Transmit shutdown input states.
+        // Build bitset of raw shutdown samples.
+        ShutdownSamples shutdown_samples;
+        if (s_sdn_estop.read()) {
+            shutdown_samples.set(ShutdownSample::EmergencyStop);
+        }
+        if (s_sdn_bots.read()) {
+            shutdown_samples.set(ShutdownSample::BrakeOverTravel);
+        }
+        if (s_sdn_inertia.read()) {
+            shutdown_samples.set(ShutdownSample::InertiaSwitch);
+        }
+        if (s_sdn_aux.read()) {
+            shutdown_samples.set(ShutdownSample::Auxiliary);
+        }
+
         StatusMessage desired_activation_message{
+            .shutdown_samples = shutdown_samples,
             .ts_activation_desired = ts_activation_desired.has_value(),
             .rtd_activation_desired = rtd_activation_desired.has_value(),
         };
