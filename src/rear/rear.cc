@@ -152,22 +152,17 @@ void main_task(void *) {
         hal::adc_start(ADC1);
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // Create an array of rear and front measured fuse voltages.
+        // Create an array of rear and front measured fuse voltages. The sampling inputs have a 5.7x divider on them.
         std::array<std::uint16_t, 17> fuse_voltages{};
+        std::transform(adc_buffer.begin(), adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
+            return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
+        });
         if (s_front_status) {
             freertos::in_critical_section([&] {
                 auto out_it = std::next(fuse_voltages.begin(), 10);
                 std::copy(s_front_lvs_voltages.begin(), s_front_lvs_voltages.end(), out_it);
             });
         }
-        std::transform(adc_buffer.begin(), adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
-            return (k_mcu_vref * adc_value) >> 12;
-        });
-
-        // Reverse 5.7x divider on each measured fuse voltage.
-        std::transform(fuse_voltages.begin(), fuse_voltages.end(), fuse_voltages.begin(), [](std::uint16_t voltage) {
-            return (voltage * 57) / 10;
-        });
 
         // Rate fuse soundness based on the highest voltage we measure.
         std::uint16_t lvs_min_voltage = std::numeric_limits<std::uint16_t>::max();

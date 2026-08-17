@@ -62,10 +62,6 @@ hal::Gpio s_ts_button_led(hal::GpioPort::B, 2);
 hal::Gpio s_rtd_button(hal::GpioPort::C, 14);
 hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
 
-std::uint16_t adc_voltage(std::uint32_t index) {
-    return static_cast<std::uint16_t>((k_mcu_vref * s_adc_buffer[index]) >> 12);
-}
-
 void main_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 4);
@@ -182,23 +178,29 @@ void main_task(void *) {
         };
         can::transmit(config::k_front_can_id, desired_activation_message);
 
+        // Calculate LVS voltages by reversing the 5.7x divider on each.
+        std::array<std::uint16_t, 7> fuse_voltages{};
+        std::transform(s_adc_buffer.begin(), s_adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
+            return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
+        });
+
         LvsSampleMessage1 lvs_sample_message_1{
-            .rtd_voltage = adc_voltage(0),
-            .apps_1_voltage = adc_voltage(1),
-            .apps_2_voltage = adc_voltage(2),
-            .front_voltage = adc_voltage(3),
+            .rtd_voltage = fuse_voltages[0],
+            .apps_1_voltage = fuse_voltages[1],
+            .apps_2_voltage = fuse_voltages[2],
+            .front_voltage = fuse_voltages[3],
         };
         can::transmit(config::k_front_can_id, lvs_sample_message_1);
 
         LvsSampleMessage2 lvs_sample_message_2{
-            .dwin_voltage = adc_voltage(4),
-            .aux_1_voltage = adc_voltage(5),
-            .aux_2_voltage = adc_voltage(6),
+            .dwin_voltage = fuse_voltages[4],
+            .aux_1_voltage = fuse_voltages[5],
+            .aux_2_voltage = fuse_voltages[6],
         };
         can::transmit(config::k_front_can_id, lvs_sample_message_2);
 
         // Update node status temperature.
-        node_status::update(adc_voltage(9));
+        node_status::update((k_mcu_vref * s_adc_buffer[9]) >> 12);
 
         scheduler.delay_until_ms(k_status_period);
     }
