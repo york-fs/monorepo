@@ -1,14 +1,19 @@
 #include <can.hh>
 #include <config.hh>
+#include <dti.hh>
 #include <freertos.hh>
 #include <front/can_messages.hh>
+#include <front/shutdown.hh>
 #include <hal.hh>
 #include <i2c.hh>
 #include <precharge/can_messages.hh>
+#include <precharge/state.hh>
 #include <rear/can_messages.hh>
 #include <rear/fuse.hh>
+#include <rear/shutdown.hh>
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
+#include <util.hh>
 
 #include <algorithm>
 #include <bit>
@@ -56,10 +61,26 @@ enum class ExpanderRegister : std::uint8_t {
     ConfigurationPort1 = 0x07,
 };
 
+enum class ExpanderShutdownPin : std::uint8_t {
+    Latch = 0,
+    RightEstop = 1,
+    Hvd = 2,
+    FrontOutput = 3,
+    Aux = 4,
+    Tsms = 5,
+    LeftEstop = 6,
+    Bspd = 7,
+};
+
+using ExpanderShutdownPins = util::FlagBitset<ExpanderShutdownPin>;
+
 struct RadioData {
     FuseBitset fuse_bitset;
     std::uint16_t lvs_min_voltage;
     std::uint16_t lvs_max_voltage;
+    ShutdownCircuitOpenCause shutdown_open_cause;
+    TsPreventionFlags ts_prevention_flags;
+    RtdPreventionFlags rtd_prevention_flags;
 };
 
 // Latest received statuses from other components.
@@ -70,7 +91,7 @@ TimeTracked<precharge::StatusMessage> s_precharge_status(25);
 std::array<std::uint16_t, 7> s_front_lvs_voltages{};
 
 // Shutdown samples from expander.
-std::uint8_t s_rear_shutdown_samples = 0;
+ExpanderShutdownPins s_rear_shutdown_samples;
 bool s_bms_ok = false;
 bool s_imd_ok = false;
 bool s_dti_ok = false;
@@ -96,6 +117,74 @@ freertos::Task<256> s_main_task;
 freertos::Task<128> s_expander_task;
 freertos::Task<256> s_radio_task;
 freertos::Task<128> s_swd_task;
+
+ShutdownCircuitOpenCause compute_shutdown_open_cause() {
+    // Shutdown input from LVMS and BSPD.
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Bspd)) {
+        // TODO: We currently can't detect whether shutdown is present before the BSPD or not, hence we return a generic
+        // rear shutdown input reason instead of BSPD.
+        return ShutdownCircuitOpenCause::RearInput;
+    }
+
+    // Front.
+    if (!s_front_status) {
+        return ShutdownCircuitOpenCause::FrontOutput;
+    }
+    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::EmergencyStop)) {
+        return ShutdownCircuitOpenCause::FrontEstop;
+    }
+    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::BrakeOverTravel)) {
+        return ShutdownCircuitOpenCause::BrakeOverTravel;
+    }
+    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::InertiaSwitch)) {
+        return ShutdownCircuitOpenCause::InertiaSwitch;
+    }
+    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::Auxiliary)) {
+        return ShutdownCircuitOpenCause::FrontAuxiliary;
+    }
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::FrontOutput)) {
+        // Signal not getting from front even though over CAN, front is reporting all ok.
+        return ShutdownCircuitOpenCause::FrontOutput;
+    }
+
+    // Shutdown latch.
+    if (!s_bms_ok) {
+        return ShutdownCircuitOpenCause::BmsLatch;
+    }
+    if (!s_imd_ok) {
+        return ShutdownCircuitOpenCause::ImdLatch;
+    }
+    if (!s_dti_ok) {
+        return ShutdownCircuitOpenCause::InverterInterlock;
+    }
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Latch)) {
+        return ShutdownCircuitOpenCause::ShutdownLatchFailure;
+    }
+
+    // Rear E-stops.
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::LeftEstop)) {
+        return ShutdownCircuitOpenCause::LeftEstop;
+    }
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::RightEstop)) {
+        return ShutdownCircuitOpenCause::RightEstop;
+    }
+
+    // High voltage disconnect interlock.
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Hvd)) {
+        return ShutdownCircuitOpenCause::HvdInterlock;
+    }
+
+    // Shutdown on rear auxiliary connector.
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Aux)) {
+        return ShutdownCircuitOpenCause::RearAuxiliary;
+    }
+
+    // Tractive system master switch.
+    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Tsms)) {
+        return ShutdownCircuitOpenCause::Tsms;
+    }
+    return ShutdownCircuitOpenCause::None;
+}
 
 void main_task(void *) {
     // Initialise CAN on port B.
@@ -139,7 +228,8 @@ void main_task(void *) {
     // Configure brake switch input.
     s_brake_switch.configure(hal::GpioInputMode::Floating);
 
-    // Main loop which handles fuse and shutdown sampling, precharge heartbeat, and inverter control.
+    // Main loop which handles fuse and shutdown sampling, TS and RTD states, precharge heartbeat, and inverter control.
+    bool rtd_latched = false;
     freertos::PeriodScheduler scheduler;
     while (true) {
         scheduler.delay_until_ms(10);
@@ -176,22 +266,95 @@ void main_task(void *) {
             }
         }
 
+        // Compute a cause for the shutdown circuit being open.
+        const auto shutdown_open_cause = compute_shutdown_open_cause();
+
+        // Compute TS activation prevention flags.
+        // TODO: Add BMS and inverter checks.
+        TsPreventionFlags ts_prevention_flags;
+        if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
+            ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
+        }
+        if (std::popcount(fuse_bitset.value()) != fuse_voltages.size()) {
+            ts_prevention_flags.set(TsPreventionFlag::BadFuse);
+        }
+        if (!s_front_status) {
+            ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
+        } else if (!s_front_status->ts_activation_desired) {
+            ts_prevention_flags.set(TsPreventionFlag::NotRequested);
+        }
+        if (!s_precharge_status) {
+            ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
+        } else if (s_precharge_status->state != precharge::State::Standby &&
+                   !precharge::is_state_active(s_precharge_status->state)) {
+            ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
+        }
+
+        // Compute RTD prevention flags.
+        // TODO: Add APPS checks.
+        RtdPreventionFlags rtd_prevention_flags;
+        if (ts_prevention_flags.any_set()) {
+            rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
+        }
+        if (s_front_status && !s_front_status->rtd_activation_desired) {
+            rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
+        }
+        rtd_latched &= !rtd_prevention_flags.any_set();
+
+        // Brake switch RTD flag is latched since it's only required when activating RTD.
+        if (!rtd_latched && !s_brake_switch.read()) {
+            rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
+        }
+
+        // Always set zero max brake current since no regen support for now.
+        dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
+            .current = 0,
+        };
+        can::transmit(config::k_dti_can_id, set_max_charge);
+
+        // Cut all power to the inverter if any flags are present preventing TS activation. If this happens, the
+        // precharge allows an approximately 250 ms window for the heartbeat to expire before opening the AIRs. That
+        // gives us a window to cut power smoothly before it's abruptly removed from the inverter.
+        if (ts_prevention_flags.any_set()) {
+            dti::SetMaxDirectCurrentMessage set_max_discharge{
+                .current = 0,
+            };
+            can::transmit(config::k_dti_can_id, set_max_discharge);
+        } else {
+            // Good to set 200 amp discharge limit.
+            // TODO: Get this from the BMS.
+            dti::SetMaxDirectCurrentMessage set_max_discharge{
+                .current = 2000,
+            };
+            can::transmit(config::k_dti_can_id, set_max_discharge);
+
+            // Send precharge heatbeat.
+            can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
+        }
+
+        // Always send a throttle to the inverter to avoid it coasting. If RTD flags are present (including if TS is
+        // off), we send zero absolute current.
+        if (rtd_prevention_flags.any_set()) {
+            dti::SetCurrentMessage set_current{
+                .current = 0,
+            };
+            can::transmit(config::k_dti_can_id, set_current);
+        } else {
+            // TODO: Send relative current message from received throttle from front.
+            rtd_latched = true;
+        }
+
         // Update radio data.
         s_radio_data.overwrite(RadioData{
             .fuse_bitset = fuse_bitset,
             .lvs_min_voltage = lvs_min_voltage,
             .lvs_max_voltage = lvs_max_voltage,
+            .shutdown_open_cause = shutdown_open_cause,
+            .ts_prevention_flags = ts_prevention_flags,
+            .rtd_prevention_flags = rtd_prevention_flags,
         });
 
-        // TODO: Enum with TS and RTD off reason.
-
-        if (!s_front_status || !s_precharge_status) {
-            continue;
-        }
-        if (!s_front_status->ts_activation_desired) {
-            continue;
-        }
-        can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
+        // TODO: Send status message with RTD status.
     }
 }
 
@@ -271,7 +434,7 @@ void expander_task(void *) {
         const auto port_0_in = expander_read(ExpanderRegister::InputPort0).value_or(0);
         const auto port_1_in = expander_read(ExpanderRegister::InputPort1).value_or(0);
         freertos::in_critical_section([&] {
-            s_rear_shutdown_samples = port_0_in;
+            s_rear_shutdown_samples = ExpanderShutdownPins(port_0_in);
             s_bms_ok = (port_1_in & (1u << 2)) != 0;
             s_imd_ok = (port_1_in & (1u << 3)) != 0;
             s_dti_ok = s_dti_ok_sample.read();
@@ -346,6 +509,9 @@ void radio_task(void *) {
         stream.write_be(data.fuse_bitset.value());
         stream.write_be(data.lvs_min_voltage);
         stream.write_be(data.lvs_max_voltage);
+        stream.write_be(util::to_underlying(data.shutdown_open_cause));
+        stream.write_be(data.ts_prevention_flags.value());
+        stream.write_be(data.rtd_prevention_flags.value());
 
         // Append precharge information.
         stream.write_be(util::to_underlying(s_precharge_status->state));
