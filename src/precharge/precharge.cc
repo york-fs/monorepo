@@ -16,13 +16,23 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstdint>
 
 using namespace precharge;
 
 namespace {
+
+/**
+ * @brief The maximum time to wait for a new heartbeat message to be received before opening the AIRs and thus
+deactivating the TS in milliseconds.
+*
+* The value chosen here is very specific as it allows ~250 ms for the rear distribution to cut inverter power before the
+AIRs open. Note that this is slightly higher than the BMS' delay for hard latching the shutdown circuit so that in the
+event of a BMS fault, the precharge notices the event as a shutdown open rather than a deactivation (which should
+otherwise be reserved as a less critical error).
+ */
+constexpr std::uint32_t k_heartbeat_timeout = 250;
 
 /**
  * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
@@ -69,7 +79,7 @@ using OutputBits = util::FlagBitset<OutputBit>;
 using SwdData = StatusMessage;
 
 // CAN heartbeat.
-TimeTracked<std::monostate> s_heartbeat(25);
+TimeTracked<std::monostate> s_heartbeat(k_heartbeat_timeout);
 
 // Tasks.
 freertos::Task<256> s_sm_task;
