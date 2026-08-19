@@ -21,6 +21,24 @@ export type PrechargeRelay =
 
 export type OnlineFlag = 'FRONT_ONLINE' | 'BMS_ONLINE' | 'PRECHARGE_ONLINE' | 'INVERTER_ONLINE'
 
+export type ShutdownOpenCause =
+    | 'NONE'
+    | 'REAR_INPUT'
+    | 'FRONT_ESTOP'
+    | 'BRAKE_OVER_TRAVEL'
+    | 'INERTIA_SWITCH'
+    | 'FRONT_AUXILIARY'
+    | 'FRONT_OUTPUT'
+    | 'BMS_LATCH'
+    | 'IMD_LATCH'
+    | 'INVERTER_INTERLOCK'
+    | 'SHUTDOWN_LATCH_FAILURE'
+    | 'LEFT_ESTOP'
+    | 'RIGHT_ESTOP'
+    | 'HVD_INTERLOCK'
+    | 'REAR_AUXILIARY'
+    | 'TSMS'
+
 export type FuseFlag =
     | 'BMS'
     | 'IMD'
@@ -51,6 +69,7 @@ export interface TelemetryFrame {
     fuses?: FuseFlag[]
     lvs_min_voltage?: number
     lvs_max_voltage?: number
+    shutdown_open_cause?: ShutdownOpenCause
     [key: string]: unknown
 }
 

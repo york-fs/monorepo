@@ -4,6 +4,7 @@ import { isFlagOnline } from '@/types/telemetry'
 import StaleSection from '@/components/StaleSection.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
 import LvVoltageTile from '@/components/distribution/LvVoltageTile.vue'
+import ShutdownCauseTile from '@/components/distribution/ShutdownCauseTile.vue'
 
 const { frame } = useTelemetry()
 </script>
@@ -19,7 +20,10 @@ const { frame } = useTelemetry()
         </template>
 
         <section class="distribution">
-            <LvVoltageTile :min-voltage="frame.lvs_min_voltage" />
+            <div class="summary">
+                <LvVoltageTile :min-voltage="frame.lvs_min_voltage" />
+                <ShutdownCauseTile :cause="frame.shutdown_open_cause" />
+            </div>
             <FuseGrid :fuses="frame.fuses" />
         </section>
     </StaleSection>
@@ -29,6 +33,12 @@ const { frame } = useTelemetry()
 .distribution {
     display: grid;
     gap: 1.25rem;
+}
+
+.summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem;
 }
 
 h2 {
