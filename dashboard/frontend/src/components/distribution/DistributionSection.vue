@@ -5,6 +5,7 @@ import StaleSection from '@/components/StaleSection.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
 import LvVoltageTile from '@/components/distribution/LvVoltageTile.vue'
 import ShutdownCauseTile from '@/components/distribution/ShutdownCauseTile.vue'
+import ActivationChecklists from '@/components/distribution/ActivationChecklists.vue'
 
 const { frame } = useTelemetry()
 </script>
@@ -25,6 +26,10 @@ const { frame } = useTelemetry()
                 <ShutdownCauseTile :cause="frame.shutdown_open_cause" />
             </div>
             <FuseGrid :fuses="frame.fuses" />
+            <ActivationChecklists
+                :ts-prevention-flags="frame.ts_prevention_flags"
+                :rtd-prevention-flags="frame.rtd_prevention_flags"
+            />
         </section>
     </StaleSection>
 </template>

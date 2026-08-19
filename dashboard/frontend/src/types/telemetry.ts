@@ -39,6 +39,16 @@ export type ShutdownOpenCause =
     | 'REAR_AUXILIARY'
     | 'TSMS'
 
+export type TsPreventionFlag =
+    | 'SHUTDOWN_OPEN'
+    | 'BAD_FUSE'
+    | 'FRONT_OFFLINE'
+    | 'NOT_REQUESTED'
+    | 'PRECHARGE_OFFLINE'
+    | 'PRECHARGE_STATE'
+
+export type RtdPreventionFlag = 'TS_NOT_ACTIVE' | 'NOT_REQUESTED' | 'BRAKE_NOT_PRESSED'
+
 export type FuseFlag =
     | 'BMS'
     | 'IMD'
@@ -70,12 +80,29 @@ export interface TelemetryFrame {
     lvs_min_voltage?: number
     lvs_max_voltage?: number
     shutdown_open_cause?: ShutdownOpenCause
+    ts_prevention_flags?: TsPreventionFlag[]
+    rtd_prevention_flags?: RtdPreventionFlag[]
     [key: string]: unknown
 }
 
 export type LinkState = 'connecting' | 'open' | 'closed'
 
 export type TelemetryStatus = 'online' | 'offline'
+
+/**
+ * Reads a single flag's presence out of a `Flag`-enum wire array (all of
+ * these serialize as an array of set member names). `undefined` when the
+ * array itself hasn't arrived yet (no signal), a plain boolean once it has —
+ * every per-flag helper below is a thin, differently-named wrapper over this,
+ * since what "presence" means (online vs. ok vs. blocking) differs per
+ * field.
+ */
+function isFlagSet<T extends string>(
+    flags: readonly T[] | undefined,
+    flag: T,
+): boolean | undefined {
+    return flags === undefined ? undefined : flags.includes(flag)
+}
 
 /**
  * Reads a single component's online signal out of the `online_flags` array.
@@ -87,7 +114,7 @@ export function isFlagOnline(
     flags: readonly OnlineFlag[] | undefined,
     flag: OnlineFlag,
 ): boolean | undefined {
-    return flags === undefined ? undefined : flags.includes(flag)
+    return isFlagSet(flags, flag)
 }
 
 /**
@@ -100,5 +127,28 @@ export function isFuseOk(
     flags: readonly FuseFlag[] | undefined,
     flag: FuseFlag,
 ): boolean | undefined {
-    return flags === undefined ? undefined : flags.includes(flag)
+    return isFlagSet(flags, flag)
+}
+
+/**
+ * Reads whether a single condition is currently blocking TS activation out
+ * of the `ts_prevention_flags` array — presence means "this is blocking",
+ * absence means the condition is satisfied. `undefined` when the array
+ * hasn't arrived yet (no signal).
+ */
+export function isTsPreventionFlagSet(
+    flags: readonly TsPreventionFlag[] | undefined,
+    flag: TsPreventionFlag,
+): boolean | undefined {
+    return isFlagSet(flags, flag)
+}
+
+/**
+ * Same as `isTsPreventionFlagSet`, for `rtd_prevention_flags`.
+ */
+export function isRtdPreventionFlagSet(
+    flags: readonly RtdPreventionFlag[] | undefined,
+    flag: RtdPreventionFlag,
+): boolean | undefined {
+    return isFlagSet(flags, flag)
 }
