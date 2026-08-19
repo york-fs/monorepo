@@ -11,15 +11,6 @@ import serial_asyncio
 import struct
 
 
-class PrechargeState(Enum):
-    LED_CHECK = 0
-    PRECHECK = 1
-    STANDBY = 2
-    PRECHARGE = 3
-    PRECHARGE_HOLD = 4
-    ACTIVE = 5
-
-
 class OnlineFlags(Flag):
     FRONT_ONLINE = enum.auto()
     BMS_ONLINE = enum.auto()
@@ -45,6 +36,49 @@ class FuseFlags(Flag):
     DWIN = enum.auto()
     AUX_1 = enum.auto()
     AUX_2 = enum.auto()
+
+
+class ShutdownOpenCause(Enum):
+    NONE = 0
+    REAR_INPUT = enum.auto()
+    FRONT_ESTOP = enum.auto()
+    BRAKE_OVER_TRAVEL = enum.auto()
+    INERTIA_SWITCH = enum.auto()
+    FRONT_AUXILIARY = enum.auto()
+    FRONT_OUTPUT = enum.auto()
+    BMS_LATCH = enum.auto()
+    IMD_LATCH = enum.auto()
+    INVERTER_INTERLOCK = enum.auto()
+    SHUTDOWN_LATCH_FAILURE = enum.auto()
+    LEFT_ESTOP = enum.auto()
+    RIGHT_ESTOP = enum.auto()
+    HVD_INTERLOCK = enum.auto()
+    REAR_AUXILIARY = enum.auto()
+    TSMS = enum.auto()
+
+
+class TsPreventionFlags(Flag):
+    SHUTDOWN_OPEN = enum.auto()
+    BAD_FUSE = enum.auto()
+    FRONT_OFFLINE = enum.auto()
+    NOT_REQUESTED = enum.auto()
+    PRECHARGE_OFFLINE = enum.auto()
+    PRECHARGE_STATE = enum.auto()
+
+
+class RtdPreventionFlags(Flag):
+    TS_NOT_ACTIVE = enum.auto()
+    NOT_REQUESTED = enum.auto()
+    BRAKE_NOT_PRESSED = enum.auto()
+
+
+class PrechargeState(Enum):
+    LED_CHECK = 0
+    PRECHECK = enum.auto()
+    STANDBY = enum.auto()
+    PRECHARGE = enum.auto()
+    PRECHARGE_HOLD = enum.auto()
+    ACTIVE = enum.auto()
 
 
 class PrechargeErrorFlags(Flag):
@@ -82,6 +116,9 @@ class TelemetryFrame:
     fuses: FuseFlags = attrs.field(converter=FuseFlags)
     lvs_min_voltage: float = attrs.field(converter=lambda V: V / 1000)
     lvs_max_voltage: float = attrs.field(converter=lambda V: V / 1000)
+    shutdown_open_cause: ShutdownOpenCause = attrs.field(converter=ShutdownOpenCause)
+    ts_prevention_flags: TsPreventionFlags = attrs.field(converter=TsPreventionFlags)
+    rtd_prevention_flags: RtdPreventionFlags = attrs.field(converter=RtdPreventionFlags)
 
     # Precharge status.
     precharge_state: PrechargeState = attrs.field(converter=PrechargeState)
@@ -108,7 +145,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIHHBBBBHHHBI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:
