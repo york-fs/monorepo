@@ -174,14 +174,23 @@ void StateMachine::init() {
     // Configure peripheral clock frequency.
     i2c->CR2 = ::hal_low_power() ? 8u : 28u;
 
-    // Configure for 100 kHz.
-    // TODO: Calculate this properly and allow different speeds.
-    if (hal_low_power()) {
-        i2c->CCR = 40u;
-        i2c->TRISE = 9u;
+    // Configure clock control register.
+    if (m_speed == Speed::_400) {
+        if (hal_low_power()) {
+            i2c->CCR = I2C_CCR_FS | 7u;
+            i2c->TRISE = 3u;
+        } else {
+            i2c->CCR = I2C_CCR_FS | 23u;
+            i2c->TRISE = 9u;
+        }
     } else {
-        i2c->CCR = 140u;
-        i2c->TRISE = 29u;
+        if (hal_low_power()) {
+            i2c->CCR = 40u;
+            i2c->TRISE = 9u;
+        } else {
+            i2c->CCR = 140u;
+            i2c->TRISE = 29u;
+        }
     }
 
     // Enable the peripheral.

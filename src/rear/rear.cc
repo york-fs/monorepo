@@ -100,7 +100,7 @@ bool s_dti_ok = false;
 freertos::Queue<RadioData, 1> s_radio_data;
 
 // I2C state machine for GPIO expander.
-i2c::StateMachine s_i2c_sm(i2c::Bus::_1);
+i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
 
 hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
 hal::Gpio s_radio_rx(hal::GpioPort::A, 10);

@@ -11,6 +11,11 @@ enum class Bus {
     _2,
 };
 
+enum class Speed {
+    _100,
+    _400,
+};
+
 enum class State {
     Idle,
     Start,
@@ -33,13 +38,14 @@ class StateMachine {
     std::atomic<std::uint32_t> m_head;
     std::atomic<State> m_state{State::Error};
     Bus m_bus;
+    Speed m_speed;
     std::uint8_t m_address{0};
     bool m_emit_stop{true};
 
     void start(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop);
 
 public:
-    explicit StateMachine(Bus bus) : m_bus(bus) {}
+    StateMachine(Bus bus, Speed speed) : m_bus(bus), m_speed(speed) {}
 
     /**
      * @brief Initialise the I2C peripheral. Can also be used to reinitialise the peripheral in case of a bus lockup or

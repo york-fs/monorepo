@@ -89,7 +89,7 @@ constexpr std::array<std::array<std::uint32_t, 3>, 8> k_thermistor_mapping{{
 static_assert(k_thermistor_mapping.size() * k_thermistor_mapping[0].size() == k_thermistor_count);
 
 // I2C communication to master.
-i2c::StateMachine s_i2c_sm(i2c::Bus::_1);
+i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
 std::uint8_t s_i2c_address = 0;
 std::array<std::uint8_t, 128> s_i2c_buffer;
 freertos::MessageBuffer<128> s_cmd_queue;
