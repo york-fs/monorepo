@@ -1142,9 +1142,10 @@ void app_main() {
     hal::gpio_set(s_eeprom_wc);
 
     // Configure I2C pins for peripheral use.
-    for (const auto &pin : {s_scl_1, s_sda_1, s_scl_2, s_sda_2}) {
-        pin.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-    }
+    s_scl_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
+    s_sda_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
+    s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
 
     // Configure current sensing and SPI pins.
     s_current_switch.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);

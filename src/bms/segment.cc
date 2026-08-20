@@ -503,8 +503,8 @@ void cmd_task(void *) {
 
     // Initialise I2C to the master.
     s_i2c_sm.init();
-    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
+    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
     i2c_listen();
 
     // Wake the external ADC.
