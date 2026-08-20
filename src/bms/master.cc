@@ -281,7 +281,7 @@ std::int8_t s_mcu_temperature = 0;
 freertos::Mutex s_mcu_mutex;
 
 // I2C state machines.
-i2c::StateMachine s_i2c1_sm(i2c::Bus::_1, i2c::Speed::_100);
+i2c::StateMachine s_i2c1_sm(i2c::Bus::_1, i2c::Speed::_400);
 i2c::StateMachine s_i2c2_sm(i2c::Bus::_2, i2c::Speed::_100);
 
 // Tasks.
