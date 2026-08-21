@@ -280,13 +280,15 @@ void main_task(void *) {
         }
         if (!s_front_status) {
             ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
-        } else if (!s_front_status->ts_activation_desired) {
+        }
+        if (!s_front_status || !s_front_status->ts_activation_desired) {
             ts_prevention_flags.set(TsPreventionFlag::NotRequested);
         }
         if (!s_precharge_status) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
-        } else if (s_precharge_status->state != precharge::State::Standby &&
-                   !precharge::is_state_active(s_precharge_status->state)) {
+        }
+        if (!s_precharge_status || (s_precharge_status->state != precharge::State::Standby &&
+                                    !precharge::is_state_active(s_precharge_status->state))) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
         }
 
@@ -296,7 +298,7 @@ void main_task(void *) {
         if (ts_prevention_flags.any_set()) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
-        if (s_front_status && !s_front_status->rtd_activation_desired) {
+        if (!s_front_status || !s_front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
         }
         rtd_latched &= !rtd_prevention_flags.any_set();
