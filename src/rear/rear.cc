@@ -346,6 +346,14 @@ void main_task(void *) {
             rtd_latched = true;
         }
 
+        // Broadcast status message.
+        StatusMessage status_message{
+            .shutdown_open_cause = shutdown_open_cause,
+            .ts_prevention_flags = ts_prevention_flags,
+            .rtd_prevention_flags = rtd_prevention_flags,
+        };
+        can::transmit(config::k_rear_can_id, status_message);
+
         // Update radio data.
         s_radio_data.overwrite(RadioData{
             .fuse_bitset = fuse_bitset,
@@ -355,8 +363,6 @@ void main_task(void *) {
             .ts_prevention_flags = ts_prevention_flags,
             .rtd_prevention_flags = rtd_prevention_flags,
         });
-
-        // TODO: Send status message with RTD status.
     }
 }
 
