@@ -10,11 +10,20 @@ const props = withDefaults(
         name: string
         /** This component's own online signal, if it has one — see `useLastSeen`. */
         online?: boolean
+        /**
+         * Whether this component *has* its own online flag at all, distinct
+         * from `online`'s current value — `online` reads `undefined` both
+         * when a component has no flag of its own (rear distribution) and,
+         * transiently, when a component that *does* have one just hasn't had
+         * a frame yet (e.g. on first load with no connection). Only the
+         * former should suppress the timing sub-line permanently.
+         */
+        hasOwnSignal?: boolean
     }>(),
     // Vue casts an absent Boolean-typed prop to `false` unless it has an
     // explicit default — without this, "no signal" and "signal says
     // offline" would be indistinguishable from `props.online` alone.
-    { online: undefined },
+    { online: undefined, hasOwnSignal: false },
 )
 
 const { frame } = useTelemetry()
@@ -28,10 +37,10 @@ const severity = computed(() => (status.value === 'online' ? 'good' : 'critical'
 const statusLabel = computed(() => (status.value === 'online' ? 'Online' : 'Offline'))
 const lastSeenText = computed(() => `last seen ${relativeText.value}`)
 
-// Only the overall link tile (no `online` prop of its own) has a timing
-// signal to show — other components only ever report online/offline, with
-// no uptime or "last seen" of their own.
-const hasTiming = computed(() => props.online === undefined)
+// Only the overall link tile (rear distribution — no online flag of its own)
+// has a timing signal to show — other components only ever report
+// online/offline, with no uptime or "last seen" of their own.
+const hasTiming = computed(() => !props.hasOwnSignal)
 </script>
 
 <template>

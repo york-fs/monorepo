@@ -11,15 +11,22 @@ const { frame } = useTelemetry()
         <ConnectionStatusTile name="Rear distribution" />
         <ConnectionStatusTile
             name="Front distribution"
+            has-own-signal
             :online="isFlagOnline(frame.online_flags, 'FRONT_ONLINE')"
         />
-        <ConnectionStatusTile name="BMS" :online="isFlagOnline(frame.online_flags, 'BMS_ONLINE')" />
+        <ConnectionStatusTile
+            name="BMS"
+            has-own-signal
+            :online="isFlagOnline(frame.online_flags, 'BMS_ONLINE')"
+        />
         <ConnectionStatusTile
             name="Precharge"
+            has-own-signal
             :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')"
         />
         <ConnectionStatusTile
             name="Inverter"
+            has-own-signal
             :online="isFlagOnline(frame.online_flags, 'INVERTER_ONLINE')"
         />
     </div>
