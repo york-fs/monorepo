@@ -14,7 +14,7 @@ import {
 import type { TooltipItem } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import { useVoltageHistory } from '@/composables/useVoltageHistory'
-import { formatUptimeWithMs } from '@/utils/formatUptime'
+import { formatUptime, formatUptimeWithMs } from '@/utils/formatUptime'
 
 ChartJS.register(LinearScale, LineElement, PointElement, Legend, Tooltip, Decimation, zoomPlugin)
 
@@ -118,7 +118,14 @@ const chartOptions = computed(() => ({
             ticks: {
                 color: colors.value.text,
                 font: { size: 10 },
-                callback: (value: number | string) => formatUptimeWithMs(Number(value)),
+                // Only show millisecond precision once zoomed in far enough for it to
+                // matter — otherwise every tick ends in a noisy ".000".
+                callback: function (this: { max: number; min: number }, value: number | string) {
+                    const value_ = Number(value)
+                    return this.max - this.min < 5
+                        ? formatUptimeWithMs(value_)
+                        : formatUptime(value_)
+                },
             },
         },
         y: {
