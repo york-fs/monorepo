@@ -21,4 +21,15 @@ import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
     gap: 1.75rem;
     padding: 1.5rem 1.25rem;
 }
+
+h1 {
+    /* The UA default (~2em, bold, with its own top/bottom margin) is both
+       oversized next to the rest of the type scale and adds extra space on
+       top of .home's grid gap, since grid items don't collapse margins. */
+    font-size: 1.375rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--ink-primary);
+}
 </style>

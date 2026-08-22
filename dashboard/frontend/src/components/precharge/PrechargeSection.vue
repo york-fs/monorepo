@@ -57,21 +57,6 @@ const { frame } = useTelemetry()
     gap: 1.25rem;
 }
 
-h2 {
-    font-size: 1rem;
-    margin: 0;
-    color: var(--ink-primary);
-}
-
-h3 {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-muted);
-    margin: 0 0 0.625rem;
-}
-
 .body {
     display: grid;
     grid-template-columns: minmax(15rem, 20rem) 1fr;

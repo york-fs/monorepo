@@ -41,3 +41,20 @@ body {
     margin: 0;
     text-rendering: optimizeLegibility;
 }
+
+/* Section title (e.g. "Distribution", "Precharge"). */
+h2 {
+    font-size: 1rem;
+    margin: 0;
+    color: var(--ink-primary);
+}
+
+/* Uppercase panel label (e.g. "Voltages", "Fuses", a checklist's title). */
+h3 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-muted);
+    margin: 0 0 0.625rem;
+}

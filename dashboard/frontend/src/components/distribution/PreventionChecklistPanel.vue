@@ -12,12 +12,12 @@ defineProps<{
 
 <template>
     <SeverityCard class="panel" :class="{ suppressed }" :severity="severity">
-        <h3>
-            {{ title }}
+        <div class="header">
+            <h3>{{ title }}</h3>
             <span v-if="suppressed && suppressedNote" class="suppressed-note">{{
                 suppressedNote
             }}</span>
-        </h3>
+        </div>
         <ul class="checklist">
             <li
                 v-for="row in rows"
@@ -41,16 +41,15 @@ defineProps<{
     opacity: 0.5;
 }
 
-h3 {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-muted);
-    margin: 0 0 0.625rem;
+.header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    margin-bottom: 0.625rem;
+}
+
+.header h3 {
+    margin: 0;
 }
 
 .suppressed-note {

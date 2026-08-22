@@ -20,18 +20,21 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
 </script>
 
 <template>
-    <div class="fusebox">
-        <div v-for="f in fuseStates" :key="f.flag" class="fuse-cell">
-            <div class="ato-glyph" :data-state="f.state">
-                <span class="ato-highlight"></span>
-                <span v-if="f.state !== 'blown'" class="ato-link"></span>
-                <template v-else>
-                    <span class="ato-link-seg left"></span>
-                    <span class="ato-link-seg right"></span>
-                </template>
+    <div class="fuses">
+        <h3>Fuses</h3>
+        <div class="fusebox">
+            <div v-for="f in fuseStates" :key="f.flag" class="fuse-cell">
+                <div class="ato-glyph" :data-state="f.state">
+                    <span class="ato-highlight"></span>
+                    <span v-if="f.state !== 'blown'" class="ato-link"></span>
+                    <template v-else>
+                        <span class="ato-link-seg left"></span>
+                        <span class="ato-link-seg right"></span>
+                    </template>
+                </div>
+                <span class="ato-prongs"><span></span><span></span></span>
+                <span class="fuse-label">{{ f.flag }}</span>
             </div>
-            <span class="ato-prongs"><span></span><span></span></span>
-            <span class="fuse-label">{{ f.flag }}</span>
         </div>
     </div>
 </template>

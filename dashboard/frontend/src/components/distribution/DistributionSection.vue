@@ -45,10 +45,4 @@ const { frame } = useTelemetry()
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: 1rem;
 }
-
-h2 {
-    font-size: 1rem;
-    margin: 0;
-    color: var(--ink-primary);
-}
 </style>
