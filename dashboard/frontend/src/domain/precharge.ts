@@ -1,4 +1,4 @@
-import type { PrechargeErrorFlag, PrechargeRelay, PrechargeState } from '@/types/telemetry'
+import type { PrechargeErrorFlag, PrechargeRelay, PrechargeState } from '@/telemetry'
 
 export const PRECHARGE_STATES: PrechargeState[] = [
     'LED_CHECK',

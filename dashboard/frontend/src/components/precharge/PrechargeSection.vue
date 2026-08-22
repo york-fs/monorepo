@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
-import { isFlagOnline } from '@/types/telemetry'
+import { isFlagOnline } from '@/telemetry'
 import StaleSection from '@/components/StaleSection.vue'
 import PrechargeStateStepper from '@/components/precharge/PrechargeStateStepper.vue'
 import PrechargeFlagsList from '@/components/precharge/PrechargeFlagsList.vue'

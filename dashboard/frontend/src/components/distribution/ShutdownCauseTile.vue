@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import AccentTile from '@/components/AccentTile.vue'
 import { shutdownOpenCauseLabel, shutdownOpenCauseSeverity } from '@/domain/shutdown'
-import type { ShutdownOpenCause } from '@/types/telemetry'
+import type { ShutdownOpenCause } from '@/telemetry'
 
 const props = defineProps<{
     cause?: ShutdownOpenCause

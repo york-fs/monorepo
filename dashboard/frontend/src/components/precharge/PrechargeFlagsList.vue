@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PrechargeErrorFlag, PrechargeState } from '@/types/telemetry'
+import type { PrechargeErrorFlag, PrechargeState } from '@/telemetry'
 import { PRECHARGE_FLAG_META, isFlagLive } from '@/domain/precharge'
 
 const props = defineProps<{

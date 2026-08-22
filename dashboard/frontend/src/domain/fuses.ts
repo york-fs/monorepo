@@ -1,4 +1,4 @@
-import type { FuseFlag } from '@/types/telemetry'
+import type { FuseFlag } from '@/telemetry'
 
 export const FUSE_FLAGS: FuseFlag[] = [
     'BMS',

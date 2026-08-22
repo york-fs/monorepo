@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PrechargeRelay } from '@/types/telemetry'
+import type { PrechargeRelay } from '@/telemetry'
 import { PRECHARGE_RELAY_LABELS } from '@/domain/precharge'
 
 const props = defineProps<{

@@ -1,4 +1,4 @@
-import type { RtdPreventionFlag, TsPreventionFlag } from '@/types/telemetry'
+import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
 
 /**
  * Render order + the positive-phrased condition each flag's absence

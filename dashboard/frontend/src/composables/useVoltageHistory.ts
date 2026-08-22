@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted, reactive } from 'vue'
 import { onTelemetryFrame } from '@/composables/useTelemetry'
-import type { TelemetryFrame } from '@/types/telemetry'
+import type { TelemetryFrame } from '@/telemetry'
 
 export interface VoltageSample {
     /** Seconds since car startup. */

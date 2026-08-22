@@ -1,5 +1,5 @@
 import { computed, reactive, readonly, ref } from 'vue'
-import type { LinkState, TelemetryFrame, TelemetryStatus } from '@/types/telemetry'
+import type { LinkState, TelemetryFrame, TelemetryStatus } from '@/telemetry'
 
 // No frame in this long means treat the data as stale even though the
 // SSE socket may still be open — the radio link can go quiet without the

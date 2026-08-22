@@ -1,4 +1,4 @@
-import type { ShutdownOpenCause } from '@/types/telemetry'
+import type { ShutdownOpenCause } from '@/telemetry'
 
 // Acronyms/initialisms that shouldn't get naive title-casing.
 const ACRONYMS: Record<string, string> = {

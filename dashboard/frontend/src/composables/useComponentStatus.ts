@@ -1,6 +1,6 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useTelemetry } from '@/composables/useTelemetry'
-import type { TelemetryStatus } from '@/types/telemetry'
+import type { TelemetryStatus } from '@/telemetry'
 
 /**
  * Combines the overall telemetry link status with a component's own online

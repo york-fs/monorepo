@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
 import ConnectionStatusTile from '@/components/status-bar/ConnectionStatusTile.vue'
-import { isFlagOnline } from '@/types/telemetry'
+import { isFlagOnline } from '@/telemetry'
 
 const { frame } = useTelemetry()
 </script>

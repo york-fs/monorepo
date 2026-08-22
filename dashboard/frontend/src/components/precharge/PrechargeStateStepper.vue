@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PrechargeState } from '@/types/telemetry'
+import type { PrechargeState } from '@/telemetry'
 import { PRECHARGE_STATES, PRECHARGE_STATE_LABELS } from '@/domain/precharge'
 
 const props = defineProps<{

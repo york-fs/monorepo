@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { FUSE_FLAGS } from '@/domain/fuses'
-import { isFuseOk } from '@/types/telemetry'
-import type { FuseFlag } from '@/types/telemetry'
+import { isFuseOk } from '@/telemetry'
+import type { FuseFlag } from '@/telemetry'
 
 const props = defineProps<{
     fuses?: readonly FuseFlag[]

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { isRtdPreventionFlagSet, isTsPreventionFlagSet } from '@/types/telemetry'
-import type { RtdPreventionFlag, TsPreventionFlag } from '@/types/telemetry'
+import { isRtdPreventionFlagSet, isTsPreventionFlagSet } from '@/telemetry'
+import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
 import {
     RTD_PREVENTION_FLAGS,
     RTD_PREVENTION_LABELS,

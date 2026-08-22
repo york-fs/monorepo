@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { onTelemetryFrame } from '@/composables/useTelemetry'
-import type { TelemetryFrame } from '@/types/telemetry'
+import type { TelemetryFrame } from '@/telemetry'
 
 /**
  * Tracks the lowest/highest `lvs_min_voltage`/`lvs_max_voltage` seen since

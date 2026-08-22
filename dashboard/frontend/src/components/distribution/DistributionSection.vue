@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
-import { isFlagOnline } from '@/types/telemetry'
+import { isFlagOnline } from '@/telemetry'
 import StaleSection from '@/components/StaleSection.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
 import LvVoltageTile from '@/components/distribution/LvVoltageTile.vue'
