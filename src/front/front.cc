@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 
+// TODO: RTD buzzer.
 // TODO: Task notification wrapper which can set bits via FlagBitset.
 
 using namespace front;
@@ -38,6 +39,7 @@ constexpr std::uint32_t k_throttle_period = 10;
 constexpr std::uint32_t k_mcu_vref = 3300;
 
 TimeTracked<precharge::State> s_precharge_state(25);
+TimeTracked<rear::StatusMessage> s_rear_status(25);
 std::array<std::uint16_t, 9> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
@@ -75,6 +77,9 @@ void main_task(void *) {
         }
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_precharge_can_id, 0);
+    can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
+        s_rear_status.receive(rear_status);
+    }>(config::k_rear_can_id, 1);
 
     // Initialise periodic node status transmission.
     node_status::init(config::k_front_can_id);
@@ -151,10 +156,13 @@ void main_task(void *) {
 
         // Desired state timeouts if the TS and RTD actual states don't activate in time.
         if (ts_activation_desired && xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(500) &&
-            (!s_precharge_state || !precharge::is_state_active(*s_precharge_state))) {
+            (!s_rear_status || s_rear_status->ts_prevention_flags.any_set())) {
             ts_activation_desired.reset();
         }
-        // TODO: RTD check and buzzer activation.
+        if (rtd_activation_desired && xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(500) &&
+            (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
+            rtd_activation_desired.reset();
+        }
 
         // Build bitset of raw shutdown samples.
         ShutdownSamples shutdown_samples;
@@ -171,12 +179,12 @@ void main_task(void *) {
             shutdown_samples.set(ShutdownSample::Auxiliary);
         }
 
-        StatusMessage desired_activation_message{
+        StatusMessage status_message{
             .shutdown_samples = shutdown_samples,
             .ts_activation_desired = ts_activation_desired.has_value(),
             .rtd_activation_desired = rtd_activation_desired.has_value(),
         };
-        can::transmit(config::k_front_can_id, desired_activation_message);
+        can::transmit(config::k_front_can_id, status_message);
 
         // Calculate LVS voltages by reversing the 5.7x divider on each.
         std::array<std::uint16_t, 7> fuse_voltages{};
