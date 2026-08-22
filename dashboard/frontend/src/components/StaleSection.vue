@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import { useLastSeen } from '@/composables/useLastSeen'
+import { useComponentStatus } from '@/composables/useComponentStatus'
 
 const props = withDefaults(
     defineProps<{
-        /** This section's own online signal, if it has one — see `useLastSeen`. */
+        /** This section's own online signal, if it has one — see `useComponentStatus`. */
         online?: boolean
     }>(),
     { online: undefined },
 )
 
-const { status, relativeText } = useLastSeen(() => props.online)
+const { status } = useComponentStatus(() => props.online)
 </script>
 
 <template>
     <div class="stale-section">
         <div class="header-row">
             <slot name="header" />
-            <span v-if="status === 'offline'" class="stale-banner">
-                Stale — last seen {{ relativeText }}
-            </span>
+            <!-- No "last seen Ns ago" here — that duration is the whole
+                 telemetry link's freshness (see useLastSeen), not specific to
+                 this section's own online signal, so showing it here would
+                 misrepresent how long *this* section has actually been stale. -->
+            <span v-if="status === 'offline'" class="stale-banner">Stale</span>
         </div>
         <div class="content" :class="{ dimmed: status === 'offline' }">
             <slot />
