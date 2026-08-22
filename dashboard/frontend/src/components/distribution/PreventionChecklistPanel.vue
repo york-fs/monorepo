@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import SeverityCard from '@/components/SeverityCard.vue'
+
 defineProps<{
     title: string
     rows: { key: string; label: string; ok: boolean | undefined }[]
+    severity?: 'good' | 'warning' | 'critical'
     suppressed?: boolean
     suppressedNote?: string
 }>()
 </script>
 
 <template>
-    <div class="panel" :class="{ suppressed }">
+    <SeverityCard class="panel" :class="{ suppressed }" :severity="severity">
         <h3>
             {{ title }}
             <span v-if="suppressed && suppressedNote" class="suppressed-note">{{
@@ -25,14 +28,11 @@ defineProps<{
                 {{ row.label }}
             </li>
         </ul>
-    </div>
+    </SeverityCard>
 </template>
 
 <style scoped>
 .panel {
-    background: var(--surface-card);
-    border: 1px solid var(--border);
-    border-radius: 0.375rem;
     padding: 0.875rem 1rem;
     transition: opacity 0.15s ease;
 }

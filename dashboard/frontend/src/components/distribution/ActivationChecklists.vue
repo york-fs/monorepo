@@ -42,14 +42,31 @@ const rtdRows = computed(() =>
 // they were independent. Only suppress once we actually know TS is blocked —
 // no signal yet shouldn't read as "suppressed".
 const tsBlocked = computed(() => (props.tsPreventionFlags?.length ?? 0) > 0)
+
+// Accent colour for each panel: green once nothing is blocking, amber if the
+// only thing left is that activation hasn't been requested yet, red for any
+// actual fault/offline/state condition still blocking. `undefined` (no
+// signal yet) is left uncoloured, same convention as the rest of the app.
+function activationSeverity(
+    flags: readonly string[] | undefined,
+): 'good' | 'warning' | 'critical' | undefined {
+    if (flags === undefined) return undefined
+    if (flags.length === 0) return 'good'
+    if (flags.length === 1 && flags[0] === 'NOT_REQUESTED') return 'warning'
+    return 'critical'
+}
+
+const tsSeverity = computed(() => activationSeverity(props.tsPreventionFlags))
+const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
 </script>
 
 <template>
     <div class="checklists">
-        <PreventionChecklistPanel title="TS activation" :rows="tsRows" />
+        <PreventionChecklistPanel title="TS activation" :rows="tsRows" :severity="tsSeverity" />
         <PreventionChecklistPanel
             title="Ready-to-drive"
             :rows="rtdRows"
+            :severity="rtdSeverity"
             :suppressed="tsBlocked"
             suppressed-note="TS not active"
         />

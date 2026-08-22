@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SeverityCard from '@/components/SeverityCard.vue'
+
 defineProps<{
     name: string
     severity?: 'good' | 'warning' | 'critical'
@@ -6,32 +8,19 @@ defineProps<{
 </script>
 
 <template>
-    <div class="tile" :data-severity="severity">
+    <SeverityCard class="tile" :severity="severity">
         <span class="name">{{ name }}</span>
         <span class="value"><slot /></span>
         <div class="sub"><slot name="sub" /></div>
-    </div>
+    </SeverityCard>
 </template>
 
 <style scoped>
 .tile {
-    background: var(--surface-card);
-    border: 1px solid var(--border);
-    border-left-width: 0.25rem;
-    border-radius: 0.375rem;
     padding: 0.875rem 1.125rem;
     display: grid;
     grid-template-rows: auto auto auto;
     gap: 0.25rem;
-}
-.tile[data-severity='good'] {
-    border-left-color: var(--status-good);
-}
-.tile[data-severity='warning'] {
-    border-left-color: var(--status-warning);
-}
-.tile[data-severity='critical'] {
-    border-left-color: var(--status-critical);
 }
 
 .name {
