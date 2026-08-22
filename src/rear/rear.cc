@@ -186,6 +186,20 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause() {
     return ShutdownCircuitOpenCause::None;
 }
 
+bool is_precharge_activation_ready() {
+    if (!s_precharge_status) {
+        return false;
+    }
+    if (s_precharge_status->state == precharge::State::LedCheck ||
+        s_precharge_status->state == precharge::State::Precheck) {
+        return false;
+    }
+    if (s_precharge_status->state != precharge::State::Standby && s_precharge_status->error_flags.any_set()) {
+        return false;
+    }
+    return true;
+}
+
 void main_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3);
@@ -287,8 +301,7 @@ void main_task(void *) {
         if (!s_precharge_status) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
         }
-        if (!s_precharge_status || (s_precharge_status->state != precharge::State::Standby &&
-                                    !precharge::is_state_active(s_precharge_status->state))) {
+        if (!is_precharge_activation_ready()) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
         }
 

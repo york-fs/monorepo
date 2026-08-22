@@ -13,15 +13,4 @@ enum class State : std::uint8_t {
     Active,
 };
 
-inline bool is_state_active(State state) {
-    switch (state) {
-    case State::Precharge:
-    case State::PrechargeHold:
-    case State::Active:
-        return true;
-    default:
-        return false;
-    }
-}
-
 } // namespace precharge
