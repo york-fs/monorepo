@@ -312,6 +312,9 @@ void main_task(void *) {
         if (ts_prevention_flags.any_set()) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
+        if (!s_precharge_status || s_precharge_status->state != precharge::State::Active) {
+            rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
+        }
         if (!s_front_status || !s_front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
         }
