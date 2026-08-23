@@ -10,17 +10,18 @@ export const PRECHARGE_STATES: PrechargeState[] = [
 ]
 
 export const PRECHARGE_STATE_LABELS: Record<PrechargeState, string> = {
-    LED_CHECK: 'LED check',
+    LED_CHECK: 'LED Check',
     PRECHECK: 'Precheck',
     STANDBY: 'Standby',
-    PRECHARGE: 'Precharging',
-    PRECHARGE_HOLD: 'Precharge hold',
+    PRECHARGE: 'Precharge',
+    PRECHARGE_HOLD: 'Precharge Hold',
     ACTIVE: 'Active',
 }
 
 type PrechargeFlagKind = 'fault' | 'waiting' | 'deactivation'
 
 interface PrechargeFlagMeta {
+    label: string
     description: string
     kind: PrechargeFlagKind
     /**
@@ -34,66 +35,79 @@ interface PrechargeFlagMeta {
 
 export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> = {
     DISCHARGE_OPEN: {
+        label: 'Discharge Open',
         description: 'Discharge relay measured open when it should have been closed',
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY'],
     },
     PRECHARGE_CLOSED: {
+        label: 'Precharge Closed',
         description: 'Precharge relay measured closed when it should have been open',
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY', 'ACTIVE'],
     },
     AIR_POS_CLOSED: {
-        description: 'Main positive relay measured closed when it should have been open',
+        label: 'AIR+ Closed',
+        description: 'Positive AIR measured closed when it should have been open',
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY', 'PRECHARGE'],
     },
     AIR_NEG_CLOSED: {
-        description: 'Main negative relay measured closed when it should have been open',
+        label: 'AIR- Closed',
+        description: 'Negative AIR measured closed when it should have been open',
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY'],
     },
     PRECHECK_VOLTAGE: {
+        label: 'Precheck Voltage',
         description: 'Unexpected voltage measured on the output side of the precharge relay',
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY'],
     },
     WAITING_DISCHARGE: {
-        description: 'TS-side voltage needs to drain before proceeding',
+        label: 'Waiting Discharge',
+        description: 'Waiting for TS-side voltage to drain before proceeding',
         kind: 'waiting',
         liveStates: ['PRECHECK', 'STANDBY'],
     },
     WAITING_ACTIVATION: {
+        label: 'Waiting Activation',
         description: 'Awaiting an activation request over CAN',
         kind: 'waiting',
         liveStates: ['STANDBY'],
     },
     SHUTDOWN_OPEN: {
+        label: 'Shutdown Open',
         description: 'Shutdown circuit measured open',
         kind: 'fault',
         liveStates: ['PRECHARGE', 'PRECHARGE_HOLD', 'ACTIVE'],
     },
     PRECHARGE_OPEN: {
+        label: 'Precharge Open',
         description: 'Precharge relay measured open when it should have been closed',
         kind: 'fault',
         liveStates: ['PRECHARGE', 'PRECHARGE_HOLD'],
     },
     AIR_POS_OPEN: {
-        description: 'Main positive relay measured open when it should have been closed',
+        label: 'AIR+ Open',
+        description: 'Positive AIR measured open when it should have been closed',
         kind: 'fault',
         liveStates: ['PRECHARGE_HOLD', 'ACTIVE'],
     },
     AIR_NEG_OPEN: {
-        description: 'Main negative relay measured open when it should have been closed',
+        label: 'AIR- Open',
+        description: 'Negative AIR measured open when it should have been closed',
         kind: 'fault',
         liveStates: ['PRECHARGE', 'PRECHARGE_HOLD', 'ACTIVE'],
     },
     DEACTIVATION: {
+        label: 'Deactivation',
         description: 'High voltage deactivated via a CAN request',
         kind: 'deactivation',
-        liveStates: ['ACTIVE'],
+        liveStates: ['PRECHARGE', 'PRECHARGE_HOLD', 'ACTIVE'],
     },
     DEVIATION: {
+        label: 'Deviation',
         description: "TS voltage didn't match the expected precharge RC curve",
         kind: 'fault',
         liveStates: ['PRECHARGE'],
@@ -103,8 +117,8 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
 export const PRECHARGE_RELAY_LABELS: Record<PrechargeRelay, string> = {
     DISCHARGE_CLOSED: 'Discharge',
     PRECHARGE_CLOSED: 'Precharge',
-    AIR_POS_CLOSED: 'AIR +',
-    AIR_NEG_CLOSED: 'AIR −',
+    AIR_POS_CLOSED: 'AIR+',
+    AIR_NEG_CLOSED: 'AIR−',
 }
 
 export function isFlagLive(

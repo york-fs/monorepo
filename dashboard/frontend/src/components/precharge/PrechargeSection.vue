@@ -30,7 +30,7 @@ const { frame } = useTelemetry()
                         />
                     </div>
                     <div class="panel">
-                        <h3>Relays</h3>
+                        <h3>Relay States</h3>
                         <PrechargeRelayStates :relays="frame.precharge_relay_states" />
                     </div>
                     <div class="panel">
@@ -43,7 +43,7 @@ const { frame } = useTelemetry()
                 </div>
 
                 <div class="panel chart-panel">
-                    <h3>Voltage history (up to 20 min)</h3>
+                    <h3>Voltage history</h3>
                     <PrechargeVoltageChart />
                 </div>
             </div>

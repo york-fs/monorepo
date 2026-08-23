@@ -26,19 +26,6 @@ function resetZoom() {
     chartRef.value?.chart?.resetZoom()
 }
 
-// The built-in legend's "start" alignment is relative to the whole canvas
-// width, not the plot area — it doesn't know about the space the y-axis
-// labels take up to their left. Nudge it over to line up once layout (and
-// therefore the y-axis width) is settled.
-const alignLegendPlugin = {
-    id: 'alignLegendToChartArea',
-    afterLayout(chart: ChartJS) {
-        if (chart.legend) {
-            chart.legend.left = chart.chartArea.left
-        }
-    },
-}
-
 function readCssVar(name: string): string {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
@@ -79,7 +66,7 @@ onUnmounted(() => {
 const chartData = computed(() => ({
     datasets: [
         {
-            label: 'Precharge rail',
+            label: 'Precharge Rail',
             data: samples
                 .filter((s) => s.prchg !== undefined)
                 .map((s) => ({ x: s.t, y: s.prchg as number })),
@@ -91,7 +78,7 @@ const chartData = computed(() => ({
             stepped: true as const,
         },
         {
-            label: 'Tractive system',
+            label: 'Tractive System',
             data: samples
                 .filter((s) => s.ts !== undefined)
                 .map((s) => ({ x: s.t, y: s.ts as number })),
@@ -183,12 +170,7 @@ const chartOptions = computed(() => ({
 <template>
     <div class="chart-wrap">
         <button type="button" class="reset-zoom" @click="resetZoom">Reset zoom</button>
-        <Line
-            ref="chartRef"
-            :data="chartData"
-            :options="chartOptions"
-            :plugins="[alignLegendPlugin]"
-        />
+        <Line ref="chartRef" :data="chartData" :options="chartOptions" />
         <p v-if="samples.length === 0" class="empty">Waiting for precharge voltage data…</p>
     </div>
 </template>

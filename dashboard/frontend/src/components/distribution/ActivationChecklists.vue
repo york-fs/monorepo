@@ -64,7 +64,7 @@ const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
     <div class="checklists">
         <PreventionChecklistPanel title="TS activation" :rows="tsRows" :severity="tsSeverity" />
         <PreventionChecklistPanel
-            title="Ready-to-drive"
+            title="RTD activation"
             :rows="rtdRows"
             :severity="rtdSeverity"
             :suppressed="tsBlocked"

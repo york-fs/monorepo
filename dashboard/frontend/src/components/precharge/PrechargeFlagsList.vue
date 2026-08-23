@@ -8,14 +8,6 @@ const props = defineProps<{
     state?: PrechargeState
 }>()
 
-function humanize(flag: string): string {
-    return flag
-        .toLowerCase()
-        .split('_')
-        .map((word) => word[0]!.toUpperCase() + word.slice(1))
-        .join(' ')
-}
-
 const KIND_ORDER = { fault: 0, waiting: 1, deactivation: 2 }
 
 const rows = computed(() =>
@@ -42,7 +34,7 @@ const rows = computed(() =>
                 <span class="dot" />
                 <div class="text">
                     <span class="name">
-                        {{ humanize(row.flag) }}
+                        {{ PRECHARGE_FLAG_META[row.flag].label }}
                         <span v-if="!row.live" class="latched-tag">last attempt</span>
                     </span>
                     <span class="description">{{ row.meta.description }}</span>
