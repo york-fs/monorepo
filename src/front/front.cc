@@ -9,10 +9,12 @@
 #include <precharge/can_messages.hh>
 #include <precharge/state.hh>
 #include <rear/can_messages.hh>
+#include <rear/shutdown.hh>
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <optional>
 
@@ -78,7 +80,12 @@ void main_task(void *) {
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_precharge_can_id, 0);
     can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
-        s_rear_status.receive(rear_status);
+        BaseType_t higher_priority_task_woken = pdFALSE;
+        const auto previous = s_rear_status.receive(rear_status);
+        if (!previous || previous->rtd_prevention_flags.value() != rear_status.rtd_prevention_flags.value()) {
+            vTaskNotifyGiveFromISR(*s_led_task, &higher_priority_task_woken);
+        }
+        portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_rear_can_id, 1);
 
     // Initialise periodic node status transmission.
@@ -147,9 +154,10 @@ void main_task(void *) {
             }
         }
 
-        // Update precharge data expiration.
+        // Update data expiration timers.
         s_precharge_state.update();
-        if (!s_precharge_state) {
+        s_rear_status.update();
+        if (!s_precharge_state || !s_rear_status) {
             // Update LED task since CAN messages are not being received.
             xTaskNotifyGive(*s_led_task);
         }
@@ -282,15 +290,31 @@ void led_task(void *) {
 
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
     RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
-    TIM3->DIER |= TIM_DIER_UDE;
+
+    // Setup DMA channel 6 (mapped to TIM3_CH1) to drive the TS button LED.
+    std::array<std::uint32_t, 10> ts_buffer{};
+    DMA1_Channel6->CPAR = std::bit_cast<std::uint32_t>(&GPIOB->BSRR);
+    DMA1_Channel6->CMAR = std::bit_cast<std::uint32_t>(ts_buffer.data());
+    DMA1_Channel6->CCR = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_DIR;
+
+    // Setup DMA channel 2 (mapped to TIM3_CH3) to drive the RTD button LED.
+    std::array<std::uint32_t, 10> rtd_buffer{};
+    DMA1_Channel2->CPAR = std::bit_cast<std::uint32_t>(&GPIOC->BSRR);
+    DMA1_Channel2->CMAR = std::bit_cast<std::uint32_t>(rtd_buffer.data());
+    DMA1_Channel2->CCR = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_DIR;
+
+    // Configure time-base to a 5 Hz period.
     TIM3->PSC = 1999;
     TIM3->ARR = 2799;
-    TIM3->CR1 |= TIM_CR1_CEN;
 
-    std::array<std::uint32_t, 10> dma_buffer{};
-    DMA1_Channel3->CPAR = std::bit_cast<std::uint32_t>(&GPIOB->BSRR);
-    DMA1_Channel3->CMAR = std::bit_cast<std::uint32_t>(dma_buffer.data());
-    DMA1_Channel3->CCR = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_DIR;
+    // Enable DMA request generation on channel 1 and 3 output comparisons.
+    TIM3->DIER = TIM_DIER_CC3DE | TIM_DIER_CC1DE;
+
+    // Enable both channels.
+    TIM3->CCER = TIM_CCER_CC3E | TIM_CCER_CC1E;
+
+    // Enable counter.
+    TIM3->CR1 = TIM_CR1_CEN;
 
     xTaskNotifyGive(xTaskGetCurrentTaskHandle());
     while (true) {
@@ -298,25 +322,47 @@ void led_task(void *) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // Set TS button LED.
-        DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+        DMA1_Channel6->CCR &= ~DMA_CCR_EN;
         if (!s_precharge_state) {
             // Off.
-            dma_buffer[0] = 1u << (s_ts_button_led.pin() + 16);
-            DMA1_Channel3->CNDTR = 1;
+            ts_buffer[0] = 1u << (s_ts_button_led.pin() + 16);
+            DMA1_Channel6->CNDTR = 1;
         } else if (s_precharge_state == precharge::State::Active) {
             // Solid.
-            dma_buffer[0] = 1u << s_ts_button_led.pin();
-            DMA1_Channel3->CNDTR = 1;
+            ts_buffer[0] = 1u << s_ts_button_led.pin();
+            DMA1_Channel6->CNDTR = 1;
         } else {
             // Slow flash for standby and fast for everything else.
             const auto count = s_precharge_state == precharge::State::Standby ? 5 : 1;
             for (std::uint32_t i = 0; i < count; i++) {
-                dma_buffer[i] = 1u << s_ts_button_led.pin();
-                dma_buffer[count + i] = 1u << (s_ts_button_led.pin() + 16);
+                ts_buffer[i] = 1u << s_ts_button_led.pin();
+                ts_buffer[count + i] = 1u << (s_ts_button_led.pin() + 16);
             }
-            DMA1_Channel3->CNDTR = count * 2;
+            DMA1_Channel6->CNDTR = count * 2;
         }
-        DMA1_Channel3->CCR |= DMA_CCR_EN;
+        DMA1_Channel6->CCR |= DMA_CCR_EN;
+
+        // Set RTD button LED.
+        DMA1_Channel2->CCR &= ~DMA_CCR_EN;
+        if (!s_rear_status) {
+            // Off.
+            rtd_buffer[0] = 1u << (s_rtd_button_led.pin() + 16);
+            DMA1_Channel2->CNDTR = 1;
+        } else if (s_rear_status->rtd_prevention_flags.none_set()) {
+            // Solid.
+            rtd_buffer[0] = 1u << s_rtd_button_led.pin();
+            DMA1_Channel2->CNDTR = 1;
+        } else {
+            // Slow flash to indicate ready to activate, fast for any additional errors set.
+            const auto count =
+                s_rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested) ? 5 : 1;
+            for (std::uint32_t i = 0; i < count; i++) {
+                rtd_buffer[i] = 1u << s_rtd_button_led.pin();
+                rtd_buffer[count + i] = 1u << (s_rtd_button_led.pin() + 16);
+            }
+            DMA1_Channel2->CNDTR = count * 2;
+        }
+        DMA1_Channel2->CCR |= DMA_CCR_EN;
     }
 }
 
