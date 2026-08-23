@@ -155,11 +155,11 @@ void main_task(void *) {
         }
 
         // Desired state timeouts if the TS and RTD actual states don't activate in time.
-        if (ts_activation_desired && xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(500) &&
+        if (ts_activation_desired && xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(100) &&
             (!s_rear_status || s_rear_status->ts_prevention_flags.any_set())) {
             ts_activation_desired.reset();
         }
-        if (rtd_activation_desired && xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(500) &&
+        if (rtd_activation_desired && xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(100) &&
             (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
             rtd_activation_desired.reset();
         }
