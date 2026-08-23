@@ -5,19 +5,12 @@ defineProps<{
     title: string
     rows: { key: string; label: string; ok: boolean | undefined }[]
     severity?: 'good' | 'warning' | 'critical'
-    suppressed?: boolean
-    suppressedNote?: string
 }>()
 </script>
 
 <template>
-    <SeverityCard class="panel" :class="{ suppressed }" :severity="severity">
-        <div class="header">
-            <h3>{{ title }}</h3>
-            <span v-if="suppressed && suppressedNote" class="suppressed-note">{{
-                suppressedNote
-            }}</span>
-        </div>
+    <SeverityCard class="panel" :severity="severity">
+        <h3>{{ title }}</h3>
         <ul class="checklist">
             <li
                 v-for="row in rows"
@@ -34,33 +27,6 @@ defineProps<{
 <style scoped>
 .panel {
     padding: 0.875rem 1rem;
-    transition: opacity 0.15s ease;
-}
-
-.panel.suppressed {
-    opacity: 0.5;
-}
-
-.header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.625rem;
-}
-
-.header h3 {
-    margin: 0;
-}
-
-.suppressed-note {
-    font-size: 0.65625rem;
-    font-weight: 600;
-    text-transform: none;
-    letter-spacing: 0;
-    color: var(--status-warning-text);
-    background: color-mix(in srgb, var(--status-warning) 16%, var(--surface-card));
-    border-radius: 0.25rem;
-    padding: 0.0625rem 0.375rem;
 }
 
 .checklist {

@@ -37,12 +37,6 @@ const rtdRows = computed(() =>
     })),
 )
 
-// Suppress the RTD panel while TS isn't active, rather than showing two
-// overlapping problems (RTD blocked partly *because* TS isn't active) as if
-// they were independent. Only suppress once we actually know TS is blocked —
-// no signal yet shouldn't read as "suppressed".
-const tsBlocked = computed(() => (props.tsPreventionFlags?.length ?? 0) > 0)
-
 // Accent colour for each panel: green once nothing is blocking, amber if the
 // only thing left is that activation hasn't been requested yet, red for any
 // actual fault/offline/state condition still blocking. `undefined` (no
@@ -63,13 +57,7 @@ const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
 <template>
     <div class="checklists">
         <PreventionChecklistPanel title="TS activation" :rows="tsRows" :severity="tsSeverity" />
-        <PreventionChecklistPanel
-            title="RTD activation"
-            :rows="rtdRows"
-            :severity="rtdSeverity"
-            :suppressed="tsBlocked"
-            suppressed-note="TS not active"
-        />
+        <PreventionChecklistPanel title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
     </div>
 </template>
 
