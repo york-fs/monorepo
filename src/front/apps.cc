@@ -1,5 +1,6 @@
 #include <front/apps.hh>
-#include <util.hh>
+
+#include <util/numeric.hh>
 
 #include <array>
 #include <cmath>

@@ -2,7 +2,7 @@
 
 #include <can.hh>
 #include <freertos.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

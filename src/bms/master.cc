@@ -8,7 +8,9 @@
 #include <hal.hh>
 #include <i2c.hh>
 #include <stm32f103xb.h>
-#include <util.hh>
+#include <util/scope_guard.hh>
+#include <util/stream.hh>
+#include <util/type_traits.hh>
 
 #include <FreeRTOS.h>
 #include <semphr.h>

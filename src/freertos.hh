@@ -1,6 +1,6 @@
 #pragma once
 
-#include <util.hh>
+#include <util/type_traits.hh>
 
 #include <FreeRTOS.h>
 #include <message_buffer.h>

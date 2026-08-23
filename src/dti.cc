@@ -1,7 +1,7 @@
 #include <dti.hh>
 
 #include <can.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

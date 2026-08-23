@@ -1,7 +1,7 @@
 #include <front/can_messages.hh>
 
 #include <front/shutdown.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

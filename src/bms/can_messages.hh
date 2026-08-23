@@ -1,6 +1,6 @@
 #pragma one
 
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

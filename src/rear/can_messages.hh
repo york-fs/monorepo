@@ -1,7 +1,7 @@
 #pragma once
 
 #include <rear/shutdown.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 

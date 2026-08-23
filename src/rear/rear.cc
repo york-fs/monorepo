@@ -13,7 +13,9 @@
 #include <rear/shutdown.hh>
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
-#include <util.hh>
+#include <util/flag_bitset.hh>
+#include <util/stream.hh>
+#include <util/type_traits.hh>
 
 #include <algorithm>
 #include <bit>

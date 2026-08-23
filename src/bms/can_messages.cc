@@ -1,6 +1,6 @@
 #include <bms/can_messages.hh>
 
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

@@ -3,7 +3,7 @@
 #include <precharge/error.hh>
 #include <precharge/relay.hh>
 #include <precharge/state.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

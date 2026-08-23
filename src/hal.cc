@@ -2,14 +2,13 @@
 
 #include <miniprintf.h>
 #include <stm32f103xb.h>
-#include <util.hh>
+#include <util/scope_guard.hh>
 
 #include <bit>
 #include <cstdarg>
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <utility>
 
 [[gnu::weak]] bool hal_low_power() {
     return false;

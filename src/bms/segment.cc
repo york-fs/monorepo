@@ -4,7 +4,8 @@
 #include <hal.hh>
 #include <i2c.hh>
 #include <stm32f103xb.h>
-#include <util.hh>
+#include <util/numeric.hh>
+#include <util/stream.hh>
 
 #include <FreeRTOS.h>
 #include <message_buffer.h>

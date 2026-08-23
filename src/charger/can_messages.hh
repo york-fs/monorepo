@@ -1,7 +1,7 @@
 #pragma once
 
 #include <charger/error.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

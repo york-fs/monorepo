@@ -1,7 +1,7 @@
 #include <rear/can_messages.hh>
 
 #include <rear/shutdown.hh>
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <optional>
 #include <type_traits>

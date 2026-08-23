@@ -1,4 +1,4 @@
-#include <util.hh>
+#include <util/numeric.hh>
 
 #include <gtest/gtest.h>
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <util.hh>
+#include <util/flag_bitset.hh>
+#include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>

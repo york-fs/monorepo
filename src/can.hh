@@ -1,6 +1,6 @@
 #pragma once
 
-#include <util.hh>
+#include <util/stream.hh>
 
 #include <array>
 #include <cassert>
