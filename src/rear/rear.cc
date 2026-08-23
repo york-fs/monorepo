@@ -18,7 +18,6 @@
 #include <util/type_traits.hh>
 
 #include <algorithm>
-#include <bit>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -291,7 +290,7 @@ void main_task(void *) {
         if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
             ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
         }
-        if (std::popcount(fuse_bitset.value()) != fuse_voltages.size()) {
+        if (fuse_bitset.set_count() != fuse_voltages.size()) {
             ts_prevention_flags.set(TsPreventionFlag::BadFuse);
         }
         if (!s_front_status) {
@@ -316,7 +315,7 @@ void main_task(void *) {
         if (!s_front_status || !s_front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
         }
-        rtd_latched &= !rtd_prevention_flags.any_set();
+        rtd_latched &= rtd_prevention_flags.none_set();
 
         // Brake switch RTD flag is latched since it's only required when activating RTD.
         if (!rtd_latched && !s_brake_switch.read()) {

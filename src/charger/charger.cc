@@ -85,7 +85,7 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
     // Multiply by current shunt ratio.
     current *= 25;
 
-    if (!error_flags.any_set()) {
+    if (error_flags.none_set()) {
         // Convert to PWM duty cycle.
         TIM1->CCR1 = util::clamp(((current / 3300) * 1024) / 1000, 0, 1024);
     } else {
@@ -123,7 +123,7 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
         error_flags.is_set(Error::DropOvervoltage);
     }
 
-    if (!error_flags.any_set()) {
+    if (error_flags.none_set()) {
         // Convert to PWM duty cycle.
         TIM1->CCR2 = util::clamp((drop_voltage * k_cv_set_ratio) / 3300, 0, 1024);
     } else {

@@ -672,7 +672,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     m_last_update_time = xTaskGetTickCount();
 
     // Recalculate the error flags.
-    m_error_flags.clear();
+    m_error_flags.clear_all();
 
     // Cell count should be exactly right.
     if (std::popcount(cell_tap_bitset) != s_config.cell_count) {
@@ -1000,7 +1000,7 @@ void swd_task(void *) {
             }
 
             hal::swd_printf("Segment %u (sampled %u ms ago)\n", i, current_time - segment.last_update_time());
-            hal::swd_printf("  Error flags: 0x%x\n", static_cast<std::uint32_t>(segment.error_flags()));
+            hal::swd_printf("  Error flags: 0x%x\n", segment.error_flags().value());
             hal::swd_printf("  I2C error counts: %u %u\n", segment.master_error_count(), segment.slave_error_count());
             hal::swd_printf("  Degraded bitset: 0x%x\n", segment.degraded_bitset());
             hal::swd_printf("  Voltages: [");
