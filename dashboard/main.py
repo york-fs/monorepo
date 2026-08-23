@@ -95,6 +95,7 @@ class PrechargeErrorFlags(Flag):
     AIR_NEG_OPEN = enum.auto()
     DEACTIVATION = enum.auto()
     DEVIATION = enum.auto()
+    RATE_LIMIT = enum.auto()
 
 
 class PrechargeRelayStates(Flag):

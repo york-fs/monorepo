@@ -15,6 +15,7 @@ export type PrechargeErrorFlag =
     | 'AIR_NEG_OPEN'
     | 'DEACTIVATION'
     | 'DEVIATION'
+    | 'RATE_LIMIT'
 
 export type PrechargeRelay =
     'DISCHARGE_CLOSED' | 'PRECHARGE_CLOSED' | 'AIR_POS_CLOSED' | 'AIR_NEG_CLOSED'

@@ -112,6 +112,12 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
         kind: 'fault',
         liveStates: ['PRECHARGE'],
     },
+    RATE_LIMIT: {
+        label: 'Rate Limit',
+        description: 'Delaying before next activation attempt',
+        kind: 'waiting',
+        liveStates: ['PRECHECK'],
+    },
 }
 
 export const PRECHARGE_RELAY_LABELS: Record<PrechargeRelay, string> = {
