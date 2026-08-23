@@ -1,5 +1,6 @@
 import { computed, reactive, readonly, ref } from 'vue'
 import type { LinkState, TelemetryFrame, TelemetryStatus } from '@/telemetry'
+import { isDemoMode, startDemoTelemetry } from '@/demo'
 
 // No frame in this long means treat the data as stale even though the
 // SSE socket may still be open — the radio link can go quiet without the
@@ -16,6 +17,7 @@ const listeners = new Set<FrameListener>()
 
 let source: EventSource | null = null
 let staleTimer: ReturnType<typeof setTimeout> | undefined
+let demoStarted = false
 
 function resetStaleTimer() {
     stale.value = false
@@ -25,7 +27,25 @@ function resetStaleTimer() {
     }, STALE_AFTER_MS)
 }
 
+function applyFrame(parsed: TelemetryFrame) {
+    const receivedAt = Date.now()
+
+    Object.assign(frame, parsed)
+    lastUpdated.value = receivedAt
+    resetStaleTimer()
+
+    for (const listener of listeners) listener(parsed, receivedAt)
+}
+
 function connect() {
+    if (isDemoMode()) {
+        if (demoStarted) return
+        demoStarted = true
+        link.value = 'open'
+        startDemoTelemetry(applyFrame)
+        return
+    }
+
     if (source) return
 
     source = new EventSource('/api/stream')
@@ -39,14 +59,7 @@ function connect() {
     }
 
     source.onmessage = (event) => {
-        const parsed = JSON.parse(event.data) as TelemetryFrame
-        const receivedAt = Date.now()
-
-        Object.assign(frame, parsed)
-        lastUpdated.value = receivedAt
-        resetStaleTimer()
-
-        for (const listener of listeners) listener(parsed, receivedAt)
+        applyFrame(JSON.parse(event.data) as TelemetryFrame)
     }
 }
 
