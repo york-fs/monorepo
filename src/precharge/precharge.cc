@@ -126,6 +126,9 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     if (!s_air_neg_act.read()) {
         error_flags.set(Error::AirNegClosed);
     }
+    if (s_heartbeat && elapsed_ms < 500) {
+        error_flags.set(Error::RateLimit);
+    }
 
     // The voltage measured directly after the precharge relay should be zero. Wait for discharge of any residual
     // voltage on the TS side before continuing.

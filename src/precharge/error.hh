@@ -20,6 +20,7 @@ enum class Error : std::uint16_t {
     AirNegOpen,
     Deactivation,
     Deviation,
+    RateLimit,
 };
 
 using ErrorFlags = util::FlagBitset<Error>;

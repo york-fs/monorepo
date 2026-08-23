@@ -187,18 +187,16 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause() {
     return ShutdownCircuitOpenCause::None;
 }
 
-bool is_precharge_activation_ready() {
-    if (!s_precharge_status) {
+bool is_precharge_state_good(precharge::State state) {
+    switch (state) {
+    case precharge::State::Standby:
+    case precharge::State::Precharge:
+    case precharge::State::PrechargeHold:
+    case precharge::State::Active:
+        return true;
+    default:
         return false;
     }
-    if (s_precharge_status->state == precharge::State::LedCheck ||
-        s_precharge_status->state == precharge::State::Precheck) {
-        return false;
-    }
-    if (s_precharge_status->state != precharge::State::Standby && s_precharge_status->error_flags.any_set()) {
-        return false;
-    }
-    return true;
 }
 
 void main_task(void *) {
@@ -302,7 +300,7 @@ void main_task(void *) {
         if (!s_precharge_status) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
         }
-        if (!is_precharge_activation_ready()) {
+        if (!s_precharge_status || !is_precharge_state_good(s_precharge_status->state)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
         }
 
