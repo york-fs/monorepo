@@ -344,18 +344,20 @@ void led_task(void *) {
 
         // Set RTD button LED.
         DMA1_Channel2->CCR &= ~DMA_CCR_EN;
-        if (!s_rear_status) {
+        if (!s_precharge_state || *s_precharge_state != precharge::State::Active) {
             // Off.
             rtd_buffer[0] = 1u << (s_rtd_button_led.pin() + 16);
             DMA1_Channel2->CNDTR = 1;
-        } else if (s_rear_status->rtd_prevention_flags.none_set()) {
+        } else if (s_rear_status && s_rear_status->rtd_prevention_flags.none_set()) {
             // Solid.
             rtd_buffer[0] = 1u << s_rtd_button_led.pin();
             DMA1_Channel2->CNDTR = 1;
         } else {
             // Slow flash to indicate ready to activate, fast for any additional errors set.
             const auto count =
-                s_rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested) ? 5 : 1;
+                (s_rear_status && s_rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested))
+                    ? 5
+                    : 1;
             for (std::uint32_t i = 0; i < count; i++) {
                 rtd_buffer[i] = 1u << s_rtd_button_led.pin();
                 rtd_buffer[count + i] = 1u << (s_rtd_button_led.pin() + 16);
