@@ -24,6 +24,16 @@ using namespace precharge;
 
 namespace {
 
+enum class CurveModel {
+    Test,
+    DtiHv550,
+};
+
+/**
+ * @brief The RC model to use to calculate the expected TS voltage at each instant during precharging.
+ */
+constexpr CurveModel k_curve_model = CurveModel::DtiHv550;
+
 /**
  * @brief The maximum time to wait for a new heartbeat message to be received before opening the AIRs and thus
  * deactivating the TS in milliseconds.
@@ -148,6 +158,33 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     return std::make_pair(State::Precharge, ErrorFlags());
 }
 
+std::pair<float, float> rc_curve(float t, float Vp, float C, float Rs, float Rg) {
+    // Calculate thevenin equivalent of series resistor and resistor to ground.
+    const float R = (Rs * Rg) / (Rs + Rg);
+
+    // Calculate voltage factor taking into account the slight potential divider formed.
+    const float factor = (Vp * Rg) / (Rs + Rg);
+
+    // Calculate the curve.
+    const float V = factor * (1.0f - std::exp(-t / (R * C)));
+    return std::make_pair(V, R * C);
+}
+
+template <CurveModel>
+std::pair<float, float> model_curve(float t, float Vp);
+
+template <>
+std::pair<float, float> model_curve<CurveModel::Test>(float t, float Vp) {
+    // Model with 3300 uF capacitor and no resistance to ground used during testing.
+    return rc_curve(t, Vp, 3300e-6f, 1e3f, 1e9f);
+}
+
+template <>
+std::pair<float, float> model_curve<CurveModel::DtiHv550>(float t, float Vp) {
+    // DTI HV-550 inverter model with 200 uF capacitance and 188k always-active discharge resistor.
+    return rc_curve(t, Vp, 200e-6f, 1e3f, 188e3f);
+}
+
 std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
                                        std::uint16_t tractive_voltage) {
     ErrorFlags error_flags;
@@ -175,18 +212,36 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
         return std::make_pair(State::Precharge, error_flags);
     }
 
+    // Convert some values to float.
     const auto t = static_cast<float>(elapsed_ms) / 1000.0f;
-    const auto R = 1000.0f;
-    const auto C = 3300.0e-6f;
-    const auto expected_tractive = static_cast<std::uint32_t>(precharge_voltage * (1.0f - std::exp(-t / (R * C))));
-    const auto deviation = (expected_tractive > tractive_voltage) ? (expected_tractive - tractive_voltage)
-                                                                  : (tractive_voltage - expected_tractive);
-    if (deviation > 10) {
+    const auto Vp = static_cast<float>(precharge_voltage);
+    const auto Vt = static_cast<float>(tractive_voltage);
+
+    // Calculate the expected TS voltage.
+    const auto [Ve, tau] = model_curve<k_curve_model>(t, Vp);
+
+    // Calculate the absolute deviation between the expected and the measured.
+    const auto deviation = std::abs(Vt - Ve);
+
+    // Check for deviation against the expected curve. Allow 30 ms for the precharge relay to fully close.
+    // TODO: How to pick a good maximum deviation threshold?
+    if (t > 0.03f && deviation > 10.0f) {
         // TODO: Check whether matches against welded discharge curve.
         // TODO: If precharge_voltage == tractive_voltage at t=0 then likely TS+ open circuit.
-        return std::make_pair(elapsed_ms > 500 ? State::Precheck : State::Precharge, ErrorFlags(Error::Deviation));
+        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
     }
-    return std::make_pair(t > (3 * R * C) ? State::PrechargeHold : State::Precharge, ErrorFlags());
+
+    // Check voltage and time for completion. We check both to ensure that we don't close the AIRs too early. 4 * RC is
+    // around 98% completion.
+    if (Vt > 0.98f * Vp && t > 4.0f * tau) {
+        return std::make_pair(State::PrechargeHold, ErrorFlags());
+    }
+
+    // Precharge has gone on for too long.
+    if (t > 7.0f * tau) {
+        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
+    }
+    return std::make_pair(State::Precharge, ErrorFlags());
 }
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
