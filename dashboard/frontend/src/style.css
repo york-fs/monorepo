@@ -5,27 +5,33 @@
        themed token below is defined once via light-dark(light, dark). */
     color-scheme: light dark;
 
-    --surface-page: light-dark(#f9f9f7, #0d0d0d);
-    --surface-card: light-dark(#fcfcfb, #1a1a19);
-    --surface-inset: light-dark(#f1f0ec, #111110);
-    --ink-primary: light-dark(#0b0b0b, #ffffff);
-    --ink-secondary: light-dark(#52514e, #c3c2b7);
-    --ink-muted: #898781;
-    --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+    --surface-page: light-dark(hsl(60, 14%, 97%), hsl(0, 0%, 5%));
+    --surface-card: light-dark(hsl(60, 14%, 99%), hsl(60, 2%, 10%));
+    --surface-inset: light-dark(hsl(48, 15%, 94%), hsl(60, 3%, 6%));
+    --ink-primary: light-dark(hsl(0, 0%, 4%), hsl(0, 0%, 100%));
+    --ink-secondary: light-dark(hsl(45, 3%, 31%), hsl(55, 9%, 74%));
+    --ink-muted: hsl(45, 3%, 52%);
+    --border: light-dark(hsla(0, 0%, 4%, 0.1), hsla(0, 0%, 100%, 0.1));
 
-    --status-good: #0ca30c;
-    --status-warning: #fab219;
-    --status-critical: #d03b3b;
+    --status-good: hsl(120, 86%, 34%);
+    --status-warning: hsl(41, 96%, 54%);
+    --status-critical: hsl(0, 61%, 52%);
 
     /* Darker steps for coloring text directly (dots/icons pair with a label
        and only need 3:1; a large word standing alone needs real contrast). */
-    --status-good-text: light-dark(#006300, #0ca30c);
-    --status-warning-text: light-dark(#8a5a00, #fab219);
-    --status-critical-text: light-dark(#d03b3b, #e66767);
+    --status-good-text: light-dark(hsl(120, 100%, 19%), var(--status-good));
+    --status-warning-text: light-dark(hsl(39, 100%, 27%), var(--status-warning));
+    --status-critical-text: light-dark(var(--status-critical), hsl(0, 72%, 65%));
 
     /* Categorical slots for charts with 2+ series (e.g. two voltage traces). */
-    --series-1: light-dark(#2a78d6, #3987e5);
-    --series-2: light-dark(#eb6834, #d95926);
+    --series-1: light-dark(hsl(213, 68%, 50%), hsl(213, 77%, 56%));
+    --series-2: light-dark(hsl(17, 82%, 56%), hsl(17, 70%, 50%));
+
+    /* Translucent white overlays for the fuse glyph's glossy highlight and
+       link-wire, drawn on top of its own good/critical background rather
+       than the page/card surfaces — same in both themes. */
+    --glyph-highlight: hsla(0, 0%, 100%, 0.35);
+    --glyph-line: hsla(0, 0%, 100%, 0.9);
 }
 
 *,

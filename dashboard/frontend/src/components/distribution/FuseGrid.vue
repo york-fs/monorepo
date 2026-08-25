@@ -93,7 +93,7 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
     inset: 0.1875rem auto 0.1875rem 0.25rem;
     width: 0.375rem;
     border-radius: 0.1875rem;
-    background: rgba(255, 255, 255, 0.35);
+    background: var(--glyph-highlight);
 }
 
 .ato-glyph[data-state='unknown'] .ato-highlight {
@@ -117,7 +117,7 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
 .ato-link {
     width: 65%;
     height: 2px;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--glyph-line);
 }
 
 .ato-link-seg {
@@ -125,7 +125,7 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
     top: 50%;
     width: 22%;
     height: 2px;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--glyph-line);
     transform: translateY(-50%) rotate(12deg);
 }
 .ato-link-seg.left {
