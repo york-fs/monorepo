@@ -3,12 +3,12 @@ import { onTelemetryFrame } from '@/composables/useTelemetry'
 import type { TelemetryFrame } from '@/telemetry'
 
 /**
- * Tracks the lowest/highest `lvs_min_voltage`/`lvs_max_voltage` seen since
+ * Tracks the lowest/highest value of a single derived reading seen since
  * this composable was mounted (i.e. since the page was opened) — not a
- * history buffer, just two running extrema, since that's all an "ever"
- * range needs.
+ * history buffer, just two running extrema. `select` reads (or derives) the
+ * reading from each frame; return `undefined` for frames with no signal.
  */
-export function useLvVoltageRange() {
+export function useMinMax(select: (frame: TelemetryFrame) => number | undefined) {
     const everMin = ref<number>()
     const everMax = ref<number>()
 
@@ -25,17 +25,10 @@ export function useLvVoltageRange() {
             lastUptimeMs = frame.uptime
         }
 
-        if (frame.lvs_min_voltage !== undefined) {
-            everMin.value =
-                everMin.value === undefined
-                    ? frame.lvs_min_voltage
-                    : Math.min(everMin.value, frame.lvs_min_voltage)
-        }
-        if (frame.lvs_max_voltage !== undefined) {
-            everMax.value =
-                everMax.value === undefined
-                    ? frame.lvs_max_voltage
-                    : Math.max(everMax.value, frame.lvs_max_voltage)
+        const value = select(frame)
+        if (value !== undefined) {
+            everMin.value = everMin.value === undefined ? value : Math.min(everMin.value, value)
+            everMax.value = everMax.value === undefined ? value : Math.max(everMax.value, value)
         }
     }
 
