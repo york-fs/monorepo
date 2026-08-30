@@ -292,6 +292,8 @@ void control_task(void *) {
     hal::irq_enable(I2C1_ER_IRQn, 9);
 
     // Configure the expander pins.
+    expander_write(ExpanderRegister::OutputPort0, 0);
+    expander_write(ExpanderRegister::OutputPort1, 0);
     expander_write(ExpanderRegister::PolarityPort0, 0);
     expander_write(ExpanderRegister::PolarityPort1, 0);
     expander_write(ExpanderRegister::ConfigurationPort0, 0xff);
