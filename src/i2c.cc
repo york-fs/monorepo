@@ -104,7 +104,7 @@ State handle_event(I2C_TypeDef *i2c, StateMachine *sm) {
     // Send stop condition once the last byte has been fully transferred.
     if (state == State::Stop && (sr1 & I2C_SR1_BTF) != 0) {
         i2c->CR2 &= ~I2C_CR2_ITEVTEN;
-        i2c->CR1 |= sm->should_emit_stop() ? I2C_CR1_STOP : I2C_CR1_START;
+        i2c->CR1 |= sm->emit_stop() ? I2C_CR1_STOP : I2C_CR1_START;
         return State::Idle;
     }
 
@@ -220,10 +220,9 @@ void StateMachine::set_buffer(std::span<std::uint8_t> buffer) {
 }
 
 void StateMachine::start(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
-    m_address = address;
-    m_buffer = buffer;
-    const bool should_emit_start = std::exchange(m_emit_stop, emit_stop);
-    m_head.store(0);
+    set_buffer(buffer);
+    m_address.store(address);
+    const bool should_emit_start = m_emit_stop.exchange(emit_stop);
     m_state.store(State::Start);
 
     // Enable all interrupts and generate a start condition.
@@ -254,15 +253,15 @@ void StateMachine::error() {
 }
 
 std::uint8_t &StateMachine::next_byte() {
-    return m_buffer[m_head++];
+    return m_buffer[m_head.fetch_add(1)];
 }
 
 bool StateMachine::is_at_end() const {
-    return m_head >= m_buffer.size();
+    return m_head.load() >= m_buffer.size();
 }
 
 std::uint32_t StateMachine::remaining_space() const {
-    return m_buffer.size() - m_head;
+    return m_buffer.size() - m_head.load();
 }
 
 } // namespace i2c

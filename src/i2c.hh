@@ -37,10 +37,10 @@ class StateMachine {
     const Bus m_bus;
     const Speed m_speed;
     std::span<std::uint8_t> m_buffer;
-    std::atomic<std::uint32_t> m_head;
+    std::atomic<std::uint32_t> m_head{0};
     std::atomic<State> m_state{State::Error};
-    std::uint8_t m_address{0};
-    bool m_emit_stop{true};
+    std::atomic<std::uint8_t> m_address{0};
+    std::atomic<bool> m_emit_stop{true};
 
     void start(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop);
 
@@ -68,8 +68,8 @@ public:
     std::uint32_t remaining_space() const;
     std::uint32_t head() const { return m_head.load(); }
     State state() const { return m_state.load(); }
-    std::uint8_t address() const { return m_address; }
-    bool should_emit_stop() const { return m_emit_stop; }
+    std::uint8_t address() const { return m_address.load(); }
+    bool emit_stop() const { return m_emit_stop.load(); }
 };
 
 } // namespace i2c
