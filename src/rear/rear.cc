@@ -10,6 +10,7 @@
 #include <precharge/state.hh>
 #include <rear/can_messages.hh>
 #include <rear/fuse.hh>
+#include <rear/online.hh>
 #include <rear/shutdown.hh>
 #include <stm32f103xb.h>
 #include <time_tracked.hh>
@@ -25,6 +26,11 @@
 using namespace rear;
 
 namespace {
+
+/**
+ * @brief Control task scheduling period in milliseconds.
+ */
+constexpr std::uint32_t k_control_period = 10;
 
 /**
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
@@ -62,7 +68,7 @@ enum class ExpanderRegister : std::uint8_t {
     ConfigurationPort1 = 0x07,
 };
 
-enum class ExpanderShutdownPin : std::uint8_t {
+enum class RearShutdownSample : std::uint16_t {
     Latch = 0,
     RightEstop = 1,
     Hvd = 2,
@@ -71,11 +77,16 @@ enum class ExpanderShutdownPin : std::uint8_t {
     Tsms = 5,
     LeftEstop = 6,
     Bspd = 7,
+    BmsOk = 8,
+    DtiOk = 9,
+    ImdOk = 10,
 };
 
-using ExpanderShutdownPins = util::FlagBitset<ExpanderShutdownPin>;
+using RearShutdownSamples = util::FlagBitset<RearShutdownSample>;
 
 struct RadioData {
+    OnlineFlags online_flags;
+    std::optional<precharge::StatusMessage> precharge_status;
     FuseBitset fuse_bitset;
     std::uint16_t lvs_min_voltage;
     std::uint16_t lvs_max_voltage;
@@ -84,104 +95,80 @@ struct RadioData {
     RtdPreventionFlags rtd_prevention_flags;
 };
 
-// Latest received statuses from other components.
-TimeTracked<front::StatusMessage> s_front_status(250);
-TimeTracked<precharge::StatusMessage> s_precharge_status(25);
-
-// Front LVS voltages.
-std::array<std::uint16_t, 7> s_front_lvs_voltages{};
-
-// Shutdown samples from expander.
-ExpanderShutdownPins s_rear_shutdown_samples;
-bool s_bms_ok = false;
-bool s_imd_ok = false;
-bool s_dti_ok = false;
-
-// Queue for consistent radio data.
+// Single-entry queue for consistent radio data.
 freertos::Queue<RadioData, 1> s_radio_data;
 
 // I2C state machine for GPIO expander.
 i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
 
-hal::Gpio s_radio_tx(hal::GpioPort::A, 9);
-hal::Gpio s_radio_rx(hal::GpioPort::A, 10);
-hal::Gpio s_radio_cts(hal::GpioPort::A, 11);
-hal::Gpio s_radio_rts(hal::GpioPort::A, 12);
-
-hal::Gpio s_scl(hal::GpioPort::B, 6);
-hal::Gpio s_sda(hal::GpioPort::B, 7);
-
-hal::Gpio s_dti_ok_sample(hal::GpioPort::B, 2);
-hal::Gpio s_brake_switch(hal::GpioPort::B, 10);
-
-freertos::Task<256> s_main_task;
-freertos::Task<128> s_expander_task;
+freertos::Task<256> s_control_task;
 freertos::Task<256> s_radio_task;
 freertos::Task<128> s_swd_task;
 
-ShutdownCircuitOpenCause compute_shutdown_open_cause() {
+ShutdownCircuitOpenCause compute_shutdown_open_cause(const std::optional<front::StatusMessage> &front_status,
+                                                     RearShutdownSamples rear_samples) {
     // Shutdown input from LVMS and BSPD.
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Bspd)) {
+    if (rear_samples.is_clear(RearShutdownSample::Bspd)) {
         // TODO: We currently can't detect whether shutdown is present before the BSPD or not, hence we return a generic
         // rear shutdown input reason instead of BSPD.
         return ShutdownCircuitOpenCause::RearInput;
     }
 
     // Front.
-    if (!s_front_status) {
+    if (!front_status) {
         return ShutdownCircuitOpenCause::FrontOutput;
     }
-    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::EmergencyStop)) {
+    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::EmergencyStop)) {
         return ShutdownCircuitOpenCause::FrontEstop;
     }
-    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::BrakeOverTravel)) {
+    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::BrakeOverTravel)) {
         return ShutdownCircuitOpenCause::BrakeOverTravel;
     }
-    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::InertiaSwitch)) {
+    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::InertiaSwitch)) {
         return ShutdownCircuitOpenCause::InertiaSwitch;
     }
-    if (!s_front_status->shutdown_samples.is_set(front::ShutdownSample::Auxiliary)) {
+    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
         return ShutdownCircuitOpenCause::FrontAuxiliary;
     }
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::FrontOutput)) {
+    if (rear_samples.is_clear(RearShutdownSample::FrontOutput)) {
         // Signal not getting from front even though over CAN, front is reporting all ok.
         return ShutdownCircuitOpenCause::FrontOutput;
     }
 
     // Shutdown latch.
-    if (!s_bms_ok) {
+    if (rear_samples.is_clear(RearShutdownSample::BmsOk)) {
         return ShutdownCircuitOpenCause::BmsLatch;
     }
-    if (!s_imd_ok) {
+    if (rear_samples.is_clear(RearShutdownSample::ImdOk)) {
         return ShutdownCircuitOpenCause::ImdLatch;
     }
-    if (!s_dti_ok) {
+    if (rear_samples.is_clear(RearShutdownSample::DtiOk)) {
         return ShutdownCircuitOpenCause::InverterInterlock;
     }
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Latch)) {
+    if (rear_samples.is_clear(RearShutdownSample::Latch)) {
         return ShutdownCircuitOpenCause::ShutdownLatchFailure;
     }
 
     // Rear E-stops.
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::LeftEstop)) {
+    if (rear_samples.is_clear(RearShutdownSample::LeftEstop)) {
         return ShutdownCircuitOpenCause::LeftEstop;
     }
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::RightEstop)) {
+    if (rear_samples.is_clear(RearShutdownSample::RightEstop)) {
         return ShutdownCircuitOpenCause::RightEstop;
     }
 
     // High voltage disconnect interlock.
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Hvd)) {
+    if (rear_samples.is_clear(RearShutdownSample::Hvd)) {
         return ShutdownCircuitOpenCause::HvdInterlock;
     }
 
     // Shutdown on rear auxiliary connector.
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Aux)) {
+    if (rear_samples.is_clear(RearShutdownSample::Aux)) {
         return ShutdownCircuitOpenCause::RearAuxiliary;
     }
 
     // Tractive system master switch.
-    if (!s_rear_shutdown_samples.is_set(ExpanderShutdownPin::Tsms)) {
+    if (rear_samples.is_clear(RearShutdownSample::Tsms)) {
         return ShutdownCircuitOpenCause::Tsms;
     }
     return ShutdownCircuitOpenCause::None;
@@ -199,71 +186,152 @@ bool is_precharge_state_good(precharge::State state) {
     }
 }
 
-void main_task(void *) {
+bool expander_wait() {
+    const bool timeout = ulTaskNotifyTakeIndexed(1, pdTRUE, pdMS_TO_TICKS(2)) == 0;
+    const auto state = s_i2c_sm.state();
+    if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
+        return state == i2c::State::Idle;
+    }
+    // Reset the I2C peripheral.
+    s_i2c_sm.init();
+    return false;
+}
+
+std::optional<std::uint8_t> expander_read(ExpanderRegister reg) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+    };
+    s_i2c_sm.start_write(k_expander_address, data, false);
+    if (!expander_wait()) {
+        return std::nullopt;
+    }
+    s_i2c_sm.start_read(k_expander_address, data, true);
+    if (!expander_wait()) {
+        return std::nullopt;
+    }
+    return data[0];
+}
+
+bool expander_write(ExpanderRegister reg, std::uint8_t value) {
+    std::array data{
+        static_cast<std::uint8_t>(reg),
+        value,
+    };
+    s_i2c_sm.start_write(k_expander_address, data, true);
+    return expander_wait();
+}
+
+/**
+ * @brief The control task is the main coordination task of the rear distribution, and therefore of the whole car.
+ *
+ * The task's operation can be summarised as doing the following:
+ * - Takes in data over CAN from all other components of the car.
+ * - Samples local signals such as fuse voltages, series shutdown levels, the IMD, and brake switch signals.
+ * - Derives fuse statuses and shutdown circuit state.
+ * - Decides whether the TS and RTD states can be active.
+ * - Sends control messages to the precharge and inverter.
+ */
+void control_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3);
 
+    // Keep track of reception time for the most important status messages from each component.
+    static TimeTracked<front::StatusMessage> front_status(250);
+    static TimeTracked<precharge::StatusMessage> precharge_status(25);
+
+    // Post-fuse voltage measurements for power rails on the front distribution.
+    static std::array<std::uint16_t, 7> front_lvs_voltages{};
+
     // Setup CAN listeners.
-    can::listen<front::StatusMessage, [](const front::StatusMessage &front_status) {
-        s_front_status.receive(front_status);
+    can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
+        front_status.receive(message);
     }>(config::k_front_can_id, 0);
-    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
-        s_precharge_status.receive(precharge_status);
+    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
+        precharge_status.receive(message);
     }>(config::k_precharge_can_id, 1);
-    can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &lvs_1) {
-        s_front_lvs_voltages[0] = lvs_1.rtd_voltage;
-        s_front_lvs_voltages[1] = lvs_1.apps_1_voltage;
-        s_front_lvs_voltages[2] = lvs_1.apps_2_voltage;
-        s_front_lvs_voltages[3] = lvs_1.front_voltage;
+    can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &message) {
+        front_lvs_voltages[0] = message.rtd_voltage;
+        front_lvs_voltages[1] = message.apps_1_voltage;
+        front_lvs_voltages[2] = message.apps_2_voltage;
+        front_lvs_voltages[3] = message.front_voltage;
     }>(config::k_front_can_id, 2);
-    can::listen<front::LvsSampleMessage2, [](const front::LvsSampleMessage2 &lvs_2) {
-        s_front_lvs_voltages[4] = lvs_2.dwin_voltage;
-        s_front_lvs_voltages[5] = lvs_2.aux_1_voltage;
-        s_front_lvs_voltages[6] = lvs_2.aux_2_voltage;
+    can::listen<front::LvsSampleMessage2, [](const front::LvsSampleMessage2 &message) {
+        front_lvs_voltages[4] = message.dwin_voltage;
+        front_lvs_voltages[5] = message.aux_1_voltage;
+        front_lvs_voltages[6] = message.aux_2_voltage;
     }>(config::k_front_can_id, 3);
 
-    // Enable CAN IRQs.
-    hal::irq_enable(CAN1_RX0_IRQn, 7);
-    hal::irq_enable(CAN1_TX_IRQn, 6);
-    hal::irq_enable(CAN1_SCE_IRQn, 5);
-
-    hal::adc_init(ADC1, 10);
-    for (std::uint32_t i = 0; i < 10; i++) {
+    // Initialise ADC to sample all LVS inputs.
+    std::array<std::uint16_t, 10> adc_buffer{};
+    hal::adc_init(ADC1, adc_buffer.size());
+    for (std::uint32_t i = 0; i < adc_buffer.size(); i++) {
         hal::adc_sequence_channel(ADC1, i + 1, i, 0b010u);
     }
-
-    std::array<std::uint16_t, 10> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
-
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
+
+    // Configure expander I2C pins for peripheral use and initialise the state machine.
+    hal::Gpio scl(hal::GpioPort::B, 6);
+    hal::Gpio sda(hal::GpioPort::B, 7);
+    scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    s_i2c_sm.init();
+
+    // Configure the DTI_OK and brake switch sample pins which are not on the expander.
+    hal::Gpio dti_ok_sample(hal::GpioPort::B, 2);
+    hal::Gpio brake_switch(hal::GpioPort::B, 10);
+    dti_ok_sample.configure(hal::GpioInputMode::Floating);
+    brake_switch.configure(hal::GpioInputMode::Floating);
+
+    // Enable CAN, ADC, and I2C IRQs.
+    hal::irq_enable(CAN1_SCE_IRQn, 5);
+    hal::irq_enable(CAN1_TX_IRQn, 6);
+    hal::irq_enable(CAN1_RX0_IRQn, 7);
     hal::irq_enable(DMA1_Channel1_IRQn, 8);
+    hal::irq_enable(I2C1_EV_IRQn, 9);
+    hal::irq_enable(I2C1_ER_IRQn, 9);
 
-    // Configure brake switch input.
-    s_brake_switch.configure(hal::GpioInputMode::Floating);
+    // Configure the expander pins.
+    expander_write(ExpanderRegister::PolarityPort0, 0);
+    expander_write(ExpanderRegister::PolarityPort1, 0);
+    expander_write(ExpanderRegister::ConfigurationPort0, 0xff);
+    expander_write(ExpanderRegister::ConfigurationPort1, 0xee);
 
-    // Main loop which handles fuse and shutdown sampling, TS and RTD states, precharge heartbeat, and inverter control.
+    // Keep track of whether the ready-to-drive state has been latched on. This is needed because, whilst most of the
+    // RTD prevention flags are continuously checked, some, like the brake being pressed are only needed for initial
+    // activation.
     bool rtd_latched = false;
+
     freertos::PeriodScheduler scheduler;
     while (true) {
-        scheduler.delay_until_ms(10);
+        scheduler.delay_until_ms(k_control_period);
 
-        // Update all message expiry detections.
-        s_front_status.update();
-        s_precharge_status.update();
+        // Update message expiry detections for all of the important time tracked messages.
+        front_status.update();
+        precharge_status.update();
+
+        // Build a bitset of component online states.
+        OnlineFlags online_flags;
+        if (front_status) {
+            online_flags.set(OnlineFlag::FrontOnline);
+        }
+        if (precharge_status) {
+            online_flags.set(OnlineFlag::PrechargeOnline);
+        }
 
         // Sample all ADC channels.
         hal::adc_start(ADC1);
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ulTaskNotifyTakeIndexed(0, pdTRUE, portMAX_DELAY);
 
         // Create an array of rear and front measured fuse voltages. The sampling inputs have a 5.7x divider on them.
         std::array<std::uint16_t, 17> fuse_voltages{};
         std::transform(adc_buffer.begin(), adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
             return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
         });
-        if (s_front_status) {
+        if (front_status) {
             freertos::in_critical_section([&] {
                 auto out_it = std::next(fuse_voltages.begin(), 10);
-                std::copy(s_front_lvs_voltages.begin(), s_front_lvs_voltages.end(), out_it);
+                std::copy(front_lvs_voltages.begin(), front_lvs_voltages.end(), out_it);
             });
         }
 
@@ -279,8 +347,22 @@ void main_task(void *) {
             }
         }
 
+        // Sample rear-local shutdown pins.
+        const auto expander_port_0 = expander_read(ExpanderRegister::InputPort0).value_or(0);
+        const auto expander_port_1 = expander_read(ExpanderRegister::InputPort1).value_or(0);
+        auto rear_shutdown_samples = RearShutdownSamples(expander_port_0);
+        if ((expander_port_1 & (1u << 2)) != 0) {
+            rear_shutdown_samples.set(RearShutdownSample::BmsOk);
+        }
+        if ((expander_port_1 & (1u << 3)) != 0) {
+            rear_shutdown_samples.set(RearShutdownSample::ImdOk);
+        }
+        if (dti_ok_sample.read()) {
+            rear_shutdown_samples.set(RearShutdownSample::DtiOk);
+        }
+
         // Compute a cause for the shutdown circuit being open.
-        const auto shutdown_open_cause = compute_shutdown_open_cause();
+        const auto shutdown_open_cause = compute_shutdown_open_cause(front_status, rear_shutdown_samples);
 
         // Compute TS activation prevention flags.
         // TODO: Add BMS and inverter checks.
@@ -291,16 +373,16 @@ void main_task(void *) {
         if (fuse_bitset.set_count() != fuse_voltages.size()) {
             ts_prevention_flags.set(TsPreventionFlag::BadFuse);
         }
-        if (!s_front_status) {
+        if (online_flags.is_clear(OnlineFlag::FrontOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
         }
-        if (!s_front_status || !s_front_status->ts_activation_desired) {
+        if (!front_status || !front_status->ts_activation_desired) {
             ts_prevention_flags.set(TsPreventionFlag::NotRequested);
         }
-        if (!s_precharge_status) {
+        if (online_flags.is_clear(OnlineFlag::PrechargeOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
         }
-        if (!s_precharge_status || !is_precharge_state_good(s_precharge_status->state)) {
+        if (!precharge_status || !is_precharge_state_good(precharge_status->state)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
         }
 
@@ -310,16 +392,17 @@ void main_task(void *) {
         if (ts_prevention_flags.any_set()) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
-        if (!s_precharge_status || s_precharge_status->state != precharge::State::Active) {
+        if (!precharge_status || precharge_status->state != precharge::State::Active) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
-        if (!s_front_status || !s_front_status->rtd_activation_desired) {
+        if (!front_status || !front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
         }
         rtd_latched &= rtd_prevention_flags.none_set();
 
         // Brake switch RTD flag is latched since it's only required when activating RTD.
-        if (!rtd_latched && !s_brake_switch.read()) {
+        const bool brake_pressed = brake_switch.read();
+        if (!rtd_latched && !brake_pressed) {
             rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
         }
 
@@ -369,8 +452,17 @@ void main_task(void *) {
         };
         can::transmit(config::k_rear_can_id, status_message);
 
+        // Write to GPIO expander outputs.
+        std::uint8_t expander_out = 0;
+        if (brake_pressed) {
+            expander_out |= 1u << 4;
+        }
+        expander_write(ExpanderRegister::OutputPort1, expander_out);
+
         // Update radio data.
         s_radio_data.overwrite(RadioData{
+            .online_flags = online_flags,
+            .precharge_status = precharge_status,
             .fuse_bitset = fuse_bitset,
             .lvs_min_voltage = lvs_min_voltage,
             .lvs_max_voltage = lvs_max_voltage,
@@ -381,99 +473,19 @@ void main_task(void *) {
     }
 }
 
-bool expander_wait() {
-    const bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10)) == 0;
-    const auto state = s_i2c_sm.state();
-    if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
-        return state == i2c::State::Idle;
-    }
-    // Reset the I2C periphral.
-    s_i2c_sm.init();
-    return false;
-}
-
-std::optional<std::uint8_t> expander_read(ExpanderRegister reg) {
-    std::array data{
-        static_cast<std::uint8_t>(reg),
-    };
-    s_i2c_sm.start_write(k_expander_address, data, false);
-    if (!expander_wait()) {
-        return std::nullopt;
-    }
-    s_i2c_sm.start_read(k_expander_address, data, true);
-    if (!expander_wait()) {
-        return std::nullopt;
-    }
-    return data[0];
-}
-
-bool expander_write(ExpanderRegister reg, std::uint8_t value) {
-    std::array data{
-        static_cast<std::uint8_t>(reg),
-        value,
-    };
-    s_i2c_sm.start_write(k_expander_address, data, true);
-    return expander_wait();
-}
-
-void expander_task(void *) {
-    // Configure I2C pins for peripheral use.
-    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-
-    // Initialise peripheral and unmask interrupts.
-    s_i2c_sm.init();
-    hal::irq_enable(I2C1_EV_IRQn, 9);
-    hal::irq_enable(I2C1_ER_IRQn, 9);
-
-    // Enable an interrupt on the brake switch line.
-    AFIO->EXTICR[2] |= AFIO_EXTICR3_EXTI10_PB;
-    EXTI->IMR |= EXTI_IMR_MR10;
-    EXTI->RTSR |= EXTI_RTSR_RT10;
-    EXTI->FTSR |= EXTI_FTSR_FT10;
-    hal::irq_enable(EXTI15_10_IRQn, 10);
-
-    // Configure DTI_OK pin which is not on the expander.
-    s_dti_ok_sample.configure(hal::GpioInputMode::Floating);
-
-    while (true) {
-        // TODO: This could be purely interrupt driven with an interrupt from the GPIO expander.
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
-
-        // Set pin config.
-        expander_write(ExpanderRegister::PolarityPort0, 0);
-        expander_write(ExpanderRegister::PolarityPort1, 0);
-        expander_write(ExpanderRegister::ConfigurationPort0, 0xff);
-        expander_write(ExpanderRegister::ConfigurationPort1, 0xee);
-
-        // Set brake switch output.
-        std::uint8_t port_1_out = 0;
-        if (s_brake_switch.read()) {
-            port_1_out |= 1u << 4;
-        }
-        expander_write(ExpanderRegister::OutputPort1, port_1_out);
-
-        // Read shutdown inputs.
-        const auto port_0_in = expander_read(ExpanderRegister::InputPort0).value_or(0);
-        const auto port_1_in = expander_read(ExpanderRegister::InputPort1).value_or(0);
-        freertos::in_critical_section([&] {
-            s_rear_shutdown_samples = ExpanderShutdownPins(port_0_in);
-            s_bms_ok = (port_1_in & (1u << 2)) != 0;
-            s_imd_ok = (port_1_in & (1u << 3)) != 0;
-            s_dti_ok = s_dti_ok_sample.read();
-        });
-    }
-}
-
 void radio_task(void *) {
     // Delay to allow the radio to leave its bootloader.
     vTaskDelay(pdMS_TO_TICKS(50));
 
     // Configure GPIOs.
-    s_radio_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
-    s_radio_rx.configure(hal::GpioInputMode::Floating);
-    s_radio_cts.configure(hal::GpioInputMode::Floating);
-    s_radio_rts.configure(hal::GpioInputMode::PullDown);
+    hal::Gpio radio_tx(hal::GpioPort::A, 9);
+    hal::Gpio radio_rx(hal::GpioPort::A, 10);
+    hal::Gpio radio_cts(hal::GpioPort::A, 11);
+    hal::Gpio radio_rts(hal::GpioPort::A, 12);
+    radio_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    radio_rx.configure(hal::GpioInputMode::Floating);
+    radio_cts.configure(hal::GpioInputMode::Floating);
+    radio_rts.configure(hal::GpioInputMode::PullDown);
 
     // Enable peripheral clocks.
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
@@ -498,17 +510,23 @@ void radio_task(void *) {
     // Keep track of the number of transmission windows we've missed.
     std::uint8_t missed_tx_count = 0;
 
+    // Keep track of latest valid messages received.
+    precharge::StatusMessage precharge_status;
+
     freertos::PeriodScheduler scheduler;
     while (true) {
         scheduler.delay_until_ms(k_radio_period);
 
         // Don't transmit if the radio's UART buffer is near full.
-        if (s_radio_cts.read()) {
+        if (radio_cts.read()) {
             missed_tx_count++;
             continue;
         }
 
         const auto data = *s_radio_data.receive(portMAX_DELAY);
+        if (data.precharge_status) {
+            precharge_status = *data.precharge_status;
+        }
 
         // Build a telemetry frame with the data offset by one byte to allow for the first COBS code. The size is also
         // limited to 3 bytes fewer to allow for the overall COBS overhead.
@@ -519,14 +537,7 @@ void radio_task(void *) {
         stream.write_byte(missed_tx_count);
 
         // Append online status bitset for each component.
-        std::uint8_t online_bitset = 0;
-        if (s_front_status) {
-            online_bitset |= 1u << 0;
-        }
-        if (s_precharge_status) {
-            online_bitset |= 1u << 2;
-        }
-        stream.write_byte(online_bitset);
+        stream.write_be(data.online_flags.value());
 
         // Append distribution information.
         stream.write_be(data.fuse_bitset.value());
@@ -537,11 +548,11 @@ void radio_task(void *) {
         stream.write_be(data.rtd_prevention_flags.value());
 
         // Append precharge information.
-        stream.write_be(util::to_underlying(s_precharge_status->state));
-        stream.write_be(s_precharge_status->error_flags.value());
-        stream.write_be(s_precharge_status->precharge_voltage);
-        stream.write_be(s_precharge_status->tractive_voltage);
-        stream.write_be(s_precharge_status->relay_states.value());
+        stream.write_be(util::to_underlying(precharge_status.state));
+        stream.write_be(precharge_status.error_flags.value());
+        stream.write_be(precharge_status.precharge_voltage);
+        stream.write_be(precharge_status.tractive_voltage);
+        stream.write_be(precharge_status.relay_states.value());
 
         // Append a checksum.
         stream.write_be(freertos::in_critical_section([&] {
@@ -591,7 +602,7 @@ void swd_task(void *) {
 extern "C" void DMA1_Channel1_IRQHandler() {
     BaseType_t higher_priority_task_woken = pdFALSE;
     DMA1->IFCR |= DMA_IFCR_CTCIF1;
-    vTaskNotifyGiveFromISR(*s_main_task, &higher_priority_task_woken);
+    vTaskNotifyGiveIndexedFromISR(*s_control_task, 0, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -599,16 +610,6 @@ extern "C" void DMA1_Channel4_IRQHandler() {
     // Clear the pending flag and disable the channel.
     DMA1->IFCR |= DMA_IFCR_CTCIF4;
     DMA1_Channel4->CCR &= ~DMA_CCR_EN;
-}
-
-extern "C" void EXTI15_10_IRQHandler() {
-    // Clear pending bit.
-    EXTI->PR = EXTI_PR_PR10;
-
-    // Notify expander task of brake switch change.
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 extern "C" void I2C1_EV_IRQHandler() {
@@ -621,7 +622,7 @@ extern "C" void I2C1_EV_IRQHandler() {
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
         BaseType_t higher_priority_task_woken = pdFALSE;
-        vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
+        vTaskNotifyGiveIndexedFromISR(*s_control_task, 1, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
     }
 }
@@ -629,7 +630,7 @@ extern "C" void I2C1_EV_IRQHandler() {
 extern "C" void I2C1_ER_IRQHandler() {
     s_i2c_sm.error();
     BaseType_t higher_priority_task_woken = pdFALSE;
-    vTaskNotifyGiveFromISR(*s_expander_task, &higher_priority_task_woken);
+    vTaskNotifyGiveIndexedFromISR(*s_control_task, 1, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
@@ -639,8 +640,7 @@ void vApplicationIdleHook() {
 
 void app_main() {
     s_radio_data.init();
-    s_main_task.init(&main_task, "main", 4);
-    s_expander_task.init(&expander_task, "expander", 2);
+    s_control_task.init(&control_task, "main", 4);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
