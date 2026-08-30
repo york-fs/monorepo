@@ -34,11 +34,11 @@ enum class State {
 
 // TODO: Switch to a callback system? Would be nicer for slave handling.
 class StateMachine {
+    const Bus m_bus;
+    const Speed m_speed;
     std::span<std::uint8_t> m_buffer;
     std::atomic<std::uint32_t> m_head;
     std::atomic<State> m_state{State::Error};
-    Bus m_bus;
-    Speed m_speed;
     std::uint8_t m_address{0};
     bool m_emit_stop{true};
 
