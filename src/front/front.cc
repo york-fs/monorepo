@@ -18,11 +18,14 @@
 #include <cstdint>
 #include <optional>
 
-// TODO: RTD buzzer.
-
 using namespace front;
 
 namespace {
+
+/**
+ * @brief The duration to drive the RTD horn after activation in milliseconds.
+ */
+constexpr std::uint32_t k_rtd_horn_duration = 1000;
 
 /**
  * @brief Status sending period in milliseconds.
@@ -56,7 +59,7 @@ hal::Gpio s_sdn_inertia(hal::GpioPort::B, 14);
 hal::Gpio s_sdn_aux(hal::GpioPort::B, 15);
 
 // General outputs.
-hal::Gpio s_rtd_buzzer(hal::GpioPort::A, 8);
+hal::Gpio s_rtd_horn(hal::GpioPort::A, 8);
 hal::Gpio s_led(hal::GpioPort::B, 4);
 
 // Dashboard buttons with indicator LEDs.
@@ -113,7 +116,7 @@ void main_task(void *) {
 
     // Configure outputs.
     s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_rtd_buzzer.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_rtd_horn.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
 
     // Configure TS button.
     s_ts_button.configure(hal::GpioInputMode::Floating);
@@ -131,6 +134,7 @@ void main_task(void *) {
 
     std::optional<TickType_t> ts_activation_desired;
     std::optional<TickType_t> rtd_activation_desired;
+    std::optional<TickType_t> rtd_activation_time;
     freertos::PeriodScheduler scheduler;
     while (true) {
         // Handle dashboard button presses.
@@ -166,6 +170,22 @@ void main_task(void *) {
         if (rtd_activation_desired && xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(100) &&
             (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
             rtd_activation_desired.reset();
+        }
+
+        // Keep track of RTD activation time.
+        if (s_rear_status && s_rear_status->rtd_prevention_flags.none_set() && rtd_activation_desired) {
+            if (!rtd_activation_time) {
+                rtd_activation_time.emplace(xTaskGetTickCount());
+            }
+        } else {
+            rtd_activation_time.reset();
+        }
+
+        // Drive RTD horn.
+        if (rtd_activation_time && xTaskGetTickCount() - *rtd_activation_time <= pdMS_TO_TICKS(k_rtd_horn_duration)) {
+            hal::gpio_set(s_rtd_horn);
+        } else {
+            hal::gpio_reset(s_rtd_horn);
         }
 
         // Build bitset of raw shutdown samples.
