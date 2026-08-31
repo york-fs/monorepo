@@ -15,9 +15,6 @@ constexpr std::uint8_t k_precharge_can_id = 0x4;
 constexpr std::uint8_t k_dti_can_id = 0x5;
 constexpr std::uint8_t k_charger_can_id = 0x6;
 
-// RPM to ERPM conversion factor. Emrax 228 has 10 motor pole pairs.
-constexpr std::uint8_t k_erpm_factor = 10;
-
 consteval bool enable_debug_logs() {
 #ifdef NDEBUG
     return false;
