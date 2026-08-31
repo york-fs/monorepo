@@ -10,6 +10,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <utility>
@@ -112,7 +113,6 @@ void tx_task(void *) {
             // TODO: Backoff with jitter.
             vTaskDelay(pdMS_TO_TICKS(100));
             s_online.store(reinit(s_speed));
-            s_task.notify_overwrite(0, 3);
             continue;
         }
 
@@ -129,12 +129,17 @@ void tx_task(void *) {
         if (!s_online.load()) {
             // We lose the frame we dequeued.
             ++s_lost_tx_count;
+            if (free_count != 0) {
+                // We were kicked by the error handling interrupt which caused us to erroneously decrement the available
+                // mailbox count.
+                s_task.notify_give(0);
+            }
             continue;
         }
 
         // Check that there are the correct amount of free mailboxes.
-        // TODO: Figure out why this assertion isn't always true in the error case.
-        // assert(((CAN1->TSR & CAN_TSR_TME_Msk) >> CAN_TSR_TME_Pos) >= free_count);
+        [[maybe_unused]] const auto hw_free_count = std::popcount((CAN1->TSR & CAN_TSR_TME_Msk) >> CAN_TSR_TME_Pos);
+        assert(hw_free_count == free_count);
 
         // Fill in a free mailbox.
         auto &mailbox = CAN1->sTxMailBox[(CAN1->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos];
@@ -170,8 +175,8 @@ std::pair<hal::Gpio, hal::Gpio> pin_pair(Port port) {
 } // namespace
 
 extern "C" void USB_HP_CAN1_TX_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     const std::uint32_t tsr = CAN1->TSR;
-    std::uint32_t free_mailboxes = 0;
     if ((tsr & CAN_TSR_RQCP0) != 0) {
         CAN1->TSR |= CAN_TSR_RQCP0;
         if ((tsr & CAN_TSR_TXOK0) != 0) {
@@ -179,7 +184,7 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
         } else {
             ++s_lost_tx_count;
         }
-        free_mailboxes++;
+        s_task.notify_give_isr(0, interrupt_yielder);
     }
     if ((tsr & CAN_TSR_RQCP1) != 0) {
         CAN1->TSR |= CAN_TSR_RQCP1;
@@ -188,7 +193,7 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
         } else {
             ++s_lost_tx_count;
         }
-        free_mailboxes++;
+        s_task.notify_give_isr(0, interrupt_yielder);
     }
     if ((tsr & CAN_TSR_RQCP2) != 0) {
         CAN1->TSR |= CAN_TSR_RQCP2;
@@ -197,13 +202,7 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
         } else {
             ++s_lost_tx_count;
         }
-        free_mailboxes++;
-    }
-    if (free_mailboxes != 0) {
-        // TODO: Increment value is ignored here!
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(*s_task, free_mailboxes, eIncrement, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        s_task.notify_give_isr(0, interrupt_yielder);
     }
 }
 
@@ -221,13 +220,13 @@ extern "C" void USB_LP_CAN1_RX0_IRQHandler() {
             .identifier = decode_identifier(mailbox.RIR),
             .data{
                 static_cast<std::uint8_t>(mailbox.RDLR & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 8u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 16u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDLR >> 24u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 8) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 16) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDLR >> 24) & 0xffu),
                 static_cast<std::uint8_t>(mailbox.RDHR & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 8u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 16u) & 0xffu),
-                static_cast<std::uint8_t>((mailbox.RDHR >> 24u) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 8) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 16) & 0xffu),
+                static_cast<std::uint8_t>((mailbox.RDHR >> 24) & 0xffu),
             },
             .length = static_cast<std::uint8_t>((mailbox.RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos),
         };
@@ -252,10 +251,12 @@ extern "C" void CAN1_SCE_IRQHandler() {
 
     // Update online status.
     freertos::InterruptYielder interrupt_yielder;
-    s_online.store((CAN1->ESR & CAN_ESR_BOFF) == 0);
+    if ((CAN1->ESR & CAN_ESR_BOFF) != 0) {
+        s_online.store(false);
+    }
     if (!s_online.load()) {
-        // Kick task notification so that it attempt to resync with the bus.
-        s_task.notify_give_isr(0, interrupt_yielder);
+        // Kick task notification so that it can attempt to resync with the bus.
+        s_task.notify_isr(0, interrupt_yielder);
     }
 }
 
