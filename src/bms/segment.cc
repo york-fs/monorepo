@@ -628,17 +628,17 @@ extern "C" void DMA1_Channel1_IRQHandler() {
 }
 
 extern "C" void I2C1_EV_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     if (!s_i2c_sm.event()) {
         // State not changed.
         return;
     }
 
-    BaseType_t higher_priority_task_woken = pdFALSE;
     const auto state = s_i2c_sm.state();
     if (state == i2c::State::SlaveRx) {
         s_i2c_sm.set_buffer(s_i2c_buffer);
     } else if (state == i2c::State::SlaveRxFinish) {
-        if (!s_cmd_queue.send_isr(std::span(s_i2c_buffer).subspan(0, s_i2c_sm.head()), &higher_priority_task_woken)) {
+        if (!s_cmd_queue.send_isr(std::span(s_i2c_buffer).subspan(0, s_i2c_sm.head()), interrupt_yielder)) {
             ++s_i2c_error_count;
         }
     } else if (state == i2c::State::SlaveTx) {
@@ -662,7 +662,6 @@ extern "C" void I2C1_EV_IRQHandler() {
         state == i2c::State::NoAck) {
         i2c_listen();
     }
-    portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 extern "C" void I2C1_ER_IRQHandler() {

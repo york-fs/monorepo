@@ -14,6 +14,10 @@ Task<configMINIMAL_STACK_SIZE> s_idle_task;
 
 } // namespace
 
+InterruptYielder::~InterruptYielder() {
+    portYIELD_FROM_ISR(m_higher_priority_task_woken);
+}
+
 void Mutex::init() {
     m_handle = xSemaphoreCreateMutexStatic(&m_mutex);
 }
@@ -31,9 +35,8 @@ std::span<std::uint8_t> MessageBufferBase::receive(std::span<std::uint8_t> buffe
     return buffer.subspan(0, size);
 }
 
-std::span<std::uint8_t> MessageBufferBase::receive_isr(std::span<std::uint8_t> buffer,
-                                                       BaseType_t *higher_priority_task_woken) {
-    const auto size = xMessageBufferReceiveFromISR(m_handle, buffer.data(), buffer.size(), higher_priority_task_woken);
+std::span<std::uint8_t> MessageBufferBase::receive_isr(std::span<std::uint8_t> buffer, InterruptYielder &yielder) {
+    const auto size = xMessageBufferReceiveFromISR(m_handle, buffer.data(), buffer.size(), *yielder);
     return buffer.subspan(0, size);
 }
 
@@ -41,8 +44,8 @@ bool MessageBufferBase::send(std::span<const std::uint8_t> buffer, TickType_t ti
     return xMessageBufferSend(m_handle, buffer.data(), buffer.size(), ticks_to_wait) != 0;
 }
 
-bool MessageBufferBase::send_isr(std::span<const std::uint8_t> buffer, BaseType_t *higher_priority_task_woken) {
-    return xMessageBufferSendFromISR(m_handle, buffer.data(), buffer.size(), higher_priority_task_woken) != 0;
+bool MessageBufferBase::send_isr(std::span<const std::uint8_t> buffer, InterruptYielder &yielder) {
+    return xMessageBufferSendFromISR(m_handle, buffer.data(), buffer.size(), *yielder) != 0;
 }
 
 PeriodScheduler::PeriodScheduler() {

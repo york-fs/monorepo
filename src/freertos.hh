@@ -17,6 +17,21 @@
 
 namespace freertos {
 
+class InterruptYielder {
+    BaseType_t m_higher_priority_task_woken{pdFALSE};
+
+public:
+    InterruptYielder() = default;
+    InterruptYielder(const InterruptYielder &) = delete;
+    InterruptYielder(InterruptYielder &&) = delete;
+    ~InterruptYielder();
+
+    InterruptYielder &operator=(const InterruptYielder &) = delete;
+    InterruptYielder &operator=(InterruptYielder &&) = delete;
+
+    BaseType_t *operator*() { return &m_higher_priority_task_woken; }
+};
+
 class Mutex {
     SemaphoreHandle_t m_handle{nullptr};
     StaticSemaphore_t m_mutex;
@@ -39,10 +54,10 @@ protected:
 
 public:
     std::span<std::uint8_t> receive(std::span<std::uint8_t> buffer, TickType_t ticks_to_wait);
-    std::span<std::uint8_t> receive_isr(std::span<std::uint8_t> buffer, BaseType_t *higher_priority_task_woken);
+    std::span<std::uint8_t> receive_isr(std::span<std::uint8_t> buffer, InterruptYielder &yielder);
 
     bool send(std::span<const std::uint8_t> buffer, TickType_t ticks_to_wait);
-    bool send_isr(std::span<const std::uint8_t> buffer, BaseType_t *higher_priority_task_woken);
+    bool send_isr(std::span<const std::uint8_t> buffer, InterruptYielder &yielder);
 
     explicit operator bool() const { return m_handle != nullptr; }
     MessageBufferHandle_t operator*() const { return m_handle; }
@@ -79,16 +94,16 @@ protected:
 
 public:
     std::optional<T> receive(TickType_t ticks_to_wait);
-    std::optional<T> receive_isr(BaseType_t *higher_priority_task_woken);
+    std::optional<T> receive_isr(InterruptYielder &yielder);
 
     bool send_to_front(const T &item, TickType_t ticks_to_wait);
-    bool send_to_front_isr(const T &item, BaseType_t *higher_priority_task_woken);
+    bool send_to_front_isr(const T &item, InterruptYielder &yielder);
 
     bool send_to_back(const T &item, TickType_t ticks_to_wait);
-    bool send_to_back_isr(const T &item, BaseType_t *higher_priority_task_woken);
+    bool send_to_back_isr(const T &item, InterruptYielder &yielder);
 
     void overwrite(const T &item);
-    void overwrite_isr(const T &item, BaseType_t *higher_priority_task_woken);
+    void overwrite_isr(const T &item, InterruptYielder &yielder);
 
     explicit operator bool() const { return m_handle != nullptr; }
     QueueHandle_t operator*() const { return m_handle; }
@@ -140,10 +155,9 @@ std::optional<T> QueueBase<T>::receive(TickType_t ticks_to_wait) {
 }
 
 template <util::trivially_copyable T>
-std::optional<T> QueueBase<T>::receive_isr(BaseType_t *higher_priority_task_woken) {
+std::optional<T> QueueBase<T>::receive_isr(InterruptYielder &yielder) {
     T item;
-    return xQueueReceiveFromISR(m_handle, &item, higher_priority_task_woken) == pdPASS ? std::optional(item)
-                                                                                       : std::nullopt;
+    return xQueueReceiveFromISR(m_handle, &item, *yielder) == pdPASS ? std::optional(item) : std::nullopt;
 }
 
 template <util::trivially_copyable T>
@@ -152,8 +166,8 @@ bool QueueBase<T>::send_to_front(const T &item, TickType_t ticks_to_wait) {
 }
 
 template <util::trivially_copyable T>
-bool QueueBase<T>::send_to_front_isr(const T &item, BaseType_t *higher_priority_task_woken) {
-    return xQueueSendToFrontFromISR(m_handle, &item, higher_priority_task_woken) == pdPASS;
+bool QueueBase<T>::send_to_front_isr(const T &item, InterruptYielder &yielder) {
+    return xQueueSendToFrontFromISR(m_handle, &item, *yielder) == pdPASS;
 }
 
 template <util::trivially_copyable T>
@@ -162,8 +176,8 @@ bool QueueBase<T>::send_to_back(const T &item, TickType_t ticks_to_wait) {
 }
 
 template <util::trivially_copyable T>
-bool QueueBase<T>::send_to_back_isr(const T &item, BaseType_t *higher_priority_task_woken) {
-    return xQueueSendToBackFromISR(m_handle, &item, higher_priority_task_woken) == pdPASS;
+bool QueueBase<T>::send_to_back_isr(const T &item, InterruptYielder &yielder) {
+    return xQueueSendToBackFromISR(m_handle, &item, *yielder) == pdPASS;
 }
 
 template <util::trivially_copyable T>
@@ -172,8 +186,8 @@ void QueueBase<T>::overwrite(const T &item) {
 }
 
 template <util::trivially_copyable T>
-void QueueBase<T>::overwrite_isr(const T &item, BaseType_t *higher_priority_task_woken) {
-    xQueueOverwriteFromISR(m_handle, &item, higher_priority_task_woken);
+void QueueBase<T>::overwrite_isr(const T &item, InterruptYielder &yielder) {
+    xQueueOverwriteFromISR(m_handle, &item, *yielder);
 }
 
 template <util::trivially_copyable T, std::uint32_t Length>

@@ -137,9 +137,8 @@ void control_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3);
     can::listen<ControlMessage, [](const ControlMessage &control_message) {
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        s_control_queue.send_to_back_isr(control_message, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        freertos::InterruptYielder interrupt_yielder;
+        s_control_queue.send_to_back_isr(control_message, interrupt_yielder);
     }>(config::k_charger_can_id, 0);
 
     // Enable CAN IRQs.
