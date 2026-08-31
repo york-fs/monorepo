@@ -391,7 +391,7 @@ void sample_temperatures_task(void *) {
 
             // Start the ADC sample and wait for its completion.
             hal::adc_start(ADC1);
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            freertos::notify_take(0, true, portMAX_DELAY);
 
             const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
             for (std::uint32_t mux = 0; mux < 3; mux++) {
@@ -621,10 +621,9 @@ void swd_task(void *) {
 } // namespace
 
 extern "C" void DMA1_Channel1_IRQHandler() {
-    BaseType_t higher_priority_task_woken = pdFALSE;
+    freertos::InterruptYielder interrupt_yielder;
     DMA1->IFCR |= DMA_IFCR_CTCIF1;
-    xTaskNotifyFromISR(*s_sample_temperatures_task, 1, eIncrement, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    s_sample_temperatures_task.notify_give_isr(0, interrupt_yielder);
 }
 
 extern "C" void I2C1_EV_IRQHandler() {

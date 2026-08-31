@@ -524,7 +524,7 @@ void supervisor_task(void *) {
 
         // Signal the control task to keep working.
         if (!shutdown_time) {
-            xTaskNotify(*s_control_task, 1, eIncrement);
+            s_control_task.notify_give(0);
         } else {
             // Make sure all balancers are off.
             std::lock_guard segments_lock(s_segments_mutex);
@@ -562,7 +562,7 @@ void control_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         scheduler.delay_until_ms(k_control_period);
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        freertos::notify_take(0, true, portMAX_DELAY);
 
         // Send inverter DC-side power limits. We don't support regenerative braking yet, so always set max brake
         // current to zero for now.
@@ -721,7 +721,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
 
 bool i2c_wait(i2c::StateMachine &sm) {
     // Wait for the transaction to complete up to a timeout in case the state machine gets stuck.
-    const bool timeout = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15)) == 0;
+    const bool timeout = freertos::notify_take(0, true, pdMS_TO_TICKS(15)) == 0;
     const auto state = sm.state();
     if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
         return state == i2c::State::Idle;
@@ -844,9 +844,8 @@ void config_task(void *) {
 
     // Install config message listeners.
     can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyIndexedFromISR(*s_config_task, 1, 1, eIncrement, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        freertos::InterruptYielder interrupt_yielder;
+        s_config_task.notify_give_isr(1, interrupt_yielder);
     }>(config::k_bms_can_id, 1);
     can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
         s_config.segment_start_address = new_config.start_address;
@@ -863,7 +862,7 @@ void config_task(void *) {
 
     while (true) {
         // Wait for a config write request.
-        ulTaskNotifyTakeIndexed(1, pdTRUE, portMAX_DELAY);
+        freertos::notify_take(1, true, portMAX_DELAY);
 
         // Use the next slot not currently in use.
         config_index = (config_index + 1) % k_config_offsets.size();
@@ -1072,6 +1071,7 @@ extern "C" void SPI2_IRQHandler() {
 }
 
 extern "C" void I2C1_EV_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     if (!s_i2c1_sm.event()) {
         // State not changed.
         return;
@@ -1080,20 +1080,18 @@ extern "C" void I2C1_EV_IRQHandler() {
     const auto state = s_i2c1_sm.state();
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(*s_sample_segments_task, 1, eIncrement, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        s_sample_segments_task.notify_give_isr(0, interrupt_yielder);
     }
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     s_i2c1_sm.error();
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(*s_sample_segments_task, 1, eIncrement, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    s_sample_segments_task.notify_give_isr(0, interrupt_yielder);
 }
 
 extern "C" void I2C2_EV_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     if (!s_i2c2_sm.event()) {
         // State not changed.
         return;
@@ -1102,17 +1100,14 @@ extern "C" void I2C2_EV_IRQHandler() {
     const auto state = s_i2c2_sm.state();
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        xTaskNotifyFromISR(*s_config_task, 1, eIncrement, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        s_config_task.notify_give_isr(0, interrupt_yielder);
     }
 }
 
 extern "C" void I2C2_ER_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     s_i2c2_sm.error();
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(*s_config_task, 1, eIncrement, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    s_config_task.notify_give_isr(0, interrupt_yielder);
 }
 
 void vApplicationIdleHook() {

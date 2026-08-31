@@ -19,7 +19,6 @@
 #include <optional>
 
 // TODO: RTD buzzer.
-// TODO: Task notification wrapper which can set bits via FlagBitset.
 
 using namespace front;
 
@@ -72,20 +71,18 @@ void main_task(void *) {
 
     // Setup CAN listeners.
     can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
-        BaseType_t higher_priority_task_woken = pdFALSE;
+        freertos::InterruptYielder interrupt_yielder;
         const auto previous = s_precharge_state.receive(precharge_status.state);
         if (!previous || *previous != precharge_status.state) {
-            vTaskNotifyGiveFromISR(*s_led_task, &higher_priority_task_woken);
+            s_led_task.notify_give_isr(0, interrupt_yielder);
         }
-        portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_precharge_can_id, 0);
     can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
-        BaseType_t higher_priority_task_woken = pdFALSE;
+        freertos::InterruptYielder interrupt_yielder;
         const auto previous = s_rear_status.receive(rear_status);
         if (!previous || previous->rtd_prevention_flags.value() != rear_status.rtd_prevention_flags.value()) {
-            vTaskNotifyGiveFromISR(*s_led_task, &higher_priority_task_woken);
+            s_led_task.notify_give_isr(0, interrupt_yielder);
         }
-        portYIELD_FROM_ISR(higher_priority_task_woken);
     }>(config::k_rear_can_id, 1);
 
     // Initialise periodic node status transmission.
@@ -137,8 +134,7 @@ void main_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         // Handle dashboard button presses.
-        std::uint32_t notification = 0;
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 0);
+        const auto notification = freertos::notify_wait(0, 0, UINT32_MAX, 0);
         if ((notification & (1u << 0)) != 0) {
             if (ts_activation_desired) {
                 ts_activation_desired.reset();
@@ -159,7 +155,7 @@ void main_task(void *) {
         s_rear_status.update();
         if (!s_precharge_state || !s_rear_status) {
             // Update LED task since CAN messages are not being received.
-            xTaskNotifyGive(*s_led_task);
+            s_led_task.notify_give(0);
         }
 
         // Desired state timeouts if the TS and RTD actual states don't activate in time.
@@ -263,8 +259,7 @@ void debounce_task(void *) {
     TickType_t last_rtd_button_time = 0;
     while (true) {
         // Wait for either button to be pressed. Clearing on both entry and exit is important here.
-        std::uint32_t notification = 0;
-        xTaskNotifyWait(UINT32_MAX, UINT32_MAX, &notification, portMAX_DELAY);
+        const auto notification = freertos::notify_wait(0, UINT32_MAX, UINT32_MAX, portMAX_DELAY);
 
         // Only trigger if the button has been held for a minimum period.
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -274,12 +269,12 @@ void debounce_task(void *) {
         if ((notification & (1u << 0)) != 0 && !s_ts_button.read() &&
             xTaskGetTickCount() - last_ts_button_time >= pdMS_TO_TICKS(1000)) {
             last_ts_button_time = xTaskGetTickCount();
-            xTaskNotify(*s_main_task, 1u << 0, eSetBits);
+            s_main_task.notify_set_bits(0, 1u << 0);
         }
         if ((notification & (1u << 1)) != 0 && !s_rtd_button.read() &&
             xTaskGetTickCount() - last_rtd_button_time >= pdMS_TO_TICKS(1000)) {
             last_rtd_button_time = xTaskGetTickCount();
-            xTaskNotify(*s_main_task, 1u << 1, eSetBits);
+            s_main_task.notify_set_bits(0, 1u << 1);
         }
     }
 }
@@ -316,10 +311,10 @@ void led_task(void *) {
     // Enable counter.
     TIM3->CR1 = TIM_CR1_CEN;
 
-    xTaskNotifyGive(xTaskGetCurrentTaskHandle());
+    s_led_task.notify_give(0);
     while (true) {
         // Wait for a state change.
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        freertos::notify_take(0, true, portMAX_DELAY);
 
         // Set TS button LED.
         DMA1_Channel6->CCR &= ~DMA_CCR_EN;
@@ -388,9 +383,8 @@ extern "C" void EXTI1_IRQHandler() {
     EXTI->PR = EXTI_PR_PR1;
 
     // Notify debounce task of button press.
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(*s_debounce_task, 1u << 0, eSetBits, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    freertos::InterruptYielder interrupt_yielder;
+    s_debounce_task.notify_set_bits_isr(0, 1u << 0, interrupt_yielder);
 }
 
 extern "C" void EXTI15_10_IRQHandler() {
@@ -398,9 +392,8 @@ extern "C" void EXTI15_10_IRQHandler() {
     EXTI->PR = EXTI_PR_PR14;
 
     // Notify debounce task of button press.
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    xTaskNotifyFromISR(*s_debounce_task, 1u << 1, eSetBits, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    freertos::InterruptYielder interrupt_yielder;
+    s_debounce_task.notify_set_bits_isr(0, 1u << 1, interrupt_yielder);
 }
 
 void vApplicationIdleHook() {

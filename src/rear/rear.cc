@@ -187,7 +187,7 @@ bool is_precharge_state_good(precharge::State state) {
 }
 
 bool expander_wait() {
-    const bool timeout = ulTaskNotifyTakeIndexed(1, pdTRUE, pdMS_TO_TICKS(2)) == 0;
+    const bool timeout = freertos::notify_take(1, true, pdMS_TO_TICKS(2)) == 0;
     const auto state = s_i2c_sm.state();
     if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
         return state == i2c::State::Idle;
@@ -323,7 +323,7 @@ void control_task(void *) {
 
         // Sample all ADC channels.
         hal::adc_start(ADC1);
-        ulTaskNotifyTakeIndexed(0, pdTRUE, portMAX_DELAY);
+        freertos::notify_take(0, true, portMAX_DELAY);
 
         // Create an array of rear and front measured fuse voltages. The sampling inputs have a 5.7x divider on them.
         std::array<std::uint16_t, 17> fuse_voltages{};
@@ -602,10 +602,9 @@ void swd_task(void *) {
 } // namespace
 
 extern "C" void DMA1_Channel1_IRQHandler() {
-    BaseType_t higher_priority_task_woken = pdFALSE;
+    freertos::InterruptYielder interrupt_yielder;
     DMA1->IFCR |= DMA_IFCR_CTCIF1;
-    vTaskNotifyGiveIndexedFromISR(*s_control_task, 0, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    s_control_task.notify_give_isr(0, interrupt_yielder);
 }
 
 extern "C" void DMA1_Channel4_IRQHandler() {
@@ -615,6 +614,7 @@ extern "C" void DMA1_Channel4_IRQHandler() {
 }
 
 extern "C" void I2C1_EV_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     if (!s_i2c_sm.event()) {
         // State not changed.
         return;
@@ -623,17 +623,14 @@ extern "C" void I2C1_EV_IRQHandler() {
     const auto state = s_i2c_sm.state();
     if (state == i2c::State::Idle || state == i2c::State::NoAck || state == i2c::State::Error) {
         // Signal transaction completion.
-        BaseType_t higher_priority_task_woken = pdFALSE;
-        vTaskNotifyGiveIndexedFromISR(*s_control_task, 1, &higher_priority_task_woken);
-        portYIELD_FROM_ISR(higher_priority_task_woken);
+        s_control_task.notify_give_isr(1, interrupt_yielder);
     }
 }
 
 extern "C" void I2C1_ER_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
     s_i2c_sm.error();
-    BaseType_t higher_priority_task_woken = pdFALSE;
-    vTaskNotifyGiveIndexedFromISR(*s_control_task, 1, &higher_priority_task_woken);
-    portYIELD_FROM_ISR(higher_priority_task_woken);
+    s_control_task.notify_give_isr(1, interrupt_yielder);
 }
 
 void vApplicationIdleHook() {

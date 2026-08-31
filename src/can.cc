@@ -106,13 +106,13 @@ bool reinit(Speed speed) {
  */
 void tx_task(void *) {
     // Start with all 3 mailboxes free.
-    xTaskNotify(*s_task, 3, eSetValueWithOverwrite);
+    s_task.notify_overwrite(0, 3);
     while (true) {
         if (!s_online.load()) {
             // TODO: Backoff with jitter.
             vTaskDelay(pdMS_TO_TICKS(100));
             s_online.store(reinit(s_speed));
-            xTaskNotify(*s_task, 3, eSetValueWithOverwrite);
+            s_task.notify_overwrite(0, 3);
             continue;
         }
 
@@ -123,7 +123,7 @@ void tx_task(void *) {
         }
 
         // Wait for at least one available mailbox and decrement the count.
-        [[maybe_unused]] const auto free_count = ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+        [[maybe_unused]] const auto free_count = freertos::notify_take(0, false, portMAX_DELAY);
 
         // Skip if we were woken due to bus off.
         if (!s_online.load()) {
@@ -200,6 +200,7 @@ extern "C" void USB_HP_CAN1_TX_IRQHandler() {
         free_mailboxes++;
     }
     if (free_mailboxes != 0) {
+        // TODO: Increment value is ignored here!
         BaseType_t higher_priority_task_woken = pdFALSE;
         xTaskNotifyFromISR(*s_task, free_mailboxes, eIncrement, &higher_priority_task_woken);
         portYIELD_FROM_ISR(higher_priority_task_woken);
@@ -250,10 +251,11 @@ extern "C" void CAN1_SCE_IRQHandler() {
     // TODO: Record counts for each error type.
 
     // Update online status.
+    freertos::InterruptYielder interrupt_yielder;
     s_online.store((CAN1->ESR & CAN_ESR_BOFF) == 0);
     if (!s_online.load()) {
         // Kick task notification so that it attempt to resync with the bus.
-        xTaskNotifyFromISR(*s_task, 1, eIncrement, nullptr);
+        s_task.notify_give_isr(0, interrupt_yielder);
     }
 }
 

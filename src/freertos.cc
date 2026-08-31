@@ -48,12 +48,55 @@ bool MessageBufferBase::send_isr(std::span<const std::uint8_t> buffer, Interrupt
     return xMessageBufferSendFromISR(m_handle, buffer.data(), buffer.size(), *yielder) != 0;
 }
 
+void TaskBase::notify(UBaseType_t index) {
+    xTaskNotifyIndexed(m_handle, index, 0, eNoAction);
+}
+
+void TaskBase::notify_isr(UBaseType_t index, InterruptYielder &yielder) {
+    xTaskNotifyIndexedFromISR(m_handle, index, 0, eNoAction, *yielder);
+}
+
+void TaskBase::notify_give(UBaseType_t index) {
+    xTaskNotifyGiveIndexed(m_handle, index);
+}
+
+void TaskBase::notify_give_isr(UBaseType_t index, InterruptYielder &yielder) {
+    vTaskNotifyGiveIndexedFromISR(m_handle, index, *yielder);
+}
+
+void TaskBase::notify_set_bits(UBaseType_t index, std::uint32_t bits) {
+    xTaskNotifyIndexed(m_handle, index, bits, eSetBits);
+}
+
+void TaskBase::notify_set_bits_isr(UBaseType_t index, std::uint32_t bits, InterruptYielder &yielder) {
+    xTaskNotifyIndexedFromISR(m_handle, index, bits, eSetBits, *yielder);
+}
+
+void TaskBase::notify_overwrite(UBaseType_t index, std::uint32_t value) {
+    xTaskNotifyIndexed(m_handle, index, value, eSetValueWithOverwrite);
+}
+
+void TaskBase::notify_overwrite_isr(UBaseType_t index, std::uint32_t value, InterruptYielder &yielder) {
+    xTaskNotifyIndexedFromISR(m_handle, index, value, eSetValueWithOverwrite, *yielder);
+}
+
 PeriodScheduler::PeriodScheduler() {
     m_last_schedule_time = xTaskGetTickCount();
 }
 
 bool PeriodScheduler::delay_until_ms(std::uint32_t period_ms) {
     return xTaskDelayUntil(&m_last_schedule_time, pdMS_TO_TICKS(period_ms)) == pdTRUE;
+}
+
+std::uint32_t notify_take(UBaseType_t index, bool clear_count_on_exit, TickType_t ticks_to_wait) {
+    return ulTaskNotifyTakeIndexed(index, clear_count_on_exit ? pdTRUE : pdFALSE, ticks_to_wait);
+}
+
+std::uint32_t notify_wait(UBaseType_t index, std::uint32_t bits_to_clear_on_entry, std::uint32_t bits_to_clear_on_exit,
+                          TickType_t ticks_to_wait) {
+    std::uint32_t notification = 0;
+    xTaskNotifyWaitIndexed(index, bits_to_clear_on_entry, bits_to_clear_on_exit, &notification, ticks_to_wait);
+    return notification;
 }
 
 } // namespace freertos

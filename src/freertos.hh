@@ -72,17 +72,35 @@ public:
     void init();
 };
 
-template <std::uint32_t StackDepth>
-class Task {
+class TaskBase {
+protected:
     TaskHandle_t m_handle{nullptr};
+
+public:
+    void notify(UBaseType_t index);
+    void notify_isr(UBaseType_t index, InterruptYielder &yielder);
+
+    void notify_give(UBaseType_t index);
+    void notify_give_isr(UBaseType_t index, InterruptYielder &yielder);
+
+    void notify_set_bits(UBaseType_t index, std::uint32_t bits);
+    void notify_set_bits_isr(UBaseType_t index, std::uint32_t bits, InterruptYielder &yielder);
+
+    void notify_overwrite(UBaseType_t index, std::uint32_t value);
+    void notify_overwrite_isr(UBaseType_t index, std::uint32_t value, InterruptYielder &yielder);
+
+    explicit operator bool() const { return m_handle != nullptr; }
+    TaskHandle_t operator*() const { return m_handle; }
+};
+
+template <std::uint32_t StackDepth>
+class Task : public TaskBase {
     StaticTask_t m_tcb;
     std::array<StackType_t, StackDepth> m_stack;
 
 public:
     void init(TaskFunction_t function, const char *name, UBaseType_t priority);
 
-    explicit operator bool() const { return m_handle != nullptr; }
-    TaskHandle_t operator*() const { return m_handle; }
     StaticTask_t *tcb() { return &m_tcb; }
     StackType_t *stack() { return m_stack.data(); }
 };
@@ -207,6 +225,10 @@ decltype(auto) in_critical_section(Func &&func) {
         return value;
     }
 }
+
+std::uint32_t notify_take(UBaseType_t index, bool clear_count_on_exit, TickType_t ticks_to_wait);
+std::uint32_t notify_wait(UBaseType_t index, std::uint32_t bits_to_clear_on_entry, std::uint32_t bits_to_clear_on_exit,
+                          TickType_t ticks_to_wait);
 
 /**
  * @brief Returns the scheduler uptime in milliseconds. Can be called from interrupts.
