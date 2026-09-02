@@ -235,20 +235,21 @@ void control_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3);
 
-    // Keep track of reception time for the most important status messages from each component.
+    // Data from the front distribution.
     static TimeTracked<front::StatusMessage> front_status(250);
-    static TimeTracked<precharge::StatusMessage> precharge_status(25);
-
-    // Post-fuse voltage measurements for power rails on the front distribution.
+    static TimeTracked<front::ThrottleMessage> front_throttle(25);
     static std::array<std::uint16_t, 7> front_lvs_voltages{};
+
+    // Data from the precharge board.
+    static TimeTracked<precharge::StatusMessage> precharge_status(25);
 
     // Setup CAN listeners.
     can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
         front_status.receive(message);
     }>(config::k_front_can_id, 0);
-    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
-        precharge_status.receive(message);
-    }>(config::k_precharge_can_id, 1);
+    can::listen<front::ThrottleMessage, [](const front::ThrottleMessage &message) {
+        front_throttle.receive(message);
+    }>(config::k_front_can_id, 1);
     can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &message) {
         front_lvs_voltages[0] = message.rtd_voltage;
         front_lvs_voltages[1] = message.apps_1_voltage;
@@ -260,6 +261,9 @@ void control_task(void *) {
         front_lvs_voltages[5] = message.aux_1_voltage;
         front_lvs_voltages[6] = message.aux_2_voltage;
     }>(config::k_front_can_id, 3);
+    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
+        precharge_status.receive(message);
+    }>(config::k_precharge_can_id, 4);
 
     // Initialise ADC to sample all LVS inputs.
     std::array<std::uint16_t, 10> adc_buffer{};
@@ -408,6 +412,11 @@ void control_task(void *) {
             rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
         }
 
+        // Latch RTD active if no prevention flags set.
+        if (rtd_prevention_flags.none_set()) {
+            rtd_latched = true;
+        }
+
         // Always set zero max brake current since no regen support for now.
         dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
             .current = 0,
@@ -435,15 +444,17 @@ void control_task(void *) {
         }
 
         // Always send a throttle to the inverter to avoid it coasting. If RTD flags are present (including if TS is
-        // off), we send zero absolute current.
-        if (rtd_prevention_flags.any_set()) {
+        // off), we send zero absolute current. If the brake is pressed, we avoid powering the motor briefly.
+        if (rtd_latched && front_throttle && !brake_pressed) {
+            dti::SetRelativeCurrentMessage set_relative_current{
+                .percentage = util::clamp(static_cast<std::int16_t>(front_throttle->desired_current), 0, 1000),
+            };
+            can::transmit(config::k_dti_can_id, set_relative_current);
+        } else {
             dti::SetCurrentMessage set_current{
                 .current = 0,
             };
             can::transmit(config::k_dti_can_id, set_current);
-        } else {
-            // TODO: Send relative current message from received throttle from front.
-            rtd_latched = true;
         }
 
         // Broadcast status message.
