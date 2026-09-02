@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 
 using namespace rear;
@@ -85,14 +86,26 @@ enum class RearShutdownSample : std::uint16_t {
 using RearShutdownSamples = util::FlagBitset<RearShutdownSample>;
 
 struct RadioData {
+    // Distribution.
     OnlineFlags online_flags;
-    std::optional<precharge::StatusMessage> precharge_status;
     FuseBitset fuse_bitset;
     std::uint16_t lvs_min_voltage;
     std::uint16_t lvs_max_voltage;
     ShutdownCircuitOpenCause shutdown_open_cause;
     TsPreventionFlags ts_prevention_flags;
     RtdPreventionFlags rtd_prevention_flags;
+
+    // Inverter.
+    std::int16_t inverter_input_voltage;
+    std::int16_t motor_current;
+    std::int32_t motor_erpm;
+    std::optional<dti::GeneralData3> inverter_gd3;
+
+    // APPS.
+    std::optional<front::ThrottleMessage> front_throttle;
+
+    // Precharge.
+    std::optional<precharge::StatusMessage> precharge_status;
 };
 
 // Single-entry queue for consistent radio data.
@@ -235,6 +248,11 @@ void control_task(void *) {
     // Initialise CAN on port B.
     can::init(can::Port::B, config::k_can_speed, 3);
 
+    // TODO: Instead of having TimeTracked with special handling and not very well defined data consistency between
+    //       interrupts and task, each message type could have its own single-entry queue. If the main loop reads a
+    //       message from, for example, any of the inverter message queues, a inverter_last_time variable could be
+    //       updated and checked for stale data.
+
     // Data from the front distribution.
     static TimeTracked<front::StatusMessage> front_status(250);
     static TimeTracked<front::ThrottleMessage> front_throttle(25);
@@ -242,6 +260,12 @@ void control_task(void *) {
 
     // Data from the precharge board.
     static TimeTracked<precharge::StatusMessage> precharge_status(25);
+
+    // Data from the inverter.
+    static std::atomic<std::int16_t> inverter_input_voltage;
+    static std::atomic<std::int16_t> motor_current;
+    static std::atomic<std::int32_t> motor_erpm;
+    static TimeTracked<dti::GeneralData3> inverter_gd3(250);
 
     // Setup CAN listeners.
     can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
@@ -264,6 +288,16 @@ void control_task(void *) {
     can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
         precharge_status.receive(message);
     }>(config::k_precharge_can_id, 4);
+    can::listen<dti::GeneralData1, [](const dti::GeneralData1 &message) {
+        inverter_input_voltage.store(message.input_voltage);
+        motor_erpm.store(message.erpm);
+    }>(config::k_dti_can_id, 5);
+    can::listen<dti::GeneralData2, [](const dti::GeneralData2 &message) {
+        motor_current.store(message.ac_current);
+    }>(config::k_dti_can_id, 6);
+    can::listen<dti::GeneralData3, [](const dti::GeneralData3 &message) {
+        inverter_gd3.receive(message);
+    }>(config::k_dti_can_id, 7);
 
     // Initialise ADC to sample all LVS inputs.
     std::array<std::uint16_t, 10> adc_buffer{};
@@ -314,7 +348,9 @@ void control_task(void *) {
 
         // Update message expiry detections for all of the important time tracked messages.
         front_status.update();
+        front_throttle.update();
         precharge_status.update();
+        inverter_gd3.update();
 
         // Build a bitset of component online states.
         OnlineFlags online_flags;
@@ -323,6 +359,9 @@ void control_task(void *) {
         }
         if (precharge_status) {
             online_flags.set(OnlineFlag::PrechargeOnline);
+        }
+        if (inverter_gd3) {
+            online_flags.set(OnlineFlag::InverterOnline);
         }
 
         // Sample all ADC channels.
@@ -475,13 +514,18 @@ void control_task(void *) {
         // Update radio data.
         s_radio_data.overwrite(RadioData{
             .online_flags = online_flags,
-            .precharge_status = precharge_status,
             .fuse_bitset = fuse_bitset,
             .lvs_min_voltage = lvs_min_voltage,
             .lvs_max_voltage = lvs_max_voltage,
             .shutdown_open_cause = shutdown_open_cause,
             .ts_prevention_flags = ts_prevention_flags,
             .rtd_prevention_flags = rtd_prevention_flags,
+            .inverter_input_voltage = inverter_input_voltage,
+            .motor_current = motor_current,
+            .motor_erpm = motor_erpm,
+            .inverter_gd3 = inverter_gd3,
+            .front_throttle = front_throttle,
+            .precharge_status = precharge_status,
         });
     }
 }
@@ -524,6 +568,8 @@ void radio_task(void *) {
     std::uint8_t missed_tx_count = 0;
 
     // Keep track of latest valid messages received.
+    front::ThrottleMessage front_throttle;
+    dti::GeneralData3 inverter_gd3;
     precharge::StatusMessage precharge_status;
 
     freertos::PeriodScheduler scheduler;
@@ -537,6 +583,12 @@ void radio_task(void *) {
         }
 
         const auto data = *s_radio_data.receive(portMAX_DELAY);
+        if (data.front_throttle) {
+            front_throttle = *data.front_throttle;
+        }
+        if (data.inverter_gd3) {
+            inverter_gd3 = *data.inverter_gd3;
+        }
         if (data.precharge_status) {
             precharge_status = *data.precharge_status;
         }
@@ -559,6 +611,18 @@ void radio_task(void *) {
         stream.write_be(util::to_underlying(data.shutdown_open_cause));
         stream.write_be(data.ts_prevention_flags.value());
         stream.write_be(data.rtd_prevention_flags.value());
+
+        // Append powertrain information.
+        stream.write_be(util::to_underlying(inverter_gd3.fault_code));
+        stream.write_be(inverter_gd3.controller_temperature);
+        stream.write_be(inverter_gd3.motor_temperature);
+        stream.write_be(data.inverter_input_voltage);
+        stream.write_be(data.motor_current);
+        stream.write_be(data.motor_erpm);
+
+        // Append APPS information.
+        stream.write_be(front_throttle.desired_throttle);
+        stream.write_be(front_throttle.pedal_travel);
 
         // Append precharge information.
         stream.write_be(util::to_underlying(precharge_status.state));
