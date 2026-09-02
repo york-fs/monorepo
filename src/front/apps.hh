@@ -19,11 +19,14 @@ constexpr std::uint16_t k_adc_range = 1u << 12;
  */
 constexpr std::uint16_t k_absolute_delta = 1000;
 
+constexpr std::size_t k_map_size = k_adc_range - k_absolute_delta * 2;
+
 class ThrottleMap {
-    std::array<std::uint16_t, k_adc_range - k_absolute_delta * 2> m_lut{};
+    std::array<std::uint16_t, k_map_size> m_lut{};
 
 public:
     static ThrottleMap create_default();
+    static std::uint16_t to_percentage(std::uint16_t normalised);
 
     std::uint16_t operator()(std::size_t index) const { return m_lut[index]; }
 };

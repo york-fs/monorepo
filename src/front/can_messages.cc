@@ -86,21 +86,26 @@ bool LvsSampleMessage2::encode(util::Stream &stream) const {
 }
 
 std::optional<ThrottleMessage> ThrottleMessage::decode(util::Stream &stream) {
-    const auto desired_current = stream.read_be<std::uint16_t>();
+    const auto desired_throttle = stream.read_be<std::uint16_t>();
+    const auto pedal_travel = stream.read_be<std::uint16_t>();
     const auto raw_1 = stream.read_be<std::uint16_t>();
     const auto raw_2 = stream.read_be<std::uint16_t>();
-    if (!desired_current || !raw_1 || !raw_2) {
+    if (!desired_throttle || !pedal_travel || !raw_1 || !raw_2) {
         return std::nullopt;
     }
     return ThrottleMessage{
-        .desired_current = *desired_current,
+        .desired_throttle = *desired_throttle,
+        .pedal_travel = *pedal_travel,
         .raw_1 = *raw_1,
         .raw_2 = *raw_2,
     };
 }
 
 bool ThrottleMessage::encode(util::Stream &stream) const {
-    if (!stream.write_be(desired_current)) {
+    if (!stream.write_be(desired_throttle)) {
+        return false;
+    }
+    if (!stream.write_be(pedal_travel)) {
         return false;
     }
     if (!stream.write_be(raw_1)) {

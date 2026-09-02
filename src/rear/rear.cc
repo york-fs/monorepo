@@ -447,7 +447,7 @@ void control_task(void *) {
         // off), we send zero absolute current. If the brake is pressed, we avoid powering the motor briefly.
         if (rtd_latched && front_throttle && !brake_pressed) {
             dti::SetRelativeCurrentMessage set_relative_current{
-                .percentage = util::clamp(static_cast<std::int16_t>(front_throttle->desired_current), 0, 1000),
+                .percentage = util::clamp(static_cast<std::int16_t>(front_throttle->desired_throttle), 0, 1000),
             };
             can::transmit(config::k_dti_can_id, set_relative_current);
         } else {

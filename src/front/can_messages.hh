@@ -42,7 +42,8 @@ struct LvsSampleMessage2 {
 };
 
 struct ThrottleMessage {
-    std::uint16_t desired_current;
+    std::uint16_t desired_throttle;
+    std::uint16_t pedal_travel;
     std::uint16_t raw_1;
     std::uint16_t raw_2;
 

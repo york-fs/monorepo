@@ -259,12 +259,11 @@ void throttle_task(void *) {
         // TODO: Do proper plausibility cross checking as well as taking the minimum.
         // TODO: Deadzone.
         // TODO: Current preload.
-        const auto current_1 = throttle_map(sensors[0].normalise(s_adc_buffer[0]).value_or(0));
-        const auto current_2 = throttle_map(sensors[1].normalise(s_adc_buffer[1]).value_or(0));
-        const auto desired_current = std::min(current_1, current_2);
-
+        const auto normalised = std::min(sensors[0].normalise(s_adc_buffer[0]).value_or(0),
+                                         sensors[1].normalise(s_adc_buffer[1]).value_or(0));
         ThrottleMessage throttle_message{
-            .desired_current = desired_current,
+            .desired_throttle = throttle_map(normalised),
+            .pedal_travel = ThrottleMap::to_percentage(normalised),
             .raw_1 = s_adc_buffer[0],
             .raw_2 = s_adc_buffer[1],
         };

@@ -26,11 +26,15 @@ ThrottleMap ThrottleMap::create_default() {
 
     ThrottleMap map;
     for (std::size_t i = 0; i < map.m_lut.size(); i++) {
-        const auto normalised = static_cast<float>(i) / (map.m_lut.size() - 1);
+        const auto normalised = static_cast<float>(i) / (k_map_size - 1);
         const auto value = (sigmoid(normalised) - sigmoid_zero) / (sigmoid_one - sigmoid_zero);
         map.m_lut[i] = static_cast<std::uint16_t>(value * 1000.0f + 0.99f);
     }
     return map;
+}
+
+std::uint16_t ThrottleMap::to_percentage(std::uint16_t normalised) {
+    return static_cast<std::uint16_t>((static_cast<std::uint32_t>(normalised) * 1000) / (k_map_size - 1));
 }
 
 std::optional<std::uint16_t> Sensor::normalise(std::uint16_t value) const {
@@ -43,8 +47,8 @@ std::optional<std::uint16_t> Sensor::normalise(std::uint16_t value) const {
     value = util::clamp(value, m_min_value, m_max_value);
 
     // Normalise value between calibrated limits.
-    constexpr auto range = k_adc_range - k_absolute_delta * 2 - 1;
-    return ((value - m_min_value) * range) / (m_max_value - m_min_value);
+    const auto offset_value = static_cast<std::uint32_t>(value - m_min_value);
+    return static_cast<std::uint16_t>((offset_value * (k_map_size - 1)) / (m_max_value - m_min_value));
 }
 
 void Sensor::update_limits(std::uint16_t value) {
