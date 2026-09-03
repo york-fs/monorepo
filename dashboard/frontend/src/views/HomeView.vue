@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import StatusBar from '@/components/status-bar/StatusBar.vue'
 import DistributionSection from '@/components/distribution/DistributionSection.vue'
+import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
 import { isDemoMode } from '@/demo'
 </script>
@@ -13,6 +14,7 @@ import { isDemoMode } from '@/demo'
         </div>
         <StatusBar />
         <DistributionSection />
+        <PowertrainSection />
         <PrechargeSection />
     </div>
 </template>

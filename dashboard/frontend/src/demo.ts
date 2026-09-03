@@ -1,5 +1,6 @@
 import type {
     FuseFlag,
+    InverterFaultCode,
     OnlineFlag,
     PrechargeErrorFlag,
     PrechargeRelay,
@@ -43,6 +44,20 @@ const SHUTDOWN_CAUSES: ShutdownOpenCause[] = [
     'HVD_INTERLOCK',
     'REAR_AUXILIARY',
     'TSMS',
+]
+
+const INVERTER_FAULTS: InverterFaultCode[] = [
+    'NONE',
+    'OVERVOLTAGE',
+    'UNDERVOLTAGE',
+    'DRIVE',
+    'OVERCURRENT',
+    'CONTROLLER_OVERTEMPERATURE',
+    'MOTOR_OVERTEMPERATURE',
+    'SENSOR_WIRE_FAULT',
+    'SENSOR_GENERAL_FAULT',
+    'CAN_COMMAND_FAULT',
+    'ANALOG_INPUT_FAULT',
 ]
 
 // Relays closed in each precharge state — approximate, for demo purposes
@@ -104,6 +119,14 @@ interface DemoState {
     prchgVoltage: number
     tsVoltage: number
     startedAt: number
+
+    inverterFault: InverterFaultCode
+    inverterTemperature: number
+    motorTemperature: number
+    motorRpm: number
+    pedalTravel: number
+    desiredMotorCurrent: number
+    motorCurrent: number
 }
 
 function enterPrechargeState(state: DemoState, next: PrechargeState, now: number) {
@@ -211,6 +234,41 @@ function tickVoltages(state: DemoState, now: number) {
     }
 }
 
+// Pedal travel wanders like a driver's input; desired motor current (APPS)
+// follows it near-proportionally; actual motor current chases the desired
+// figure with a lag (the inverter can't deliver instantaneously); RPM chases
+// a target proportional to the current actually delivered; both temperatures
+// drift up while current is high and cool down otherwise.
+function tickPowertrain(state: DemoState) {
+    state.pedalTravel = Math.max(0, Math.min(100, randomWalk(state.pedalTravel, 12, 0, 100)))
+    state.desiredMotorCurrent = Math.max(0, (state.pedalTravel / 100) * 120 + randomBetween(-2, 2))
+    state.motorCurrent = Math.max(
+        0,
+        state.motorCurrent +
+            (state.desiredMotorCurrent - state.motorCurrent) * 0.15 +
+            randomBetween(-2, 2),
+    )
+
+    const targetRpm = state.motorCurrent * 40
+    state.motorRpm = state.motorRpm + (targetRpm - state.motorRpm) * 0.08
+
+    const loadFactor = state.motorCurrent / 120
+    state.inverterTemperature = Math.min(
+        95,
+        Math.max(
+            20,
+            state.inverterTemperature + loadFactor * 0.15 - 0.05 + randomBetween(-0.05, 0.05),
+        ),
+    )
+    state.motorTemperature = Math.min(
+        110,
+        Math.max(
+            20,
+            state.motorTemperature + loadFactor * 0.12 - 0.04 + randomBetween(-0.05, 0.05),
+        ),
+    )
+}
+
 function isOnline(state: DemoState, flag: OnlineFlag): boolean {
     return state.onlineFlags.includes(flag)
 }
@@ -235,6 +293,7 @@ function randomizeDiscreteState(state: DemoState) {
     state.onlineFlags = ONLINE_FLAGS.filter(() => Math.random() < 0.92)
     state.fuseOk = FUSE_FLAGS.filter(() => Math.random() < 0.96)
     state.shutdownCause = Math.random() < 0.85 ? 'NONE' : pickRandom(SHUTDOWN_CAUSES.slice(1))
+    state.inverterFault = Math.random() < 0.9 ? 'NONE' : pickRandom(INVERTER_FAULTS.slice(1))
 }
 
 function buildFrame(state: DemoState, now: number): TelemetryFrame {
@@ -252,6 +311,16 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
         shutdown_open_cause: state.shutdownCause,
         ts_prevention_flags: deriveTsPreventionFlags(state),
         rtd_prevention_flags: deriveRtdPreventionFlags(state),
+        inverter_fault: state.inverterFault,
+        // Same TS bus precharge reports, measured at the inverter terminals
+        // instead — tracks precharge_ts_voltage with a little sensor noise.
+        inverter_input_voltage: Math.round(state.tsVoltage + randomBetween(-1, 1)),
+        inverter_temperature: Number(state.inverterTemperature.toFixed(1)),
+        motor_temperature: Number(state.motorTemperature.toFixed(1)),
+        motor_rpm: Math.round(state.motorRpm),
+        motor_current: Number(state.motorCurrent.toFixed(1)),
+        pedal_travel: Number(state.pedalTravel.toFixed(1)),
+        desired_motor_current: Number(state.desiredMotorCurrent.toFixed(1)),
     }
 }
 
@@ -287,6 +356,14 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
         prchgVoltage: 0,
         tsVoltage: 0,
         startedAt: now,
+
+        inverterFault: 'NONE',
+        inverterTemperature: 25,
+        motorTemperature: 25,
+        motorRpm: 0,
+        pedalTravel: 0,
+        desiredMotorCurrent: 0,
+        motorCurrent: 0,
     }
 
     onFrame(buildFrame(state, Date.now()))
@@ -295,6 +372,7 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
         const tickNow = Date.now()
         tickPrechargeSequence(state, tickNow)
         tickVoltages(state, tickNow)
+        tickPowertrain(state)
         onFrame(buildFrame(state, tickNow))
     }, CONTINUOUS_TICK_MS)
 
