@@ -11,6 +11,10 @@ import serial_asyncio
 import struct
 
 
+ERPM_FACTOR = 10
+MAX_MOTOR_CURRENT = 200
+
+
 class OnlineFlags(Flag):
     FRONT_ONLINE = enum.auto()
     BMS_ONLINE = enum.auto()
@@ -72,6 +76,20 @@ class RtdPreventionFlags(Flag):
     BRAKE_NOT_PRESSED = enum.auto()
 
 
+class InverterFaultCode(Enum):
+    NONE = 0
+    OVERVOLTAGE = enum.auto()
+    UNDERVOLTAGE = enum.auto()
+    DRIVE = enum.auto()
+    OVERCURRENT = enum.auto()
+    CONTROLLER_OVERTEMPERATURE = enum.auto()
+    MOTOR_OVERTEMPERATURE = enum.auto()
+    SENSOR_WIRE_FAULT = enum.auto()
+    SENSOR_GENERAL_FAULT = enum.auto()
+    CAN_COMMAND_FAULT = enum.auto()
+    ANALOG_INPUT_FAULT = enum.auto()
+
+
 class PrechargeState(Enum):
     LED_CHECK = 0
     PRECHECK = enum.auto()
@@ -121,6 +139,25 @@ class TelemetryFrame:
     ts_prevention_flags: TsPreventionFlags = attrs.field(converter=TsPreventionFlags)
     rtd_prevention_flags: RtdPreventionFlags = attrs.field(converter=RtdPreventionFlags)
 
+    # Powertrain.
+    inverter_fault: InverterFaultCode = attrs.field(converter=InverterFaultCode)
+    inverter_temperature: int
+    motor_temperature: int
+    inverter_input_voltage: int
+    motor_current: float = attrs.field(converter=lambda I: I / 10)
+    motor_rpm: int = attrs.field(converter=lambda R: R // ERPM_FACTOR)
+
+    # APPS.
+    desired_throttle: float = attrs.field(converter=lambda P: P / 10)
+    pedal_travel: float = attrs.field(converter=lambda P: P / 10)
+    desired_motor_current: int = attrs.field(
+        init=False,
+        default=attrs.Factory(
+            lambda self: self.desired_throttle * MAX_MOTOR_CURRENT / 100,
+            takes_self=True,
+        ),
+    )
+
     # Precharge status.
     precharge_state: PrechargeState = attrs.field(converter=PrechargeState)
     precharge_error_flags: PrechargeErrorFlags = attrs.field(
@@ -146,7 +183,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBBBBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIHHBBBBhhhhiHHBHHHBI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:
