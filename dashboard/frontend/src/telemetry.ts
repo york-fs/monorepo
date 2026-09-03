@@ -50,6 +50,19 @@ export type TsPreventionFlag =
 
 export type RtdPreventionFlag = 'TS_NOT_ACTIVE' | 'NOT_REQUESTED' | 'BRAKE_NOT_PRESSED'
 
+export type InverterFaultCode =
+    | 'NONE'
+    | 'OVERVOLTAGE'
+    | 'UNDERVOLTAGE'
+    | 'DRIVE'
+    | 'OVERCURRENT'
+    | 'CONTROLLER_OVERTEMPERATURE'
+    | 'MOTOR_OVERTEMPERATURE'
+    | 'SENSOR_WIRE_FAULT'
+    | 'SENSOR_GENERAL_FAULT'
+    | 'CAN_COMMAND_FAULT'
+    | 'ANALOG_INPUT_FAULT'
+
 export type FuseFlag =
     | 'BMS'
     | 'IMD'
@@ -83,6 +96,14 @@ export interface TelemetryFrame {
     shutdown_open_cause?: ShutdownOpenCause
     ts_prevention_flags?: TsPreventionFlag[]
     rtd_prevention_flags?: RtdPreventionFlag[]
+    inverter_fault?: InverterFaultCode
+    inverter_temperature?: number
+    motor_temperature?: number
+    inverter_input_voltage?: number
+    motor_current?: number
+    motor_rpm?: number
+    pedal_travel?: number
+    desired_motor_current?: number
     [key: string]: unknown
 }
 
