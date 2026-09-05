@@ -2,20 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import { Line } from 'vue-chartjs'
 import type { ChartComponentRef } from 'vue-chartjs'
-import {
-    Chart as ChartJS,
-    LinearScale,
-    LineElement,
-    PointElement,
-    Legend,
-    Tooltip,
-    Decimation,
-} from 'chart.js'
+import { Chart as ChartJS, LinearScale, LineElement, PointElement, Legend, Tooltip } from 'chart.js'
 import type { TooltipItem } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import { formatUptime, formatUptimeWithMs } from '@/utils/formatUptime'
 
-ChartJS.register(LinearScale, LineElement, PointElement, Legend, Tooltip, Decimation, zoomPlugin)
+ChartJS.register(LinearScale, LineElement, PointElement, Legend, Tooltip, zoomPlugin)
 
 export interface TimeSeriesLine {
     label: string
@@ -170,11 +162,6 @@ const chartOptions = computed(() => ({
                     return x === undefined || x === null ? '' : formatUptimeWithMs(x)
                 },
             },
-        },
-        decimation: {
-            enabled: true,
-            algorithm: 'lttb' as const,
-            samples: 400,
         },
         zoom: {
             pan: {

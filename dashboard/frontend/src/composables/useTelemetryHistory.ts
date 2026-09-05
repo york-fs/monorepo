@@ -10,6 +10,10 @@ export interface TimeSeriesPoint {
 
 const WINDOW_SECONDS = 20 * 60
 
+// Decoupled from the ~10Hz telemetry frame rate — see `version` below for
+// why this needs to be a deliberate throttle rather than "every frame".
+const CHART_UPDATE_INTERVAL_MS = 250
+
 /**
  * Generic "buffer telemetry field(s) as {x,y}[] time series, capped at a
  * rolling window, reset on car reboot (uptime decreasing)" composable —
@@ -24,9 +28,18 @@ const WINDOW_SECONDS = 20 * 60
  * attaches its own internal (circular) bookkeeping onto whatever data it's
  * given; wrapping that in a deep-reactive Vue proxy — tried first — recursed
  * into that circular graph and blew the stack ("too much recursion").
- * `version` is a plain counter bumped on every processed frame purely so
+ * `version` is a plain counter bumped periodically (see below) purely so
  * callers have something reactive to depend on to know new points arrived,
  * without Vue ever touching the arrays/points themselves.
+ *
+ * `version` is bumped on a `CHART_UPDATE_INTERVAL_MS` timer rather than on
+ * every processed frame — data still lands in `points` immediately, this
+ * only throttles how often callers are told to redraw. Redrawing (and
+ * re-running Chart.js's scale min/max scan) on every ~100ms frame is wasted
+ * work once the buffer holds thousands of points; a few redraws a second is
+ * plenty for a human to perceive as live. (This used to also be load-bearing
+ * for a decimation-shimmer bug — see `TimeSeries.vue` — but decimation's
+ * been removed entirely since; kept now purely for the redraw-cost reason.)
  */
 export function useTelemetryHistory<K extends string>(
     fields: Record<K, (frame: TelemetryFrame) => number | undefined>,
@@ -38,6 +51,7 @@ export function useTelemetryHistory<K extends string>(
     const version = ref(0)
 
     let lastUptimeMs: number | undefined
+    let updateTimer: ReturnType<typeof setTimeout> | undefined
 
     function handleFrame(frame: TelemetryFrame) {
         if (frame.uptime === undefined) return
@@ -66,7 +80,12 @@ export function useTelemetryHistory<K extends string>(
             while (arr.length > 0 && arr[0]!.x < cutoff) arr.shift()
         }
 
-        version.value++
+        if (updateTimer === undefined) {
+            updateTimer = setTimeout(() => {
+                updateTimer = undefined
+                version.value++
+            }, CHART_UPDATE_INTERVAL_MS)
+        }
     }
 
     let unsubscribe: (() => void) | undefined
@@ -76,6 +95,7 @@ export function useTelemetryHistory<K extends string>(
     })
     onUnmounted(() => {
         unsubscribe?.()
+        clearTimeout(updateTimer)
     })
 
     return { points, version }
