@@ -1,23 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import TimeSeries from '@/components/TimeSeries.vue'
-import { useRpmHistory } from '@/composables/useRpmHistory'
+import { useTelemetryHistory } from '@/composables/useTelemetryHistory'
 
-const { samples } = useRpmHistory()
+const { points, version } = useTelemetryHistory({ rpm: (f) => f.motor_rpm })
 
-const series = computed(() => [
-    {
-        label: 'Motor RPM',
-        color: 'series1' as const,
-        data: samples.map((s) => ({ x: s.t, y: s.rpm })),
-    },
-])
+const series = computed(() => {
+    void version.value
+    return [{ label: 'Motor RPM', color: 'series1' as const, data: points.rpm }]
+})
+
+const isEmpty = computed(() => {
+    void version.value
+    return points.rpm.length === 0
+})
 </script>
 
 <template>
     <TimeSeries
         :series="series"
-        :is-empty="samples.length === 0"
+        :is-empty="isEmpty"
         empty-message="Waiting for RPM data…"
         :show-legend="false"
     />

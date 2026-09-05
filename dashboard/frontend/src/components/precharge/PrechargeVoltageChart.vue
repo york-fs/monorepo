@@ -1,32 +1,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import TimeSeries from '@/components/TimeSeries.vue'
-import { useVoltageHistory } from '@/composables/useVoltageHistory'
+import { useTelemetryHistory } from '@/composables/useTelemetryHistory'
 
-const { samples } = useVoltageHistory()
+const { points, version } = useTelemetryHistory({
+    prchg: (f) => f.precharge_prchg_voltage,
+    ts: (f) => f.precharge_ts_voltage,
+})
 
-const series = computed(() => [
-    {
-        label: 'Precharge Rail',
-        color: 'series1' as const,
-        stepped: true,
-        data: samples
-            .filter((s) => s.prchg !== undefined)
-            .map((s) => ({ x: s.t, y: s.prchg as number })),
-    },
-    {
-        label: 'Tractive System',
-        color: 'series2' as const,
-        stepped: true,
-        data: samples.filter((s) => s.ts !== undefined).map((s) => ({ x: s.t, y: s.ts as number })),
-    },
-])
+const series = computed(() => {
+    void version.value
+    return [
+        { label: 'Precharge Rail', color: 'series1' as const, stepped: true, data: points.prchg },
+        { label: 'Tractive System', color: 'series2' as const, stepped: true, data: points.ts },
+    ]
+})
+
+const isEmpty = computed(() => {
+    void version.value
+    return points.prchg.length === 0 && points.ts.length === 0
+})
 </script>
 
 <template>
     <TimeSeries
         :series="series"
-        :is-empty="samples.length === 0"
+        :is-empty="isEmpty"
         empty-message="Waiting for precharge voltage data…"
         :y-step-size="1"
     />
