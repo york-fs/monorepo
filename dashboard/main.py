@@ -141,8 +141,8 @@ class TelemetryFrame:
 
     # Powertrain.
     inverter_fault: InverterFaultCode = attrs.field(converter=InverterFaultCode)
-    inverter_temperature: int
-    motor_temperature: int
+    inverter_temperature: float = attrs.field(converter=lambda T: T / 10)
+    motor_temperature: float = attrs.field(converter=lambda T: T / 10)
     inverter_input_voltage: int
     motor_current: float = attrs.field(converter=lambda I: I / 10)
     motor_rpm: int = attrs.field(converter=lambda R: R // ERPM_FACTOR)
