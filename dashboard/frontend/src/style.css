@@ -10,8 +10,17 @@
     --surface-inset: light-dark(hsl(48, 15%, 94%), hsl(60, 3%, 6%));
     --ink-primary: light-dark(hsl(0, 0%, 4%), hsl(0, 0%, 100%));
     --ink-secondary: light-dark(hsl(45, 3%, 31%), hsl(55, 9%, 74%));
-    --ink-muted: hsl(45, 3%, 52%);
+    /* The light value is darker than the dark one: 52% lightness reads fine
+       on the near-black dark surface (5.4:1) but only manages 3.4:1 on the
+       light page, under the 4.5:1 small text needs — and this token carries
+       a lot of small text (h3, tile names, MinMaxSub, chart ticks). */
+    --ink-muted: light-dark(hsl(45, 3%, 42%), hsl(45, 3%, 52%));
     --border: light-dark(hsla(0, 0%, 4%, 0.1), hsla(0, 0%, 100%, 0.1));
+
+    /* Exposed as a token because Chart.js can't inherit it: it renders its
+       own canvas text (ticks, legend, tooltips) from a JS-side font stack,
+       so TimeSeries.vue has to read this and hand it over. */
+    --font-sans: 'Inter Variable', sans-serif;
 
     --status-good: hsl(120, 86%, 34%);
     --status-warning: hsl(41, 96%, 54%);
@@ -43,7 +52,7 @@
 body {
     background: var(--surface-page);
     color: var(--ink-primary);
-    font-family: 'Inter Variable', sans-serif;
+    font-family: var(--font-sans);
     margin: 0;
     text-rendering: optimizeLegibility;
 }

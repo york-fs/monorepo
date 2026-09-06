@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { Severity } from '@/domain/severity'
 import SeverityCard from '@/components/SeverityCard.vue'
 
 defineProps<{
     title: string
     rows: { key: string; label: string; ok: boolean | undefined }[]
-    severity?: 'good' | 'warning' | 'critical'
+    severity?: Severity
 }>()
 </script>
 

@@ -8,6 +8,10 @@ const { points, version } = useTelemetryHistory({
     ts: (f) => f.precharge_ts_voltage,
 })
 
+// `points` arrays are markRaw and mutated in place, so nothing about them is
+// reactive — `version` is the only thing that changes when new samples land,
+// hence reading it here to make these computeds depend on it. See
+// useTelemetryHistory.
 const series = computed(() => {
     void version.value
     return [
@@ -27,6 +31,5 @@ const isEmpty = computed(() => {
         :series="series"
         :is-empty="isEmpty"
         empty-message="Waiting for precharge voltage data…"
-        :y-step-size="1"
     />
 </template>

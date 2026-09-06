@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AccentTile from '@/components/AccentTile.vue'
+import ExplanationSub from '@/components/ExplanationSub.vue'
 import {
     shutdownOpenCauseExplanation,
     shutdownOpenCauseLabel,
@@ -12,29 +13,17 @@ const props = defineProps<{
     cause?: ShutdownOpenCause
 }>()
 
-const severity = computed(() =>
-    props.cause === undefined ? undefined : shutdownOpenCauseSeverity(props.cause),
-)
-const label = computed(() =>
-    props.cause === undefined ? '—' : shutdownOpenCauseLabel(props.cause),
-)
-const explanation = computed(() =>
-    props.cause === undefined ? undefined : shutdownOpenCauseExplanation(props.cause),
-)
+// The domain helpers each answer for a missing reading themselves.
+const severity = computed(() => shutdownOpenCauseSeverity(props.cause))
+const label = computed(() => shutdownOpenCauseLabel(props.cause))
+const explanation = computed(() => shutdownOpenCauseExplanation(props.cause))
 </script>
 
 <template>
     <AccentTile name="Shutdown open cause" :severity="severity">
         {{ label }}
         <template #sub>
-            <span v-if="explanation" class="explanation">{{ explanation }}</span>
+            <ExplanationSub v-if="explanation" :text="explanation" />
         </template>
     </AccentTile>
 </template>
-
-<style scoped>
-.explanation {
-    font-size: 0.8125rem;
-    color: var(--ink-muted);
-}
-</style>

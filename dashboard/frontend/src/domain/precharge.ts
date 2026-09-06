@@ -120,6 +120,14 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
     },
 }
 
+/** Render order, matching how the other unions here are enumerated. */
+export const PRECHARGE_RELAYS: PrechargeRelay[] = [
+    'DISCHARGE_CLOSED',
+    'PRECHARGE_CLOSED',
+    'AIR_POS_CLOSED',
+    'AIR_NEG_CLOSED',
+]
+
 export const PRECHARGE_RELAY_LABELS: Record<PrechargeRelay, string> = {
     DISCHARGE_CLOSED: 'Discharge',
     PRECHARGE_CLOSED: 'Precharge',

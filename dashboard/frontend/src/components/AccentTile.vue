@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { Severity } from '@/domain/severity'
 import SeverityCard from '@/components/SeverityCard.vue'
 
 defineProps<{
     name: string
-    severity?: 'good' | 'warning' | 'critical'
+    severity?: Severity
 }>()
 </script>
 
@@ -19,7 +20,6 @@ defineProps<{
 .tile {
     padding: 0.875rem 1.125rem;
     display: grid;
-    grid-template-rows: auto auto auto;
     gap: 0.25rem;
 }
 

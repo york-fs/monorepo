@@ -10,6 +10,15 @@ const props = defineProps<{
 
 type FuseState = 'unknown' | 'ok' | 'blown'
 
+// The glyph carries the state visually (an intact vs. snapped link wire);
+// this is the same information for assistive tech and for a hover tooltip,
+// since the visible label underneath is only the flag name.
+const FUSE_STATE_LABELS: Record<FuseState, string> = {
+    unknown: 'no signal',
+    ok: 'OK',
+    blown: 'blown',
+}
+
 const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
     FUSE_FLAGS.map((flag) => {
         const ok = isFuseOk(props.fuses, flag)
@@ -24,15 +33,22 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
         <h3>Fuses</h3>
         <div class="fusebox">
             <div v-for="f in fuseStates" :key="f.flag" class="fuse-cell">
-                <div class="ato-glyph" :data-state="f.state">
-                    <span class="ato-highlight"></span>
-                    <span v-if="f.state !== 'blown'" class="ato-link"></span>
-                    <template v-else>
-                        <span class="ato-link-seg left"></span>
-                        <span class="ato-link-seg right"></span>
-                    </template>
+                <div
+                    class="ato"
+                    role="img"
+                    :aria-label="FUSE_STATE_LABELS[f.state]"
+                    :title="`${f.flag}: ${FUSE_STATE_LABELS[f.state]}`"
+                >
+                    <div class="ato-glyph" :data-state="f.state">
+                        <span class="ato-highlight"></span>
+                        <span v-if="f.state !== 'blown'" class="ato-link"></span>
+                        <template v-else>
+                            <span class="ato-link-seg left"></span>
+                            <span class="ato-link-seg right"></span>
+                        </template>
+                    </div>
+                    <span class="ato-prongs"><span></span><span></span></span>
                 </div>
-                <span class="ato-prongs"><span></span><span></span></span>
                 <span class="fuse-label">{{ f.flag }}</span>
             </div>
         </div>
@@ -42,7 +58,14 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
 <style scoped>
 .fusebox {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+    /* Explicit column counts rather than auto-fill: there are 17 fuses, and
+       17 is prime, so the column count that happens to fit decides whether
+       the last row holds a sensible remainder or a single stranded fuse.
+       8 gives 8+8+1 and 4 gives 4+4+4+4+1; 9/6/3 give 9+8, 6+6+5 and 3x5+2.
+       minmax(0, 1fr) rather than 1fr so a long label can't push a track
+       past its share (the labels have no spaces to wrap on — see
+       .fuse-label's overflow-wrap). */
+    grid-template-columns: repeat(9, minmax(0, 1fr));
     gap: 0.8125rem;
     background: var(--surface-inset);
     border: 1px solid var(--border);
@@ -63,6 +86,18 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
     letter-spacing: 0.02em;
     color: var(--ink-secondary);
     text-align: center;
+    /* Belt and braces alongside the track sizing above: a flag name longer
+       than its cell wraps rather than overlapping the next fuse. */
+    overflow-wrap: anywhere;
+}
+
+/* Body + prongs are one unit — .fuse-cell's gap must only separate that
+   unit from the label, or it opens a visible gap between the fuse body and
+   the prongs that are supposed to be attached to it. */
+.ato {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 /* ATO bodies read wider/flatter than a narrower "Mini" blade shape. */
@@ -134,5 +169,17 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
 }
 .ato-link-seg.right {
     right: 12%;
+}
+
+@media (max-width: 47.5em) {
+    .fusebox {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 30em) {
+    .fusebox {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 </style>

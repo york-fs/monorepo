@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PrechargeRelay } from '@/telemetry'
-import { PRECHARGE_RELAY_LABELS } from '@/domain/precharge'
+import { PRECHARGE_RELAYS, PRECHARGE_RELAY_LABELS } from '@/domain/precharge'
 
 const props = defineProps<{
     relays?: readonly PrechargeRelay[]
 }>()
 
-const ALL_RELAYS = Object.keys(PRECHARGE_RELAY_LABELS) as PrechargeRelay[]
-
 const rows = computed(() =>
-    ALL_RELAYS.map((relay) => ({
+    PRECHARGE_RELAYS.map((relay) => ({
         relay,
         label: PRECHARGE_RELAY_LABELS[relay],
         closed: (props.relays ?? []).includes(relay),

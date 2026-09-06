@@ -1,6 +1,8 @@
 import type { ShutdownOpenCause } from '@/telemetry'
+import type { Severity } from '@/domain/severity'
+import { titleCaseEnum } from '@/utils/titleCase'
 
-// Acronyms/initialisms that shouldn't get naive title-casing.
+// Words naive title-casing gets wrong — see titleCaseEnum.
 const ACRONYMS: Record<string, string> = {
     BMS: 'BMS',
     IMD: 'IMD',
@@ -9,16 +11,19 @@ const ACRONYMS: Record<string, string> = {
     ESTOP: 'E-Stop',
 }
 
-function titleCaseWord(word: string) {
-    return ACRONYMS[word] ?? word.charAt(0) + word.slice(1).toLowerCase()
-}
-
-export function shutdownOpenCauseLabel(cause: ShutdownOpenCause): string {
+// All three take `undefined` — the field simply hasn't arrived yet — and
+// answer for it themselves, so the guard lives once per function rather than
+// once per call site. Same convention as the `format*` utils.
+export function shutdownOpenCauseLabel(cause: ShutdownOpenCause | undefined): string {
+    if (cause === undefined) return '—'
     if (cause === 'NONE') return 'None'
-    return cause.split('_').map(titleCaseWord).join(' ')
+    return titleCaseEnum(cause, ACRONYMS)
 }
 
-export function shutdownOpenCauseSeverity(cause: ShutdownOpenCause): 'good' | 'critical' {
+export function shutdownOpenCauseSeverity(
+    cause: ShutdownOpenCause | undefined,
+): Severity | undefined {
+    if (cause === undefined) return undefined
     return cause === 'NONE' ? 'good' : 'critical'
 }
 
@@ -41,6 +46,8 @@ export const SHUTDOWN_OPEN_CAUSE_EXPLANATIONS: Record<ShutdownOpenCause, string>
     TSMS: 'The tractive system master switch is open',
 }
 
-export function shutdownOpenCauseExplanation(cause: ShutdownOpenCause): string {
-    return SHUTDOWN_OPEN_CAUSE_EXPLANATIONS[cause]
+export function shutdownOpenCauseExplanation(
+    cause: ShutdownOpenCause | undefined,
+): string | undefined {
+    return cause === undefined ? undefined : SHUTDOWN_OPEN_CAUSE_EXPLANATIONS[cause]
 }

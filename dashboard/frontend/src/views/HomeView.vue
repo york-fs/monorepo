@@ -4,19 +4,23 @@ import DistributionSection from '@/components/distribution/DistributionSection.v
 import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
 import { isDemoMode } from '@/demo'
+
+// Read once — it's a URL check, not reactive state, so calling it from the
+// template would re-parse the query string on every render.
+const demoMode = isDemoMode()
 </script>
 
 <template>
-    <div class="home">
+    <main class="home">
         <div class="title-row">
             <h1>YFS-03 Telemetry</h1>
-            <span v-if="isDemoMode()" class="demo-badge">Demo mode — synthetic data</span>
+            <span v-if="demoMode" class="demo-badge">Demo mode — synthetic data</span>
         </div>
         <StatusBar />
         <DistributionSection />
         <PowertrainSection />
         <PrechargeSection />
-    </div>
+    </main>
 </template>
 
 <style scoped>
@@ -45,12 +49,18 @@ h1 {
     color: var(--ink-primary);
 }
 
+/* Same treatment as StaleSection's "Stale" banner — both are amber "what
+   you're looking at isn't the real thing" notices. Note the tinted
+   background rather than a flat `--status-warning` fill: in dark mode
+   `--status-warning-text` *is* `--status-warning`, so amber-on-amber would
+   render the label invisible. */
 .demo-badge {
     font-size: 0.75rem;
     font-weight: 600;
-    padding: 0.15rem 0.5rem;
+    padding: 0.125rem 0.5rem;
     border-radius: 0.25rem;
-    background: var(--status-warning);
+    background: color-mix(in srgb, var(--status-warning) 16%, var(--surface-card));
     color: var(--status-warning-text);
+    border: 1px solid var(--border);
 }
 </style>

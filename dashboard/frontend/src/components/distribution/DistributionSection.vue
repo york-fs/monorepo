@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
 import { isFlagOnline } from '@/telemetry'
+import type { TelemetryFrame } from '@/telemetry'
+import { lvVoltageSeverity } from '@/domain/lvVoltage'
+import { formatVolts } from '@/utils/formatVolts'
 import StaleSection from '@/components/StaleSection.vue'
+import MetricTile from '@/components/MetricTile.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
-import LvVoltageTile from '@/components/distribution/LvVoltageTile.vue'
 import ShutdownCauseTile from '@/components/distribution/ShutdownCauseTile.vue'
 import ActivationChecklists from '@/components/distribution/ActivationChecklists.vue'
 
 const { frame } = useTelemetry()
+
+// The live reading is the *minimum* across all fuses — that's what signals
+// brownout risk. The maximum only ever appears as the top of the ever-range,
+// and comes from its own wire field, hence the two selectors. See
+// plan/DISTRIBUTION.md.
+const formatLvVolts = (volts: number) => formatVolts(volts, 2)
+const selectLvMin = (f: TelemetryFrame) => f.lvs_min_voltage
+const selectLvMax = (f: TelemetryFrame) => f.lvs_max_voltage
 </script>
 
 <template>
@@ -15,31 +26,27 @@ const { frame } = useTelemetry()
          what carries the telemetry link, so the overall link staleness
          `StaleSection` already checks covers it. Passing front's flag here
          means this section goes stale if either board does. -->
-    <StaleSection :online="isFlagOnline(frame.online_flags, 'FRONT_ONLINE')">
-        <template #header>
-            <h2>Distribution</h2>
-        </template>
-
-        <section class="distribution">
-            <div class="summary">
-                <LvVoltageTile :min-voltage="frame.lvs_min_voltage" />
-                <ShutdownCauseTile :cause="frame.shutdown_open_cause" />
-            </div>
-            <FuseGrid :fuses="frame.fuses" />
-            <ActivationChecklists
-                :ts-prevention-flags="frame.ts_prevention_flags"
-                :rtd-prevention-flags="frame.rtd_prevention_flags"
+    <StaleSection :online="isFlagOnline(frame.online_flags, 'FRONT_ONLINE')" title="Distribution">
+        <div class="summary">
+            <MetricTile
+                name="LV system"
+                :value="frame.lvs_min_voltage"
+                :format="formatLvVolts"
+                :select="selectLvMin"
+                :select-max="selectLvMax"
+                :severity-of="lvVoltageSeverity"
             />
-        </section>
+            <ShutdownCauseTile :cause="frame.shutdown_open_cause" />
+        </div>
+        <FuseGrid :fuses="frame.fuses" />
+        <ActivationChecklists
+            :ts-prevention-flags="frame.ts_prevention_flags"
+            :rtd-prevention-flags="frame.rtd_prevention_flags"
+        />
     </StaleSection>
 </template>
 
 <style scoped>
-.distribution {
-    display: grid;
-    gap: 1.25rem;
-}
-
 .summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));

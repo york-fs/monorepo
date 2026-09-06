@@ -30,7 +30,7 @@ const { frame } = useTelemetry()
 const { status, relativeText } = useLastSeen(() => props.online)
 
 // `status` is still binary (online/offline) — `fault` isn't wired up to any
-// real logic yet, see PLAN.md. Mapped through `AccentTile`'s generic
+// real logic yet, see plan/PLAN.md. Mapped through `AccentTile`'s generic
 // good/warning/critical severity vocabulary once it is.
 const severity = computed(() => (status.value === 'online' ? 'good' : 'critical'))
 

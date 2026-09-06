@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Severity } from '@/domain/severity'
 import { computed } from 'vue'
 import { isRtdPreventionFlagSet, isTsPreventionFlagSet } from '@/telemetry'
 import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
@@ -41,9 +42,7 @@ const rtdRows = computed(() =>
 // only thing left is that activation hasn't been requested yet, red for any
 // actual fault/offline/state condition still blocking. `undefined` (no
 // signal yet) is left uncoloured, same convention as the rest of the app.
-function activationSeverity(
-    flags: readonly string[] | undefined,
-): 'good' | 'warning' | 'critical' | undefined {
+function activationSeverity(flags: readonly string[] | undefined): Severity | undefined {
     if (flags === undefined) return undefined
     if (flags.length === 0) return 'good'
     if (flags.length === 1 && flags[0] === 'NOT_REQUESTED') return 'warning'

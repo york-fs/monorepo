@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Severity } from '@/domain/severity'
 // Shared "severity-accented card" shell — background/border plus the
 // coloured border-left keyed off severity — factored out of AccentTile and
 // PreventionChecklistPanel, which used to each define an identical copy of
@@ -6,7 +7,7 @@
 // padding/layout/content styling, since AccentTile's single-big-value shape
 // and the checklist panels' list shape have nothing else in common.
 defineProps<{
-    severity?: 'good' | 'warning' | 'critical'
+    severity?: Severity
 }>()
 </script>
 

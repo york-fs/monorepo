@@ -15,10 +15,11 @@ export function formatUptime(totalSeconds: number | undefined): string {
 export function formatUptimeWithMs(totalSeconds: number | undefined): string {
     if (totalSeconds === undefined || Number.isNaN(totalSeconds)) return '—'
 
-    const clamped = Math.max(0, totalSeconds)
-    const ms = Math.round((clamped % 1) * 1000)
-        .toString()
-        .padStart(3, '0')
+    // Round to whole milliseconds *first*: rounding the fractional part on
+    // its own overflows to "1000" for anything from x.9995 up, while the
+    // seconds field below still shows the un-carried value.
+    const totalMs = Math.round(Math.max(0, totalSeconds) * 1000)
+    const ms = (totalMs % 1000).toString().padStart(3, '0')
 
-    return `${formatUptime(clamped)}.${ms}`
+    return `${formatUptime(totalMs / 1000)}.${ms}`
 }

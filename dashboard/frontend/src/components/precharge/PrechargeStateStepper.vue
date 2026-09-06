@@ -17,10 +17,17 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
             :key="s"
             class="step"
             :class="{ current: i === currentIndex }"
+            :aria-current="i === currentIndex ? 'step' : undefined"
         >
             <span v-if="i > 0" class="connector" />
-            <span class="marker" />
-            <span class="label">{{ PRECHARGE_STATE_LABELS[s] }}</span>
+            <!-- Marker + label are wrapped so the dot-to-label gap lives on
+                 this element instead of on .step, where it would also apply
+                 to the connector and push it off-centre between the two
+                 steps it joins. -->
+            <span class="step-body">
+                <span class="marker" />
+                <span class="label">{{ PRECHARGE_STATE_LABELS[s] }}</span>
+            </span>
         </li>
     </ol>
 </template>
@@ -37,6 +44,11 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
 .step {
     display: flex;
     align-items: center;
+}
+
+.step-body {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
 }
 
@@ -44,7 +56,9 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
     width: 1.25rem;
     height: 1px;
     background: var(--border);
-    margin: 0 0.625rem;
+    /* Equal on both sides — the connector spans the gap between two steps,
+       so it should sit centred in it. */
+    margin: 0 0.875rem;
     flex-shrink: 0;
 }
 
@@ -71,7 +85,7 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
 }
 
 .label {
-    font-size: 0.78125rem;
+    font-size: 0.8125rem;
     color: var(--ink-muted);
     white-space: nowrap;
 }

@@ -34,7 +34,7 @@ const rows = computed(() =>
                 <span class="dot" />
                 <div class="text">
                     <span class="name">
-                        {{ PRECHARGE_FLAG_META[row.flag].label }}
+                        {{ row.meta.label }}
                         <span v-if="!row.live" class="latched-tag">last attempt</span>
                     </span>
                     <span class="description">{{ row.meta.description }}</span>

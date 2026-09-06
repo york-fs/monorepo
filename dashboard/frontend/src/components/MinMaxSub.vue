@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { Severity } from '@/domain/severity'
 defineProps<{
     minLabel: string
-    minSeverity?: 'good' | 'warning' | 'critical'
+    minSeverity?: Severity
     maxLabel: string
-    maxSeverity?: 'good' | 'warning' | 'critical'
+    maxSeverity?: Severity
 }>()
 </script>
 

@@ -42,6 +42,9 @@ function connect() {
         if (demoStarted) return
         demoStarted = true
         link.value = 'open'
+        // The returned stopper is deliberately dropped: this module is a
+        // process-lifetime singleton with nothing to tear it down, same as
+        // the EventSource below.
         startDemoTelemetry(applyFrame)
         return
     }
@@ -63,21 +66,26 @@ function connect() {
     }
 }
 
-connect()
+const status = computed<TelemetryStatus>(() => (stale.value ? 'offline' : 'online'))
 
 /**
  * Subscribe to every raw frame as it arrives, with the timestamp it was
- * received at. Intended for a future history/recording layer (e.g. for
- * charts) to hook into without changing this file or its consumers.
- * Returns an unsubscribe function.
+ * received at. Used by the history/extrema composables
+ * (`useTelemetryHistory`, `useMinMax`) to buffer frames without going
+ * through the `frame` ref. Returns an unsubscribe function.
  */
 export function onTelemetryFrame(listener: FrameListener) {
+    connect()
     listeners.add(listener)
     return () => listeners.delete(listener)
 }
 
 export function useTelemetry() {
-    const status = computed<TelemetryStatus>(() => (stale.value ? 'offline' : 'online'))
+    // Connecting on first use rather than on import: a module-level call
+    // would open the stream (or start the demo timers) merely because
+    // something transitively imported this file, before the app has mounted.
+    // `connect()` is idempotent.
+    connect()
 
     return {
         frame: readonly(frame),

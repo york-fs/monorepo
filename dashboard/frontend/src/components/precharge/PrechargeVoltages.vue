@@ -38,6 +38,9 @@ defineProps<{
     font-weight: 650;
     color: var(--ink-primary);
     text-align: right;
+    /* These tick every frame — proportional figures make the digits jitter
+       in width as they change. Same rule as AccentTile/MinMaxSub/uptime. */
+    font-variant-numeric: tabular-nums;
 }
 
 .label {

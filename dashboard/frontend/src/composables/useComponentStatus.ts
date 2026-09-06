@@ -13,7 +13,9 @@ export function useComponentStatus(online?: MaybeRefOrGetter<boolean | undefined
 
     const status = computed<TelemetryStatus>(() => {
         if (linkStatus.value === 'offline') return 'offline'
-        if (online !== undefined && toValue(online) === false) return 'offline'
+        // `toValue(undefined)` is `undefined`, so an omitted signal falls
+        // through to the link status without needing a guard of its own.
+        if (toValue(online) === false) return 'offline'
         return 'online'
     })
 

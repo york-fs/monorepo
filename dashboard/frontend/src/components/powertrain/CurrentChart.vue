@@ -8,6 +8,10 @@ const { points, version } = useTelemetryHistory({
     actual: (f) => f.motor_current,
 })
 
+// `points` arrays are markRaw and mutated in place, so nothing about them is
+// reactive — `version` is the only thing that changes when new samples land,
+// hence reading it here to make these computeds depend on it. See
+// useTelemetryHistory.
 const series = computed(() => {
     void version.value
     return [

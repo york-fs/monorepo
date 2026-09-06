@@ -5,6 +5,10 @@ import { useTelemetryHistory } from '@/composables/useTelemetryHistory'
 
 const { points, version } = useTelemetryHistory({ rpm: (f) => f.motor_rpm })
 
+// `points` arrays are markRaw and mutated in place, so nothing about them is
+// reactive — `version` is the only thing that changes when new samples land,
+// hence reading it here to make these computeds depend on it. See
+// useTelemetryHistory.
 const series = computed(() => {
     void version.value
     return [{ label: 'Motor RPM', color: 'series1' as const, data: points.rpm }]

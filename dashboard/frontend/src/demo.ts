@@ -120,6 +120,14 @@ interface DemoState {
     tsVoltage: number
     startedAt: number
 
+    // Driver/CAN inputs the activation checklists key off. Without these the
+    // NOT_REQUESTED and BRAKE_NOT_PRESSED rows could never be set, so the
+    // checklist panels' `warning` tier (nothing blocking but the request
+    // itself — see ActivationChecklists) was unreachable in demo mode.
+    tsRequested: boolean
+    rtdRequested: boolean
+    brakePressed: boolean
+
     inverterFault: InverterFaultCode
     inverterTemperature: number
     motorTemperature: number
@@ -240,7 +248,7 @@ function tickVoltages(state: DemoState, now: number) {
 // a target proportional to the current actually delivered; both temperatures
 // drift up while current is high and cool down otherwise.
 function tickPowertrain(state: DemoState) {
-    state.pedalTravel = Math.max(0, Math.min(100, randomWalk(state.pedalTravel, 12, 0, 100)))
+    state.pedalTravel = randomWalk(state.pedalTravel, 12, 0, 100)
     state.desiredMotorCurrent = Math.max(0, (state.pedalTravel / 100) * 120 + randomBetween(-2, 2))
     state.motorCurrent = Math.max(
         0,
@@ -280,12 +288,20 @@ function deriveTsPreventionFlags(state: DemoState): TsPreventionFlag[] {
     if (state.prechargeState !== 'ACTIVE') flags.push('PRECHARGE_STATE')
     if (state.fuseOk.length < FUSE_FLAGS.length) flags.push('BAD_FUSE')
     if (state.shutdownCause !== 'NONE') flags.push('SHUTDOWN_OPEN')
+    if (!state.tsRequested) flags.push('NOT_REQUESTED')
     return flags
 }
 
-function deriveRtdPreventionFlags(state: DemoState): RtdPreventionFlag[] {
+// Takes the TS flags rather than recomputing them: TS being active is
+// itself the first RTD precondition.
+function deriveRtdPreventionFlags(
+    state: DemoState,
+    tsPreventionFlags: TsPreventionFlag[],
+): RtdPreventionFlag[] {
     const flags: RtdPreventionFlag[] = []
-    if (deriveTsPreventionFlags(state).length > 0) flags.push('TS_NOT_ACTIVE')
+    if (tsPreventionFlags.length > 0) flags.push('TS_NOT_ACTIVE')
+    if (!state.brakePressed) flags.push('BRAKE_NOT_PRESSED')
+    if (!state.rtdRequested) flags.push('NOT_REQUESTED')
     return flags
 }
 
@@ -294,9 +310,14 @@ function randomizeDiscreteState(state: DemoState) {
     state.fuseOk = FUSE_FLAGS.filter(() => Math.random() < 0.96)
     state.shutdownCause = Math.random() < 0.85 ? 'NONE' : pickRandom(SHUTDOWN_CAUSES.slice(1))
     state.inverterFault = Math.random() < 0.9 ? 'NONE' : pickRandom(INVERTER_FAULTS.slice(1))
+    state.tsRequested = Math.random() < 0.7
+    state.rtdRequested = Math.random() < 0.7
+    state.brakePressed = Math.random() < 0.7
 }
 
 function buildFrame(state: DemoState, now: number): TelemetryFrame {
+    const tsPreventionFlags = deriveTsPreventionFlags(state)
+
     return {
         uptime: now - state.startedAt,
         precharge_state: state.prechargeState,
@@ -309,12 +330,12 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
         lvs_min_voltage: Number(state.lvMin.toFixed(2)),
         lvs_max_voltage: Number(state.lvMax.toFixed(2)),
         shutdown_open_cause: state.shutdownCause,
-        ts_prevention_flags: deriveTsPreventionFlags(state),
-        rtd_prevention_flags: deriveRtdPreventionFlags(state),
+        ts_prevention_flags: tsPreventionFlags,
+        rtd_prevention_flags: deriveRtdPreventionFlags(state, tsPreventionFlags),
         inverter_fault: state.inverterFault,
         // Same TS bus precharge reports, measured at the inverter terminals
         // instead — tracks precharge_ts_voltage with a little sensor noise.
-        inverter_input_voltage: Math.round(state.tsVoltage + randomBetween(-1, 1)),
+        inverter_input_voltage: Math.max(0, Math.round(state.tsVoltage + randomBetween(-1, 1))),
         inverter_temperature: Number(state.inverterTemperature.toFixed(1)),
         motor_temperature: Number(state.motorTemperature.toFixed(1)),
         motor_rpm: Math.round(state.motorRpm),
@@ -356,6 +377,10 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
         prchgVoltage: 0,
         tsVoltage: 0,
         startedAt: now,
+
+        tsRequested: true,
+        rtdRequested: true,
+        brakePressed: true,
 
         inverterFault: 'NONE',
         inverterTemperature: 25,
