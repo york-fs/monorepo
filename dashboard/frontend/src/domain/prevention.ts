@@ -11,7 +11,9 @@ import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
 export const TS_PREVENTION_FLAGS: TsPreventionFlag[] = [
     'FRONT_OFFLINE',
     'PRECHARGE_OFFLINE',
+    'INVERTER_OFFLINE',
     'PRECHARGE_STATE',
+    'INVERTER_FAULT',
     'BAD_FUSE',
     'SHUTDOWN_OPEN',
     'NOT_REQUESTED',
@@ -24,6 +26,8 @@ export const TS_PREVENTION_LABELS: Record<TsPreventionFlag, string> = {
     NOT_REQUESTED: 'TS activation requested',
     PRECHARGE_OFFLINE: 'Precharge online',
     PRECHARGE_STATE: 'Precharge ready',
+    INVERTER_OFFLINE: 'Inverter online',
+    INVERTER_FAULT: 'Inverter ready',
 }
 
 export const RTD_PREVENTION_FLAGS: RtdPreventionFlag[] = [

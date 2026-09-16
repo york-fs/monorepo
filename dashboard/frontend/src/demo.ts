@@ -285,9 +285,12 @@ function deriveTsPreventionFlags(state: DemoState): TsPreventionFlag[] {
     const flags: TsPreventionFlag[] = []
     if (!isOnline(state, 'FRONT_ONLINE')) flags.push('FRONT_OFFLINE')
     if (!isOnline(state, 'PRECHARGE_ONLINE')) flags.push('PRECHARGE_OFFLINE')
+    if (!isOnline(state, 'INVERTER_ONLINE')) flags.push('INVERTER_OFFLINE')
     if (state.prechargeState !== 'ACTIVE') flags.push('PRECHARGE_STATE')
     if (state.fuseOk.length < FUSE_FLAGS.length) flags.push('BAD_FUSE')
     if (state.shutdownCause !== 'NONE') flags.push('SHUTDOWN_OPEN')
+    if (state.inverterFault !== 'NONE' && state.inverterFault !== 'UNDERVOLTAGE')
+        flags.push('INVERTER_FAULT')
     if (!state.tsRequested) flags.push('NOT_REQUESTED')
     return flags
 }

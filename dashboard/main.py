@@ -183,7 +183,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBBBBhhhhiHHBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIHHBHBBhhhhiHHBHHHBI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:

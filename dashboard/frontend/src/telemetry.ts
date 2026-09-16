@@ -47,6 +47,8 @@ export type TsPreventionFlag =
     | 'NOT_REQUESTED'
     | 'PRECHARGE_OFFLINE'
     | 'PRECHARGE_STATE'
+    | 'INVERTER_OFFLINE'
+    | 'INVERTER_FAULT'
 
 export type RtdPreventionFlag = 'TS_NOT_ACTIVE' | 'NOT_REQUESTED' | 'BRAKE_NOT_PRESSED'
 
