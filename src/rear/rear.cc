@@ -199,6 +199,16 @@ bool is_precharge_state_good(precharge::State state) {
     }
 }
 
+bool is_inverter_fault_good(dti::FaultCode fault_code) {
+    switch (fault_code) {
+    case dti::FaultCode::NoFaults:
+    case dti::FaultCode::Undervoltage:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool expander_wait() {
     const bool timeout = freertos::notify_take(1, true, pdMS_TO_TICKS(2)) == 0;
     const auto state = s_i2c_sm.state();
@@ -410,7 +420,7 @@ void control_task(void *) {
         const auto shutdown_open_cause = compute_shutdown_open_cause(front_status, rear_shutdown_samples);
 
         // Compute TS activation prevention flags.
-        // TODO: Add BMS and inverter checks.
+        // TODO: Add BMS checks.
         TsPreventionFlags ts_prevention_flags;
         if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
             ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
@@ -429,6 +439,12 @@ void control_task(void *) {
         }
         if (!precharge_status || !is_precharge_state_good(precharge_status->state)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
+        }
+        if (online_flags.is_clear(OnlineFlag::InverterOnline)) {
+            ts_prevention_flags.set(TsPreventionFlag::InverterOffline);
+        }
+        if (!inverter_gd3 || !is_inverter_fault_good(inverter_gd3->fault_code)) {
+            ts_prevention_flags.set(TsPreventionFlag::InverterFault);
         }
 
         // Compute RTD prevention flags.

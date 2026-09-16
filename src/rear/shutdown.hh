@@ -25,7 +25,7 @@ enum class ShutdownCircuitOpenCause : std::uint8_t {
     Tsms,
 };
 
-enum class TsPreventionFlag : std::uint8_t {
+enum class TsPreventionFlag : std::uint16_t {
     ShutdownOpen,
     BadFuse,
 
@@ -36,6 +36,10 @@ enum class TsPreventionFlag : std::uint8_t {
     // Precharge.
     PrechargeOffline,
     PrechargeState,
+
+    // Inverter.
+    InverterOffline,
+    InverterFault,
 };
 
 using TsPreventionFlags = util::FlagBitset<TsPreventionFlag>;
