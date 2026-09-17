@@ -266,7 +266,7 @@ struct SwdData {
 };
 
 // Active config and control mode.
-Config s_config;
+Config s_config{};
 std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
 
 // Global array of segments with associated mutex.
