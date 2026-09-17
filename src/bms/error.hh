@@ -13,33 +13,37 @@ enum class MasterError : std::uint16_t {
     /**
      * @brief Specifies that the CAN bus is unavailable or unreliable.
      */
-    BadCan,
+    CanOffline,
 
     /**
      * @brief Specifies that there is no usable config available.
      */
-    BadConfig,
+    NoConfig,
 
     /**
-     * @brief Specifies that the I2C EEPROM is unavailable.
-     */
-    BadEeprom,
-
-    /**
-     * @brief Specifies that the number of segments connected is not as expected, for example due to communication
-     * dropout or segment powerfailure.
-     */
-    BadSegmentCount,
-
-    /**
-     * @brief Specifies that a monitoring task has overrun its deadline.
+     * @brief Specifies that a task has overrun its deadline.
      */
     DeadlineOverrun,
 
     /**
-     * @brief Specifies that one or more segments have one or more errors.
+     * @brief Specifies that the onboard precision reference used for current sensing is bad.
      */
-    SegmentError,
+    BadReference,
+
+    /**
+     * @brief Specifies that the master board is overtemperature.
+     */
+    Overtemperature,
+
+    /**
+     * @brief Specifies that a current sensor's zero voltage is bad.
+     */
+    BadCurrentSensor,
+
+    /**
+     * @brief Specifies that an overcurrent has been detected by one or both of the current sensors' overcurrent pins.
+     */
+    OvercurrentThreshold,
 
     /**
      * @brief Specifies that an overcurrent has been measured by one or both of the current sensors.
@@ -47,9 +51,15 @@ enum class MasterError : std::uint16_t {
     OvercurrentMeasured,
 
     /**
-     * @brief Specifies that an overcurrent has been detected by one or both of the current sensors' overcurrent pins.
+     * @brief Specifies that one or more segments have one or more errors.
      */
-    OvercurrentThreshold,
+    SegmentError,
+
+    /**
+     * @brief Specifies that the number of segments connected is not as expected, for example due to communication
+     * dropout or segment power failure.
+     */
+    BadSegmentCount,
 };
 
 using MasterErrorFlags = util::FlagBitset<MasterError>;

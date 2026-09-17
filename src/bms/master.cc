@@ -88,6 +88,11 @@ constexpr std::int8_t k_undertemperature_threshold_limit = -20;
 constexpr std::int8_t k_overtemperature_threshold_limit = 100;
 
 /**
+ * @brief The maximum allowed MCU temperature in whole degrees.
+ */
+constexpr std::int8_t k_mcu_overtemperature_threshold = 80;
+
+/**
  * @brief Hard-coded value of the on-board precision voltage reference in 100 uV resolution.
  */
 constexpr std::uint16_t k_adc_vref = 40960;
@@ -148,6 +153,11 @@ constexpr float k_current_sense_sensitivity = 3.2f / 1000.0f;
 constexpr float k_current_sense_ideal_zero = 2.5f;
 
 /**
+ * @brief Current sensor allowed absolute tolerance from ideal zero point.
+ */
+constexpr float k_current_sense_zero_tolerance = 0.1f;
+
+/**
  * @brief Whether shutdown assertion requests can be cancelled if the fault clears within the delay grace period.
  */
 constexpr bool k_allow_shutdown_cancellation = true;
@@ -206,6 +216,7 @@ struct Config {
     // Threshold config.
     std::uint16_t undervoltage_threshold;
     std::uint16_t overvoltage_threshold;
+    std::uint16_t overcurrent_threshold;
     std::int8_t undertemperature_threshold;
     std::int8_t overtemperature_threshold;
 
@@ -230,6 +241,7 @@ public:
     void update(float voltage);
 
     float current() const { return m_current; }
+    float zero_voltage() const { return m_zero_voltage; }
 };
 
 class Segment {
@@ -385,6 +397,16 @@ void supervisor_task(void *) {
         // Calculate the latest master flags based on the most recent master state and segment data.
         MasterErrorFlags master_flags;
 
+        // Check if CAN is functional.
+        if (!can::is_online()) {
+            master_flags.set(MasterError::CanOffline);
+        }
+
+        // Check that we have a valid config.
+        if (s_config.magic != k_config_magic) {
+            master_flags.set(MasterError::NoConfig);
+        }
+
         // Check for missed deadlines for all of the other tasks.
         const auto current_time = xTaskGetTickCount();
         if (current_time - (s_last_segment_sample_time - k_segment_sample_period) >= k_schedule_tolerance) {
@@ -394,9 +416,36 @@ void supervisor_task(void *) {
             master_flags.set(MasterError::DeadlineOverrun);
         }
 
-        // Check if CAN is functional.
-        if (!can::is_online()) {
-            master_flags.set(bms::MasterError::BadCan);
+        // Check on-board ADC reference for plausibility, and for MCU overheating. We don't check the LVS voltage since
+        // the hardware has UVLO and OVLO protection.
+        s_mcu_mutex.with_locked([&] {
+            if (std::abs(static_cast<std::int16_t>(s_ref_voltage) - k_adc_vref / 10) > 50) {
+                master_flags.set(MasterError::BadReference);
+            }
+            if (s_mcu_temperature > k_mcu_overtemperature_threshold) {
+                master_flags.set(MasterError::Overtemperature);
+            }
+        });
+
+        // Check current sensor zero voltage plausibility.
+        if (std::abs(s_positive_sensor.zero_voltage() - k_current_sense_ideal_zero) > k_current_sense_zero_tolerance) {
+            master_flags.set(MasterError::BadCurrentSensor);
+        }
+        if (std::abs(s_negative_sensor.zero_voltage() - k_current_sense_ideal_zero) > k_current_sense_zero_tolerance) {
+            master_flags.set(MasterError::BadCurrentSensor);
+        }
+
+        // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
+        if (!s_oc_n.read() || !s_oc_p.read()) {
+            master_flags.set(MasterError::OvercurrentThreshold);
+        }
+
+        // Check measured current against threshold.
+        if (std::abs(s_positive_sensor.current()) > s_config.overcurrent_threshold) {
+            master_flags.set(MasterError::OvercurrentMeasured);
+        }
+        if (std::abs(s_negative_sensor.current()) > s_config.overcurrent_threshold) {
+            master_flags.set(MasterError::OvercurrentMeasured);
         }
 
         // Check segment data.
@@ -420,16 +469,6 @@ void supervisor_task(void *) {
         // Check that we have the right amount of segments connected.
         if (ready_segment_count != s_config.segment_count) {
             master_flags.set(MasterError::BadSegmentCount);
-        }
-
-        // TODO: Check MCU values.
-        // TODO: Check that current sensor zero voltage is within a suitable interval, which would both detect a
-        //       bad/disconnect sensor and current already flowing when the BMS starts.
-        // TODO: Check current values.
-
-        // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
-        if (!s_oc_n.read() || !s_oc_p.read()) {
-            master_flags.set(MasterError::OvercurrentThreshold);
         }
 
         // The following section of code handles the shutdown assertion and delay logic. There are five categories of
@@ -807,6 +846,7 @@ void config_task(void *) {
         hal::swd_printf("minimum_thermistor_count: %u\n", s_config.minimum_thermistor_count);
         hal::swd_printf("undervoltage_threshold: %u\n", s_config.undervoltage_threshold);
         hal::swd_printf("overvoltage_threshold: %u\n", s_config.overvoltage_threshold);
+        hal::swd_printf("overcurrent_threshold: %u\n", s_config.overcurrent_threshold);
         hal::swd_printf("undertemperature_threshold: %d\n", s_config.undertemperature_threshold);
         hal::swd_printf("overtemperature_threshold: %d\n", s_config.overtemperature_threshold);
         hal::swd_printf("\n");
@@ -826,6 +866,7 @@ void config_task(void *) {
     can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
         s_config.undervoltage_threshold = new_config.undervoltage_threshold;
         s_config.overvoltage_threshold = new_config.overvoltage_threshold;
+        s_config.overcurrent_threshold = new_config.overcurrent_threshold;
         s_config.undertemperature_threshold = new_config.undertemperature_threshold;
         s_config.overtemperature_threshold = new_config.overtemperature_threshold;
     }>(config::k_bms_can_id, 3);

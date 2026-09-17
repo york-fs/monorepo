@@ -61,15 +61,17 @@ bool ConfigSegmentMessage::encode(util::Stream &stream) const {
 std::optional<ConfigThresholdMessage> ConfigThresholdMessage::decode(util::Stream &stream) {
     const auto undervoltage_threshold = stream.read_be<std::uint16_t>();
     const auto overvoltage_threshold = stream.read_be<std::uint16_t>();
+    const auto overcurrent_threshold = stream.read_be<std::uint16_t>();
     const auto undertemperature_threshold = stream.read_byte();
     const auto overtemperature_threshold = stream.read_byte();
-    if (!undervoltage_threshold || !overvoltage_threshold || !undertemperature_threshold ||
+    if (!undervoltage_threshold || !overvoltage_threshold || !overcurrent_threshold || !undertemperature_threshold ||
         !overtemperature_threshold) {
         return std::nullopt;
     }
     return ConfigThresholdMessage{
         .undervoltage_threshold = *undervoltage_threshold,
         .overvoltage_threshold = *overvoltage_threshold,
+        .overcurrent_threshold = *overcurrent_threshold,
         .undertemperature_threshold = static_cast<std::int8_t>(*undertemperature_threshold),
         .overtemperature_threshold = static_cast<std::int8_t>(*overtemperature_threshold),
     };
@@ -80,6 +82,9 @@ bool ConfigThresholdMessage::encode(util::Stream &stream) const {
         return false;
     }
     if (!stream.write_be(overvoltage_threshold)) {
+        return false;
+    }
+    if (!stream.write_be(overcurrent_threshold)) {
         return false;
     }
     if (!stream.write_byte(undertemperature_threshold)) {

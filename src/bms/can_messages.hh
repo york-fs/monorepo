@@ -38,6 +38,7 @@ struct ConfigSegmentMessage {
 struct ConfigThresholdMessage {
     std::uint16_t undervoltage_threshold;
     std::uint16_t overvoltage_threshold;
+    std::uint16_t overcurrent_threshold;
     std::int8_t undertemperature_threshold;
     std::int8_t overtemperature_threshold;
 
