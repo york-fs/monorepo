@@ -25,7 +25,7 @@
 #include <variant>
 
 // TODO: Send CAN status messages.
-// TODO: Implement current sensing for negative sensor and plausibility checks.
+// TODO: Implement current plausibility checks.
 // TODO: Receive CAN ready to drive message.
 // TODO: Control LED via DMA.
 // TODO: Charger control.
@@ -275,6 +275,8 @@ freertos::Mutex s_segments_mutex;
 
 // Current sensing.
 CurrentSensor s_positive_sensor;
+CurrentSensor s_negative_sensor;
+bool s_selected_sensor{false};
 
 // Sampled values.
 std::uint16_t s_lvs_voltage = 0;
@@ -988,7 +990,9 @@ void swd_task(void *) {
         });
 
         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
+        const auto negative_current = static_cast<std::int32_t>(s_negative_sensor.current() * 1000.0f);
         hal::swd_printf("Positive current: %d\n", positive_current);
+        hal::swd_printf("Negative current: %d\n", negative_current);
 
         const auto current_time = xTaskGetTickCount();
         std::lock_guard segments_lock(s_segments_mutex);
@@ -1066,7 +1070,18 @@ extern "C" void SPI2_IRQHandler() {
     if ((SPI2->SR & SPI_SR_RXNE) != 0) {
         // Convert to floating point volts.
         const auto voltage = static_cast<float>((SPI2->DR * k_adc_vref) >> 16) * 0.0001f;
-        s_positive_sensor.update(voltage);
+        if (s_selected_sensor) {
+            s_positive_sensor.update(voltage);
+        } else {
+            s_negative_sensor.update(voltage);
+        }
+
+        s_selected_sensor = !s_selected_sensor;
+        if (s_selected_sensor) {
+            hal::gpio_reset(s_current_switch);
+        } else {
+            hal::gpio_set(s_current_switch);
+        }
     }
 }
 
