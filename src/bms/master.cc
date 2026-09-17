@@ -38,11 +38,6 @@ using namespace bms;
 namespace {
 
 /**
- * @brief Whether to enable communication with a DTI inverter.
- */
-constexpr bool k_enable_dti = true;
-
-/**
  * @brief The I2C address of the onboard EEPROM.
  */
 constexpr std::uint8_t k_eeprom_address = 0x50;
@@ -510,20 +505,6 @@ void supervisor_task(void *) {
         // Update the shutdown pin as the first priority. The pin is inverted since active-high signals no fault.
         s_shutdown.write(!shutdown_time.has_value());
 
-        // Cut inverter power as the next priority.
-        if constexpr (k_enable_dti) {
-            if (shutdown_time) {
-                dti::SetMaxDirectCurrentMessage set_max_discharge{
-                    .current = 0,
-                };
-                dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
-                    .current = 0,
-                };
-                can::transmit(config::k_dti_can_id, set_max_discharge);
-                can::transmit(config::k_dti_can_id, set_max_charge);
-            }
-        }
-
         // Signal the control task to keep working.
         if (!shutdown_time) {
             s_control_task.notify_give(0);
@@ -565,19 +546,6 @@ void control_task(void *) {
     while (true) {
         scheduler.delay_until_ms(k_control_period);
         freertos::notify_take(0, true, portMAX_DELAY);
-
-        // Send inverter DC-side power limits. We don't support regenerative braking yet, so always set max brake
-        // current to zero for now.
-        if constexpr (k_enable_dti) {
-            dti::SetMaxDirectCurrentMessage set_max_discharge{
-                .current = 2000,
-            };
-            dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
-                .current = 0,
-            };
-            can::transmit(config::k_dti_can_id, set_max_discharge);
-            can::transmit(config::k_dti_can_id, set_max_charge);
-        }
 
         std::lock_guard segments_lock(s_segments_mutex);
         if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
