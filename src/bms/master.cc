@@ -1144,9 +1144,10 @@ void app_main() {
     s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
     s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
 
-    // Configure current sensing and SPI pins.
+    // Configure current sensing and SPI pins. Drive SCK to avoid the ADC going into sleep.
     s_current_switch.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
     s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
     s_miso.configure(hal::GpioInputMode::PullUp);
 
     // Lock pins whose configurations don't need to change.
