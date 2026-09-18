@@ -68,6 +68,8 @@ class TsPreventionFlags(Flag):
     NOT_REQUESTED = enum.auto()
     PRECHARGE_OFFLINE = enum.auto()
     PRECHARGE_STATE = enum.auto()
+    INVERTER_OFFLINE = enum.auto()
+    INVERTER_FAULT = enum.auto()
 
 
 class RtdPreventionFlags(Flag):
