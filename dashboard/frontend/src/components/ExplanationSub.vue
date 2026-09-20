@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The explanatory-subtext shape for an AccentTile's `sub` slot — counterpart
+// The explanatory-subtext shape for a Tile's `sub` slot — counterpart
 // to MinMaxSub.vue's arrow pair, and extracted for the same reason: both
 // ShutdownCauseTile and InverterFaultTile had an identical copy of it. Those
 // two stay separate components (their severity vocabularies are about to

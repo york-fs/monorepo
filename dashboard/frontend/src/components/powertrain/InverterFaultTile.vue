@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AccentTile from '@/components/AccentTile.vue'
+import Tile from '@/components/Tile.vue'
 import ExplanationSub from '@/components/ExplanationSub.vue'
 import {
     inverterFaultExplanation,
@@ -20,10 +20,9 @@ const explanation = computed(() => inverterFaultExplanation(props.fault))
 </script>
 
 <template>
-    <AccentTile name="Inverter fault" :severity="severity">
-        {{ label }}
+    <Tile title="Inverter fault" :value="label" :severity="severity">
         <template #sub>
             <ExplanationSub v-if="explanation" :text="explanation" />
         </template>
-    </AccentTile>
+    </Tile>
 </template>

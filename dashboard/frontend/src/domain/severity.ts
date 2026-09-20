@@ -1,7 +1,7 @@
 /**
  * The three-colour state scale every accent in the app keys off — tiles
- * (`AccentTile`), the tile shell itself (`Tile`), the min/max arrow pair
- * (`MinMaxSub`), the fuse grid and the activation checklists.
+ * (`Tile`), the min/max arrow pair (`MinMaxSub`), the fuse grid and the
+ * activation checklists.
  *
  * Callers own the mapping from a reading to one of these (see
  * `lvs.ts`, `powertrain.ts`); the shared components only ever know the

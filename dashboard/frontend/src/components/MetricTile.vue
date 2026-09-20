@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AccentTile from '@/components/AccentTile.vue'
+import Tile from '@/components/Tile.vue'
 import MinMaxSub from '@/components/MinMaxSub.vue'
 import { useMinMax } from '@/composables/useMinMax'
 import type { Severity } from '@/domain/severity'
@@ -12,7 +12,7 @@ import type { TelemetryFrame } from '@/telemetry'
 // only in which field they read, how they format it, and which severity
 // function they key their colour off — all three of which are now props.
 //
-// Keeps the same split as AccentTile: callers own their domain vocabulary
+// Keeps the same split as Tile itself: callers own their domain vocabulary
 // (the formatter and the severity mapping), this only knows the shape.
 const props = defineProps<{
     name: string
@@ -54,8 +54,7 @@ const everMaxSeverity = computed(() => severityFor(everMax.value))
 </script>
 
 <template>
-    <AccentTile :name="name" :severity="severity">
-        {{ display(value) }}
+    <Tile :title="name" :value="display(value)" :severity="severity">
         <template v-if="select" #sub>
             <MinMaxSub
                 :min-label="display(everMin)"
@@ -64,5 +63,5 @@ const everMaxSeverity = computed(() => severityFor(everMax.value))
                 :max-severity="everMaxSeverity"
             />
         </template>
-    </AccentTile>
+    </Tile>
 </template>

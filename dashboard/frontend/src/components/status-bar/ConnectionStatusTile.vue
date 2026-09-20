@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useTelemetry } from '@/composables/useTelemetry'
-import AccentTile from '@/components/AccentTile.vue'
+import Tile from '@/components/Tile.vue'
 import UptimeDisplay from '@/components/status-bar/UptimeDisplay.vue'
 import { useLastSeen } from '@/composables/useLastSeen'
 
@@ -30,7 +30,7 @@ const { frame } = useTelemetry()
 const { status, relativeText } = useLastSeen(() => props.online)
 
 // `status` is still binary (online/offline) — `fault` isn't wired up to any
-// real logic yet, see plan/PLAN.md. Mapped through `AccentTile`'s generic
+// real logic yet, see plan/PLAN.md. Mapped through `Tile`'s generic
 // good/warning/critical severity vocabulary once it is.
 const severity = computed(() => (status.value === 'online' ? 'good' : 'critical'))
 
@@ -44,11 +44,10 @@ const hasTiming = computed(() => !props.hasOwnSignal)
 </script>
 
 <template>
-    <AccentTile :name="props.name" :severity="severity">
-        {{ statusLabel }}
+    <Tile :title="props.name" :value="statusLabel" :severity="severity">
         <template #sub>
             <UptimeDisplay v-if="hasTiming && status === 'online'" :ms="frame.uptime" prefix="up" />
             <UptimeDisplay v-else-if="hasTiming" :text="lastSeenText" />
         </template>
-    </AccentTile>
+    </Tile>
 </template>
