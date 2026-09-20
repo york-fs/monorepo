@@ -16,11 +16,6 @@ const { frame } = useTelemetry()
             :online="isFlagOnline(frame.online_flags, 'FRONT_ONLINE')"
         />
         <ConnectionStatusTile
-            name="BMS"
-            has-own-signal
-            :online="isFlagOnline(frame.online_flags, 'BMS_ONLINE')"
-        />
-        <ConnectionStatusTile
             name="Precharge"
             has-own-signal
             :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')"
@@ -29,6 +24,11 @@ const { frame } = useTelemetry()
             name="Inverter"
             has-own-signal
             :online="isFlagOnline(frame.online_flags, 'INVERTER_ONLINE')"
+        />
+        <ConnectionStatusTile
+            name="BMS"
+            has-own-signal
+            :online="isFlagOnline(frame.online_flags, 'BMS_ONLINE')"
         />
     </AutoGrid>
 </template>
