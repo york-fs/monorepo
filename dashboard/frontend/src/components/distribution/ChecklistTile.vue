@@ -10,7 +10,6 @@ defineProps<{
 </script>
 
 <template>
-    <!-- level 4 because these sit under the "Activation" SubSection's own h3. -->
     <Tile :title="title" :level="4" accent :severity="severity">
         <ul class="checklist">
             <li

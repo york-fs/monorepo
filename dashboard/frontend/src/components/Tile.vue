@@ -17,7 +17,7 @@ withDefaults(
         title?: string
         /**
          * Heading level for `title`. 3 for a tile sitting directly under its
-         * section's h2; 4 for one nested under a SubSection's own h3, so
+         * section's h2; 4 for one nested under a subsection's own h3, so
          * heading order doesn't jump a level. Purely structural — both get
          * identical styling.
          */

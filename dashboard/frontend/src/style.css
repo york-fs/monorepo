@@ -84,43 +84,19 @@ body {
     text-rendering: optimizeLegibility;
 }
 
-/* Three heading tiers, styled once here rather than per component.
-   Deliberately keyed off classes rather than off the element, because the
-   heading *level* tracks document structure while the tier tracks how deeply
-   nested the thing being named is — a tile's label is the same tier whether
-   it's an h3 sitting straight under its section or an h4 under a subheading.
-
-     h1           the page title     "YFS-03 Telemetry"   24px
-     h2           section title      "Distribution"       18px
-     .subheading  block in a section "Activation", "APPS" 14px
-     .tile-label  a single tile      "Voltages", "Speed"  11px
-
-   The sizes step by a near-even ~1.3x (1.33 / 1.29 / 1.27), which is the
-   browser's own default heading scale (1.33 / 1.28 / 1.17) run two steps
-   smaller — dashboard density rather than document density. The previous
-   scale went 1.38 / 1.14 / 1.27: the tightest step was in the middle, so h2
-   and the subheading crowded each other while h1 sat off on its own.
-
-   Every heading is weight 650, h2 included — it would otherwise inherit the
-   UA's 700 and read heavier than the h1 above it.
-
-   The two lower tiers used to be near-identical greys (0.75rem/700 against
-   0.6875rem/400) — too close to read as a hierarchy, which is what left the
-   page looking flat. The distinction is now ink and case, not a weight nudge. */
-h2 {
-    font-size: 1.125rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
+h1 {
+    font-size: 1.75rem;
     margin: 0;
-    color: var(--ink-primary);
 }
 
-.subheading {
-    font-size: 0.875rem;
-    font-weight: 650;
-    letter-spacing: -0.005em;
-    color: var(--ink-primary);
-    margin: 0 0 var(--gap-heading);
+h2 {
+    font-size: 1.35rem;
+    margin: 0;
+}
+
+h3 {
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
 }
 
 /* Also worn by the tile names AccentTile renders in a span, which is why the

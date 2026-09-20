@@ -38,15 +38,4 @@ const demoMode = isDemoMode()
     align-items: center;
     gap: var(--gap-inline);
 }
-
-h1 {
-    /* The UA default (~2em, bold, with its own top/bottom margin) is both
-       oversized next to the rest of the type scale and adds extra space on
-       top of .home's grid gap, since grid items don't collapse margins. */
-    font-size: 1.5rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--ink-primary);
-}
 </style>

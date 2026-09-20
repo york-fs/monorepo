@@ -14,7 +14,6 @@ import { formatPercent } from '@/utils/formatPercent'
 import { formatVolts } from '@/utils/formatVolts'
 import Section from '@/components/Section.vue'
 import Tile from '@/components/Tile.vue'
-import SubSection from '@/components/SubSection.vue'
 import AutoGrid from '@/components/AutoGrid.vue'
 import MetricTile from '@/components/MetricTile.vue'
 import InverterFaultTile from '@/components/powertrain/InverterFaultTile.vue'
@@ -102,18 +101,19 @@ const online = computed<boolean | undefined>(() => {
             </Tile>
         </div>
 
-        <SubSection title="APPS">
+        <div>
+            <h3>APPS</h3>
             <AutoGrid>
                 <!-- No ever-range or severity yet: APPS grows its own error
-                     flags/states next, which is what will decide what a "bad"
-                     pedal reading looks like. -->
+                flags/states next, which is what will decide what a "bad"
+                pedal reading looks like. -->
                 <MetricTile
                     name="Pedal travel"
                     :value="frame.pedal_travel"
                     :format="formatPercent"
                 />
             </AutoGrid>
-        </SubSection>
+        </div>
     </Section>
 </template>
 

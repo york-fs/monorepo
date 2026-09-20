@@ -5,7 +5,6 @@ import { isRtdPreventionFlagSet, isTsPreventionFlagSet } from '@/telemetry'
 import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
 import { RTD_PREVENTION_CONDITIONS, TS_PREVENTION_CONDITIONS } from '@/domain/prevention'
 import type { PreventionCondition } from '@/domain/prevention'
-import SubSection from '@/components/SubSection.vue'
 import AutoGrid from '@/components/AutoGrid.vue'
 import ChecklistTile from '@/components/distribution/ChecklistTile.vue'
 
@@ -52,10 +51,11 @@ const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
 </script>
 
 <template>
-    <SubSection title="Activation">
+    <div>
+        <h3>Activation</h3>
         <AutoGrid min="14rem">
             <ChecklistTile title="TS activation" :rows="tsRows" :severity="tsSeverity" />
             <ChecklistTile title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
         </AutoGrid>
-    </SubSection>
+    </div>
 </template>
