@@ -9,17 +9,19 @@
 namespace front {
 
 /**
- * @brief Total ADC resolution range.
+ * @brief The absolute start point in ADC counts. A measured value below this results in a sensor error.
  */
-constexpr std::uint16_t k_adc_range = 1u << 12;
+constexpr std::uint16_t k_absolute_start = 400;
 
 /**
- * @brief The maximum tolerated delta between sensor ADC counts and the absolute endpoints [0, k_adc_range] before a
- * sensor error is reported.
+ * @brief The absolute end point in ADC counts. A measured value above this results in a sensor error.
  */
-constexpr std::uint16_t k_absolute_delta = 1000;
+constexpr std::uint16_t k_absolute_end = 2000;
 
-constexpr std::size_t k_map_size = k_adc_range - k_absolute_delta * 2;
+/**
+ * @brief The computed size of the throttle map lookup table.
+ */
+constexpr std::size_t k_map_size = k_absolute_end - k_absolute_start;
 
 class ThrottleMap {
     std::array<std::uint16_t, k_map_size> m_lut{};

@@ -39,7 +39,7 @@ std::uint16_t ThrottleMap::to_percentage(std::uint16_t normalised) {
 
 std::optional<std::uint16_t> Sensor::normalise(std::uint16_t value) const {
     // Reject if outside of absolute allowed range.
-    if (value < k_absolute_delta || value > (k_adc_range - k_absolute_delta)) {
+    if (value < k_absolute_start || value > k_absolute_end) {
         return std::nullopt;
     }
 
