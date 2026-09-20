@@ -91,7 +91,12 @@ export const TS_PREVENTION_FLAGS = [
 ] as const
 export type TsPreventionFlag = (typeof TS_PREVENTION_FLAGS)[number]
 
-export const RTD_PREVENTION_FLAGS = ['TS_NOT_ACTIVE', 'NOT_REQUESTED', 'BRAKE_NOT_PRESSED'] as const
+export const RTD_PREVENTION_FLAGS = [
+    'TS_NOT_ACTIVE',
+    'NOT_REQUESTED',
+    'APPS_NOT_CALIBRATED',
+    'BRAKE_NOT_PRESSED',
+] as const
 export type RtdPreventionFlag = (typeof RTD_PREVENTION_FLAGS)[number]
 
 export const INVERTER_FAULT_CODES = [

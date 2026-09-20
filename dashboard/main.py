@@ -75,6 +75,7 @@ class TsPreventionFlags(Flag):
 class RtdPreventionFlags(Flag):
     TS_NOT_ACTIVE = enum.auto()
     NOT_REQUESTED = enum.auto()
+    APPS_NOT_CALIBRATED = enum.auto()
     BRAKE_NOT_PRESSED = enum.auto()
 
 

@@ -26,6 +26,7 @@ export const TS_PREVENTION_LABELS: Record<TsPreventionFlag, string> = {
 
 export const RTD_PREVENTION_LABELS: Record<RtdPreventionFlag, string> = {
     TS_NOT_ACTIVE: 'TS active',
+    APPS_NOT_CALIBRATED: 'APPS calibrated',
     BRAKE_NOT_PRESSED: 'Brake pressed',
     NOT_REQUESTED: 'RTD activation requested',
 }

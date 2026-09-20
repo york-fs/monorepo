@@ -81,6 +81,7 @@ interface DemoState {
     // itself — see ActivationChecklists) was unreachable in demo mode.
     tsRequested: boolean
     rtdRequested: boolean
+    appsCalibrated: boolean
     brakePressed: boolean
 
     inverterFault: InverterFaultCode
@@ -262,6 +263,7 @@ function deriveRtdPreventionFlags(
     const flags: RtdPreventionFlag[] = []
     if (tsPreventionFlags.length > 0) flags.push('TS_NOT_ACTIVE')
     if (!state.brakePressed) flags.push('BRAKE_NOT_PRESSED')
+    if (!state.appsCalibrated) flags.push('APPS_NOT_CALIBRATED')
     if (!state.rtdRequested) flags.push('NOT_REQUESTED')
     return flags
 }
@@ -273,6 +275,7 @@ function randomizeDiscreteState(state: DemoState) {
     state.inverterFault = Math.random() < 0.9 ? 'NONE' : pickRandom(INVERTER_FAULT_CODES.slice(1))
     state.tsRequested = Math.random() < 0.7
     state.rtdRequested = Math.random() < 0.7
+    state.appsCalibrated = Math.random() < 0.7
     state.brakePressed = Math.random() < 0.7
 }
 
