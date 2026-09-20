@@ -22,13 +22,13 @@ defineProps<{
 <style scoped>
 .ever-range {
     display: inline-flex;
-    gap: 0.75rem;
+    gap: var(--gap-inline);
 }
 
 .arrow-stat {
     display: inline-flex;
     align-items: center;
-    gap: 0.1875rem;
+    gap: var(--gap-hairline);
     font-size: 0.6875rem;
     font-weight: 600;
     color: var(--ink-muted);

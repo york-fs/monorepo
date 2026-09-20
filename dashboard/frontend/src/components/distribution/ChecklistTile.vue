@@ -1,47 +1,43 @@
 <script setup lang="ts">
 import type { Severity } from '@/domain/severity'
-import SeverityCard from '@/components/SeverityCard.vue'
+import Tile from '@/components/Tile.vue'
 
 defineProps<{
     title: string
-    rows: { key: string; label: string; ok: boolean | undefined }[]
+    rows: { flag: string; label: string; ok: boolean | undefined }[]
     severity?: Severity
 }>()
 </script>
 
 <template>
-    <SeverityCard class="panel" :severity="severity">
-        <h3>{{ title }}</h3>
+    <!-- level 4 because these sit under the "Activation" SubSection's own h3. -->
+    <Tile :title="title" :level="4" accent :severity="severity">
         <ul class="checklist">
             <li
                 v-for="row in rows"
-                :key="row.key"
+                :key="row.flag"
                 :class="{ met: row.ok, unknown: row.ok === undefined }"
             >
                 <span class="icon">{{ row.ok === undefined ? '–' : row.ok ? '✓' : '✕' }}</span>
                 {{ row.label }}
             </li>
         </ul>
-    </SeverityCard>
+    </Tile>
 </template>
 
 <style scoped>
-.panel {
-    padding: 0.875rem 1rem;
-}
-
 .checklist {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    row-gap: 0.5rem;
+    row-gap: var(--gap-rows);
 }
 
 .checklist li {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--gap-rows);
     font-size: 0.8125rem;
     color: var(--ink-secondary);
 }

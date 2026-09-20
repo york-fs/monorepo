@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { PRECHARGE_STATES } from '@/telemetry'
 import type { PrechargeState } from '@/telemetry'
-import { PRECHARGE_STATES, PRECHARGE_STATE_LABELS } from '@/domain/precharge'
+import { PRECHARGE_STATE_LABELS } from '@/domain/precharge'
 
 const props = defineProps<{
     state?: PrechargeState
@@ -49,7 +50,7 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
 .step-body {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--gap-rows);
 }
 
 .connector {
@@ -68,7 +69,7 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
     .stepper {
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.5rem;
+        gap: var(--gap-rows);
     }
 
     .connector {

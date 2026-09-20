@@ -90,7 +90,7 @@ onUnmounted(() => {
 })
 
 // The canvas itself is opaque to assistive tech. Named from the series
-// rather than a new prop — the enclosing SectionPanel's heading already says
+// rather than a new prop — the enclosing Tile's heading already says
 // what the chart is *of*, so this only needs to say what's plotted on it.
 const chartLabel = computed(() =>
     props.isEmpty
@@ -186,7 +186,7 @@ const chartOptions = computed(() => ({
         <!-- Legend and reset button both sit in normal flow above the
              canvas. Chart.js's own legend is drawn inside the canvas, which
              put it in a different typeface and left it unable to line up
-             with the panel's heading. Keeping both in the DOM also means the
+             with the tile's heading. Keeping both in the DOM also means the
              button no longer overlays the plot area — which is what used to
              need a measured `layout.padding.top` (and a ResizeObserver on
              the button) to stop it clipping into the grid. -->
@@ -211,14 +211,14 @@ const chartOptions = computed(() => ({
 .chart {
     display: grid;
     grid-template-rows: auto 1fr;
-    gap: 0.5rem;
+    gap: var(--gap-rows);
     min-height: 16.25rem;
 }
 
 .chart-header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--gap-inline);
 }
 
 .legend {
@@ -227,13 +227,13 @@ const chartOptions = computed(() => ({
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 0.875rem;
+    gap: var(--gap-tight) 0.875rem;
 }
 
 .legend-item {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--gap-items);
     font-size: 0.6875rem;
     color: var(--ink-muted);
 }
@@ -260,7 +260,7 @@ const chartOptions = computed(() => ({
     margin-left: auto;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-badge);
     padding: 0.1875rem 0.5rem;
     font-size: 0.6875rem;
     color: var(--ink-muted);

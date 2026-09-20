@@ -3,13 +3,11 @@ import type { Severity } from '@/domain/severity'
 import { computed } from 'vue'
 import { isRtdPreventionFlagSet, isTsPreventionFlagSet } from '@/telemetry'
 import type { RtdPreventionFlag, TsPreventionFlag } from '@/telemetry'
-import {
-    RTD_PREVENTION_FLAGS,
-    RTD_PREVENTION_LABELS,
-    TS_PREVENTION_FLAGS,
-    TS_PREVENTION_LABELS,
-} from '@/domain/prevention'
-import PreventionChecklistPanel from '@/components/distribution/PreventionChecklistPanel.vue'
+import { RTD_PREVENTION_CONDITIONS, TS_PREVENTION_CONDITIONS } from '@/domain/prevention'
+import type { PreventionCondition } from '@/domain/prevention'
+import SubSection from '@/components/SubSection.vue'
+import AutoGrid from '@/components/AutoGrid.vue'
+import ChecklistTile from '@/components/distribution/ChecklistTile.vue'
 
 const props = defineProps<{
     tsPreventionFlags?: readonly TsPreventionFlag[]
@@ -22,23 +20,23 @@ function negate(set: boolean | undefined): boolean | undefined {
     return set === undefined ? undefined : !set
 }
 
+function rows<T extends string>(
+    conditions: PreventionCondition<T>[],
+    isSet: (flags: readonly T[] | undefined, flag: T) => boolean | undefined,
+    flags: readonly T[] | undefined,
+) {
+    return conditions.map(({ flag, label }) => ({ flag, label, ok: negate(isSet(flags, flag)) }))
+}
+
 const tsRows = computed(() =>
-    TS_PREVENTION_FLAGS.map((flag) => ({
-        key: flag,
-        label: TS_PREVENTION_LABELS[flag],
-        ok: negate(isTsPreventionFlagSet(props.tsPreventionFlags, flag)),
-    })),
+    rows(TS_PREVENTION_CONDITIONS, isTsPreventionFlagSet, props.tsPreventionFlags),
 )
 
 const rtdRows = computed(() =>
-    RTD_PREVENTION_FLAGS.map((flag) => ({
-        key: flag,
-        label: RTD_PREVENTION_LABELS[flag],
-        ok: negate(isRtdPreventionFlagSet(props.rtdPreventionFlags, flag)),
-    })),
+    rows(RTD_PREVENTION_CONDITIONS, isRtdPreventionFlagSet, props.rtdPreventionFlags),
 )
 
-// Accent colour for each panel: green once nothing is blocking, amber if the
+// Accent colour for each tile: green once nothing is blocking, amber if the
 // only thing left is that activation hasn't been requested yet, red for any
 // actual fault/offline/state condition still blocking. `undefined` (no
 // signal yet) is left uncoloured, same convention as the rest of the app.
@@ -54,16 +52,10 @@ const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
 </script>
 
 <template>
-    <div class="checklists">
-        <PreventionChecklistPanel title="TS activation" :rows="tsRows" :severity="tsSeverity" />
-        <PreventionChecklistPanel title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
-    </div>
+    <SubSection title="Activation">
+        <AutoGrid min="14rem">
+            <ChecklistTile title="TS activation" :rows="tsRows" :severity="tsSeverity" />
+            <ChecklistTile title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
+        </AutoGrid>
+    </SubSection>
 </template>
-
-<style scoped>
-.checklists {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: 1rem;
-}
-</style>

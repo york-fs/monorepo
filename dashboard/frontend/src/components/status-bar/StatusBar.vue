@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
 import ConnectionStatusTile from '@/components/status-bar/ConnectionStatusTile.vue'
+import AutoGrid from '@/components/AutoGrid.vue'
 import { isFlagOnline } from '@/telemetry'
 
 const { frame } = useTelemetry()
 </script>
 
 <template>
-    <div class="status-bar">
+    <AutoGrid>
         <ConnectionStatusTile name="Rear distribution" />
         <ConnectionStatusTile
             name="Front distribution"
@@ -29,13 +30,5 @@ const { frame } = useTelemetry()
             has-own-signal
             :online="isFlagOnline(frame.online_flags, 'INVERTER_ONLINE')"
         />
-    </div>
+    </AutoGrid>
 </template>
-
-<style scoped>
-.status-bar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-    gap: 1rem;
-}
-</style>

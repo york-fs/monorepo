@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useTelemetry } from '@/composables/useTelemetry'
 import { isFlagOnline } from '@/telemetry'
-import StaleSection from '@/components/StaleSection.vue'
-import SectionPanel from '@/components/SectionPanel.vue'
+import Section from '@/components/Section.vue'
+import Tile from '@/components/Tile.vue'
 import PrechargeStateStepper from '@/components/precharge/PrechargeStateStepper.vue'
 import PrechargeFlagsList from '@/components/precharge/PrechargeFlagsList.vue'
 import PrechargeRelayStates from '@/components/precharge/PrechargeRelayStates.vue'
@@ -13,46 +13,46 @@ const { frame } = useTelemetry()
 </script>
 
 <template>
-    <StaleSection :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')" title="Precharge">
+    <Section :online="isFlagOnline(frame.online_flags, 'PRECHARGE_ONLINE')" title="Precharge">
         <PrechargeStateStepper :state="frame.precharge_state" />
 
         <div class="body">
             <div class="status-col">
-                <SectionPanel title="Voltages">
+                <Tile title="Voltages">
                     <PrechargeVoltages
                         :prchg-voltage="frame.precharge_prchg_voltage"
                         :ts-voltage="frame.precharge_ts_voltage"
                     />
-                </SectionPanel>
-                <SectionPanel title="Relay States">
+                </Tile>
+                <Tile title="Relay States">
                     <PrechargeRelayStates :relays="frame.precharge_relay_states" />
-                </SectionPanel>
-                <SectionPanel title="Flags">
+                </Tile>
+                <Tile title="Flags">
                     <PrechargeFlagsList
                         :flags="frame.precharge_error_flags"
                         :state="frame.precharge_state"
                     />
-                </SectionPanel>
+                </Tile>
             </div>
 
-            <SectionPanel title="Voltage history" chart>
+            <Tile title="Voltage history" chart>
                 <PrechargeVoltageChart />
-            </SectionPanel>
+            </Tile>
         </div>
-    </StaleSection>
+    </Section>
 </template>
 
 <style scoped>
 .body {
     display: grid;
     grid-template-columns: minmax(15rem, 20rem) 1fr;
-    gap: 1rem;
+    gap: var(--gap-cards);
 }
 
 .status-col {
     display: grid;
     align-content: start;
-    gap: 1rem;
+    gap: var(--gap-cards);
 }
 
 @media (max-width: 47.5em) {

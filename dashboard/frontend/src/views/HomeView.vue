@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Badge from '@/components/Badge.vue'
 import StatusBar from '@/components/status-bar/StatusBar.vue'
 import DistributionSection from '@/components/distribution/DistributionSection.vue'
 import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
@@ -14,7 +15,7 @@ const demoMode = isDemoMode()
     <main class="home">
         <div class="title-row">
             <h1>YFS-03 Telemetry</h1>
-            <span v-if="demoMode" class="demo-badge">Demo mode — synthetic data</span>
+            <Badge v-if="demoMode">Demo mode — synthetic data</Badge>
         </div>
         <StatusBar />
         <DistributionSection />
@@ -28,39 +29,24 @@ const demoMode = isDemoMode()
     max-width: 68.75rem;
     margin: 0 auto;
     display: grid;
-    gap: 1.75rem;
+    gap: var(--gap-sections);
     padding: 1.5rem 1.25rem;
 }
 
 .title-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--gap-inline);
 }
 
 h1 {
     /* The UA default (~2em, bold, with its own top/bottom margin) is both
        oversized next to the rest of the type scale and adds extra space on
        top of .home's grid gap, since grid items don't collapse margins. */
-    font-size: 1.375rem;
+    font-size: 1.5rem;
     font-weight: 650;
     letter-spacing: -0.01em;
     margin: 0;
     color: var(--ink-primary);
-}
-
-/* Same treatment as StaleSection's "Stale" banner — both are amber "what
-   you're looking at isn't the real thing" notices. Note the tinted
-   background rather than a flat `--status-warning` fill: in dark mode
-   `--status-warning-text` *is* `--status-warning`, so amber-on-amber would
-   render the label invisible. */
-.demo-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.125rem 0.5rem;
-    border-radius: 0.25rem;
-    background: color-mix(in srgb, var(--status-warning) 16%, var(--surface-card));
-    color: var(--status-warning-text);
-    border: 1px solid var(--border);
 }
 </style>

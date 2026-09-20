@@ -12,8 +12,10 @@ import {
 } from '@/domain/powertrain'
 import { formatPercent } from '@/utils/formatPercent'
 import { formatVolts } from '@/utils/formatVolts'
-import StaleSection from '@/components/StaleSection.vue'
-import SectionPanel from '@/components/SectionPanel.vue'
+import Section from '@/components/Section.vue'
+import Tile from '@/components/Tile.vue'
+import SubSection from '@/components/SubSection.vue'
+import AutoGrid from '@/components/AutoGrid.vue'
 import MetricTile from '@/components/MetricTile.vue'
 import InverterFaultTile from '@/components/powertrain/InverterFaultTile.vue'
 import RpmChart from '@/components/powertrain/RpmChart.vue'
@@ -54,9 +56,9 @@ const online = computed<boolean | undefined>(() => {
 </script>
 
 <template>
-    <StaleSection :online="online" title="Powertrain">
+    <Section :online="online" title="Powertrain">
         <div class="summary">
-            <div class="summary-row">
+            <AutoGrid>
                 <MetricTile
                     name="Speed"
                     :value="frame.motor_rpm"
@@ -65,8 +67,8 @@ const online = computed<boolean | undefined>(() => {
                     :severity-of="rpmSeverity"
                 />
                 <InverterFaultTile :fault="frame.inverter_fault" />
-            </div>
-            <div class="summary-row">
+            </AutoGrid>
+            <AutoGrid>
                 <MetricTile
                     name="DC input voltage"
                     :value="frame.inverter_input_voltage"
@@ -88,50 +90,43 @@ const online = computed<boolean | undefined>(() => {
                     :select="selectMotorTemperature"
                     :severity-of="motorTemperatureSeverity"
                 />
-            </div>
+            </AutoGrid>
         </div>
 
         <div class="charts">
-            <SectionPanel title="RPM history" chart>
+            <Tile title="RPM history" chart>
                 <RpmChart />
-            </SectionPanel>
-            <SectionPanel title="Current history" chart>
+            </Tile>
+            <Tile title="Current history" chart>
                 <CurrentChart />
-            </SectionPanel>
+            </Tile>
         </div>
 
-        <div class="apps">
-            <h3>APPS</h3>
-            <div class="summary-row">
-                <!-- No ever-range or severity yet: APPS grows its own
-                         error flags/states next, which is what will decide
-                         what a "bad" pedal reading looks like. -->
+        <SubSection title="APPS">
+            <AutoGrid>
+                <!-- No ever-range or severity yet: APPS grows its own error
+                     flags/states next, which is what will decide what a "bad"
+                     pedal reading looks like. -->
                 <MetricTile
                     name="Pedal travel"
                     :value="frame.pedal_travel"
                     :format="formatPercent"
                 />
-            </div>
-        </div>
-    </StaleSection>
+            </AutoGrid>
+        </SubSection>
+    </Section>
 </template>
 
 <style scoped>
 .summary {
     display: grid;
-    gap: 1rem;
-}
-
-.summary-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-    gap: 1rem;
+    gap: var(--gap-cards);
 }
 
 .charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+    gap: var(--gap-cards);
 }
 
 @media (max-width: 47.5em) {

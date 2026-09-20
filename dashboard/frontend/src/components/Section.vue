@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 import { useComponentStatus } from '@/composables/useComponentStatus'
+import Badge from '@/components/Badge.vue'
 
 const props = withDefaults(
     defineProps<{
@@ -21,7 +22,7 @@ const headingId = useId()
 </script>
 
 <template>
-    <section class="stale-section" :aria-labelledby="headingId">
+    <section class="section" :aria-labelledby="headingId">
         <div class="header-row">
             <h2 :id="headingId">{{ title }}</h2>
             <!-- Always present, so assistive tech has a live region to
@@ -35,7 +36,7 @@ const headingId = useId()
                      to this section's own online signal, so showing it here
                      would misrepresent how long *this* section has been
                      stale. -->
-                <span v-if="status === 'offline'" class="stale-banner">Stale</span>
+                <Badge v-if="status === 'offline'">Stale</Badge>
             </div>
         </div>
         <div class="content" :class="{ dimmed: status === 'offline' }">
@@ -45,16 +46,16 @@ const headingId = useId()
 </template>
 
 <style scoped>
-.stale-section {
+.section {
     display: grid;
-    gap: 1.25rem;
+    gap: var(--gap-blocks);
 }
 
 .header-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--gap-inline);
 }
 
 .banner-slot {
@@ -64,21 +65,11 @@ const headingId = useId()
     display: none;
 }
 
-.stale-banner {
-    background: color-mix(in srgb, var(--status-warning) 16%, var(--surface-card));
-    color: var(--status-warning-text);
-    border: 1px solid var(--border);
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.125rem 0.5rem;
-}
-
 /* Every section lays its blocks out the same way, so this lives here rather
    than being redeclared by each one's own wrapper element. */
 .content {
     display: grid;
-    gap: 1.25rem;
+    gap: var(--gap-blocks);
 }
 
 .content.dimmed {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Severity } from '@/domain/severity'
-import SeverityCard from '@/components/SeverityCard.vue'
+import Tile from '@/components/Tile.vue'
 
 defineProps<{
     name: string
@@ -9,25 +9,17 @@ defineProps<{
 </script>
 
 <template>
-    <SeverityCard class="tile" :severity="severity">
-        <span class="name">{{ name }}</span>
+    <Tile class="value-tile" accent :severity="severity">
+        <span class="tile-label">{{ name }}</span>
         <span class="value"><slot /></span>
         <div class="sub"><slot name="sub" /></div>
-    </SeverityCard>
+    </Tile>
 </template>
 
 <style scoped>
-.tile {
-    padding: 0.875rem 1.125rem;
+.value-tile {
     display: grid;
-    gap: 0.25rem;
-}
-
-.name {
-    font-size: 0.6875rem;
-    color: var(--ink-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    gap: var(--gap-tight);
 }
 
 .value {
@@ -36,13 +28,13 @@ defineProps<{
     letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
 }
-.tile[data-severity='good'] .value {
+.value-tile[data-severity='good'] .value {
     color: var(--status-good-text);
 }
-.tile[data-severity='warning'] .value {
+.value-tile[data-severity='warning'] .value {
     color: var(--status-warning-text);
 }
-.tile[data-severity='critical'] .value {
+.value-tile[data-severity='critical'] .value {
     color: var(--status-critical-text);
 }
 

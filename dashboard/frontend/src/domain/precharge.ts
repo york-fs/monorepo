@@ -1,14 +1,5 @@
 import type { PrechargeErrorFlag, PrechargeRelay, PrechargeState } from '@/telemetry'
 
-export const PRECHARGE_STATES: PrechargeState[] = [
-    'LED_CHECK',
-    'PRECHECK',
-    'STANDBY',
-    'PRECHARGE',
-    'PRECHARGE_HOLD',
-    'ACTIVE',
-]
-
 export const PRECHARGE_STATE_LABELS: Record<PrechargeState, string> = {
     LED_CHECK: 'LED Check',
     PRECHECK: 'Precheck',
@@ -119,14 +110,6 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
         liveStates: ['PRECHECK'],
     },
 }
-
-/** Render order, matching how the other unions here are enumerated. */
-export const PRECHARGE_RELAYS: PrechargeRelay[] = [
-    'DISCHARGE_CLOSED',
-    'PRECHARGE_CLOSED',
-    'AIR_POS_CLOSED',
-    'AIR_NEG_CLOSED',
-]
 
 export const PRECHARGE_RELAY_LABELS: Record<PrechargeRelay, string> = {
     DISCHARGE_CLOSED: 'Discharge',

@@ -1,88 +1,134 @@
-export type PrechargeState =
-    'LED_CHECK' | 'PRECHECK' | 'STANDBY' | 'PRECHARGE' | 'PRECHARGE_HOLD' | 'ACTIVE'
+/**
+ * The wire vocabularies, each declared as a runtime array with its type
+ * derived from it rather than as a hand-written union alongside a matching
+ * array.
+ *
+ * The arrays have to exist regardless: a TS union is erased at runtime, so
+ * enumerating a flag enum's members — to render a cell per fuse, a step per
+ * precharge state, a checklist row per prevention flag — needs a real value.
+ * Deriving the type from the array means each member is written once here
+ * instead of once in a union and again in a `domain/` array that had to be
+ * kept in step by hand.
+ *
+ * Declaration order mirrors the backend's own enum order. Where the UI wants
+ * a different order that's the consumer's business, not this file's — see
+ * `domain/prevention.ts`.
+ */
 
-export type PrechargeErrorFlag =
-    | 'DISCHARGE_OPEN'
-    | 'PRECHARGE_CLOSED'
-    | 'AIR_POS_CLOSED'
-    | 'AIR_NEG_CLOSED'
-    | 'PRECHECK_VOLTAGE'
-    | 'WAITING_DISCHARGE'
-    | 'WAITING_ACTIVATION'
-    | 'SHUTDOWN_OPEN'
-    | 'PRECHARGE_OPEN'
-    | 'AIR_POS_OPEN'
-    | 'AIR_NEG_OPEN'
-    | 'DEACTIVATION'
-    | 'DEVIATION'
-    | 'RATE_LIMIT'
+export const PRECHARGE_STATES = [
+    'LED_CHECK',
+    'PRECHECK',
+    'STANDBY',
+    'PRECHARGE',
+    'PRECHARGE_HOLD',
+    'ACTIVE',
+] as const
+export type PrechargeState = (typeof PRECHARGE_STATES)[number]
 
-export type PrechargeRelay =
-    'DISCHARGE_CLOSED' | 'PRECHARGE_CLOSED' | 'AIR_POS_CLOSED' | 'AIR_NEG_CLOSED'
+export const PRECHARGE_ERROR_FLAGS = [
+    'DISCHARGE_OPEN',
+    'PRECHARGE_CLOSED',
+    'AIR_POS_CLOSED',
+    'AIR_NEG_CLOSED',
+    'PRECHECK_VOLTAGE',
+    'WAITING_DISCHARGE',
+    'WAITING_ACTIVATION',
+    'SHUTDOWN_OPEN',
+    'PRECHARGE_OPEN',
+    'AIR_POS_OPEN',
+    'AIR_NEG_OPEN',
+    'DEACTIVATION',
+    'DEVIATION',
+    'RATE_LIMIT',
+] as const
+export type PrechargeErrorFlag = (typeof PRECHARGE_ERROR_FLAGS)[number]
 
-export type OnlineFlag = 'FRONT_ONLINE' | 'BMS_ONLINE' | 'PRECHARGE_ONLINE' | 'INVERTER_ONLINE'
+export const PRECHARGE_RELAYS = [
+    'DISCHARGE_CLOSED',
+    'PRECHARGE_CLOSED',
+    'AIR_POS_CLOSED',
+    'AIR_NEG_CLOSED',
+] as const
+export type PrechargeRelay = (typeof PRECHARGE_RELAYS)[number]
 
-export type ShutdownOpenCause =
-    | 'NONE'
-    | 'REAR_INPUT'
-    | 'FRONT_ESTOP'
-    | 'BRAKE_OVER_TRAVEL'
-    | 'INERTIA_SWITCH'
-    | 'FRONT_AUXILIARY'
-    | 'FRONT_OUTPUT'
-    | 'BMS_LATCH'
-    | 'IMD_LATCH'
-    | 'INVERTER_INTERLOCK'
-    | 'SHUTDOWN_LATCH_FAILURE'
-    | 'LEFT_ESTOP'
-    | 'RIGHT_ESTOP'
-    | 'HVD_INTERLOCK'
-    | 'REAR_AUXILIARY'
-    | 'TSMS'
+export const ONLINE_FLAGS = [
+    'FRONT_ONLINE',
+    'BMS_ONLINE',
+    'PRECHARGE_ONLINE',
+    'INVERTER_ONLINE',
+] as const
+export type OnlineFlag = (typeof ONLINE_FLAGS)[number]
 
-export type TsPreventionFlag =
-    | 'SHUTDOWN_OPEN'
-    | 'BAD_FUSE'
-    | 'FRONT_OFFLINE'
-    | 'NOT_REQUESTED'
-    | 'PRECHARGE_OFFLINE'
-    | 'PRECHARGE_STATE'
-    | 'INVERTER_OFFLINE'
-    | 'INVERTER_FAULT'
+export const SHUTDOWN_OPEN_CAUSES = [
+    'NONE',
+    'REAR_INPUT',
+    'FRONT_ESTOP',
+    'BRAKE_OVER_TRAVEL',
+    'INERTIA_SWITCH',
+    'FRONT_AUXILIARY',
+    'FRONT_OUTPUT',
+    'BMS_LATCH',
+    'IMD_LATCH',
+    'INVERTER_INTERLOCK',
+    'SHUTDOWN_LATCH_FAILURE',
+    'LEFT_ESTOP',
+    'RIGHT_ESTOP',
+    'HVD_INTERLOCK',
+    'REAR_AUXILIARY',
+    'TSMS',
+] as const
+export type ShutdownOpenCause = (typeof SHUTDOWN_OPEN_CAUSES)[number]
 
-export type RtdPreventionFlag = 'TS_NOT_ACTIVE' | 'NOT_REQUESTED' | 'BRAKE_NOT_PRESSED'
+export const TS_PREVENTION_FLAGS = [
+    'SHUTDOWN_OPEN',
+    'BAD_FUSE',
+    'FRONT_OFFLINE',
+    'NOT_REQUESTED',
+    'PRECHARGE_OFFLINE',
+    'PRECHARGE_STATE',
+    'INVERTER_OFFLINE',
+    'INVERTER_FAULT',
+] as const
+export type TsPreventionFlag = (typeof TS_PREVENTION_FLAGS)[number]
 
-export type InverterFaultCode =
-    | 'NONE'
-    | 'OVERVOLTAGE'
-    | 'UNDERVOLTAGE'
-    | 'DRIVE'
-    | 'OVERCURRENT'
-    | 'CONTROLLER_OVERTEMPERATURE'
-    | 'MOTOR_OVERTEMPERATURE'
-    | 'SENSOR_WIRE_FAULT'
-    | 'SENSOR_GENERAL_FAULT'
-    | 'CAN_COMMAND_FAULT'
-    | 'ANALOG_INPUT_FAULT'
+export const RTD_PREVENTION_FLAGS = ['TS_NOT_ACTIVE', 'NOT_REQUESTED', 'BRAKE_NOT_PRESSED'] as const
+export type RtdPreventionFlag = (typeof RTD_PREVENTION_FLAGS)[number]
 
-export type FuseFlag =
-    | 'BMS'
-    | 'IMD'
-    | 'TSAC_FANS'
-    | 'PRECHARGE'
-    | 'COOLANT_PUMP'
-    | 'BRAKE_LIGHT'
-    | 'TSAL_LED'
-    | 'INVERTER'
-    | 'SHUTDOWN_LATCH'
-    | 'ENERGY_METER'
-    | 'RTD_HORN'
-    | 'APPS_1'
-    | 'APPS_2'
-    | 'FRONT'
-    | 'DWIN'
-    | 'AUX_1'
-    | 'AUX_2'
+export const INVERTER_FAULT_CODES = [
+    'NONE',
+    'OVERVOLTAGE',
+    'UNDERVOLTAGE',
+    'DRIVE',
+    'OVERCURRENT',
+    'CONTROLLER_OVERTEMPERATURE',
+    'MOTOR_OVERTEMPERATURE',
+    'SENSOR_WIRE_FAULT',
+    'SENSOR_GENERAL_FAULT',
+    'CAN_COMMAND_FAULT',
+    'ANALOG_INPUT_FAULT',
+] as const
+export type InverterFaultCode = (typeof INVERTER_FAULT_CODES)[number]
+
+export const FUSE_FLAGS = [
+    'BMS',
+    'IMD',
+    'TSAC_FANS',
+    'PRECHARGE',
+    'COOLANT_PUMP',
+    'BRAKE_LIGHT',
+    'TSAL_LED',
+    'INVERTER',
+    'SHUTDOWN_LATCH',
+    'ENERGY_METER',
+    'RTD_HORN',
+    'APPS_1',
+    'APPS_2',
+    'FRONT',
+    'DWIN',
+    'AUX_1',
+    'AUX_2',
+] as const
+export type FuseFlag = (typeof FUSE_FLAGS)[number]
 
 export interface TelemetryFrame {
     uptime?: number

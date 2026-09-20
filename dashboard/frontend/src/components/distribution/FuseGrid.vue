@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FUSE_FLAGS } from '@/domain/fuses'
-import { isFuseOk } from '@/telemetry'
+import { FUSE_FLAGS, isFuseOk } from '@/telemetry'
 import type { FuseFlag } from '@/telemetry'
+import type { Severity } from '@/domain/severity'
+import Tile from '@/components/Tile.vue'
 
 const props = defineProps<{
     fuses?: readonly FuseFlag[]
@@ -26,11 +27,22 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
         return { flag, state }
     }),
 )
+
+// One blown fuse is the whole tile's problem, so the accent answers "is any
+// fuse blown?" rather than trying to summarise 17 states. No warning tier —
+// a fuse is intact or it isn't, same binary shape as the shutdown-open cause.
+// Uncoloured until `fuses` arrives, matching the rest of the app.
+const severity = computed<Severity | undefined>(() =>
+    props.fuses === undefined
+        ? undefined
+        : fuseStates.value.some((f) => f.state === 'blown')
+          ? 'critical'
+          : 'good',
+)
 </script>
 
 <template>
-    <div class="fuses">
-        <h3>Fuses</h3>
+    <Tile title="Fuses" accent :severity="severity">
         <div class="fusebox">
             <div v-for="f in fuseStates" :key="f.flag" class="fuse-cell">
                 <div
@@ -52,7 +64,7 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
                 <span class="fuse-label">{{ f.flag }}</span>
             </div>
         </div>
-    </div>
+    </Tile>
 </template>
 
 <style scoped>
@@ -66,18 +78,14 @@ const fuseStates = computed<{ flag: FuseFlag; state: FuseState }[]>(() =>
        past its share (the labels have no spaces to wrap on — see
        .fuse-label's overflow-wrap). */
     grid-template-columns: repeat(9, minmax(0, 1fr));
-    gap: 0.8125rem;
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    padding: 1.25rem;
+    gap: var(--gap-inline);
 }
 
 .fuse-cell {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--gap-items);
 }
 
 .fuse-label {

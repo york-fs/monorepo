@@ -1,3 +1,10 @@
+import {
+    FUSE_FLAGS,
+    INVERTER_FAULT_CODES,
+    ONLINE_FLAGS,
+    PRECHARGE_STATES,
+    SHUTDOWN_OPEN_CAUSES,
+} from '@/telemetry'
 import type {
     FuseFlag,
     InverterFaultCode,
@@ -10,7 +17,6 @@ import type {
     TelemetryFrame,
     TsPreventionFlag,
 } from '@/telemetry'
-import { FUSE_FLAGS } from '@/domain/fuses'
 
 // Continuous values (voltages) re-sampled on every tick so charts/sparklines
 // see smooth motion. Online/fuse/shutdown-cause signals only get re-rolled on
@@ -19,46 +25,6 @@ import { FUSE_FLAGS } from '@/domain/fuses'
 // through a plausible real run-through rather than random per-frame flags.
 const CONTINUOUS_TICK_MS = 100
 const DISCRETE_TICK_MS = 5000
-
-const ONLINE_FLAGS: OnlineFlag[] = [
-    'FRONT_ONLINE',
-    'BMS_ONLINE',
-    'PRECHARGE_ONLINE',
-    'INVERTER_ONLINE',
-]
-
-const SHUTDOWN_CAUSES: ShutdownOpenCause[] = [
-    'NONE',
-    'REAR_INPUT',
-    'FRONT_ESTOP',
-    'BRAKE_OVER_TRAVEL',
-    'INERTIA_SWITCH',
-    'FRONT_AUXILIARY',
-    'FRONT_OUTPUT',
-    'BMS_LATCH',
-    'IMD_LATCH',
-    'INVERTER_INTERLOCK',
-    'SHUTDOWN_LATCH_FAILURE',
-    'LEFT_ESTOP',
-    'RIGHT_ESTOP',
-    'HVD_INTERLOCK',
-    'REAR_AUXILIARY',
-    'TSMS',
-]
-
-const INVERTER_FAULTS: InverterFaultCode[] = [
-    'NONE',
-    'OVERVOLTAGE',
-    'UNDERVOLTAGE',
-    'DRIVE',
-    'OVERCURRENT',
-    'CONTROLLER_OVERTEMPERATURE',
-    'MOTOR_OVERTEMPERATURE',
-    'SENSOR_WIRE_FAULT',
-    'SENSOR_GENERAL_FAULT',
-    'CAN_COMMAND_FAULT',
-    'ANALOG_INPUT_FAULT',
-]
 
 // Relays closed in each precharge state — approximate, for demo purposes
 // only (real relay states come from the backend, not derived from state).
@@ -71,17 +37,6 @@ const RELAYS_BY_STATE: Record<PrechargeState, PrechargeRelay[]> = {
     ACTIVE: ['AIR_POS_CLOSED', 'AIR_NEG_CLOSED'],
 }
 
-// The order a real run-through steps through, looping back to LED_CHECK once
-// ACTIVE ends (as if the car had been shut down and restarted).
-const PRECHARGE_SEQUENCE: PrechargeState[] = [
-    'LED_CHECK',
-    'PRECHECK',
-    'STANDBY',
-    'PRECHARGE',
-    'PRECHARGE_HOLD',
-    'ACTIVE',
-]
-
 function randomBetween(min: number, max: number): number {
     return min + Math.random() * (max - min)
 }
@@ -91,7 +46,7 @@ function randomWalk(current: number, step: number, min: number, max: number): nu
     return Math.min(max, Math.max(min, next))
 }
 
-function pickRandom<T>(items: T[]): T {
+function pickRandom<T>(items: readonly T[]): T {
     return items[Math.floor(Math.random() * items.length)]!
 }
 
@@ -122,7 +77,7 @@ interface DemoState {
 
     // Driver/CAN inputs the activation checklists key off. Without these the
     // NOT_REQUESTED and BRAKE_NOT_PRESSED rows could never be set, so the
-    // checklist panels' `warning` tier (nothing blocking but the request
+    // checklist tiles' `warning` tier (nothing blocking but the request
     // itself — see ActivationChecklists) was unreachable in demo mode.
     tsRequested: boolean
     rtdRequested: boolean
@@ -182,11 +137,14 @@ function enterPrechargeState(state: DemoState, next: PrechargeState, now: number
     }
 }
 
+// Steps through the states in declaration order — which is the order a real
+// run-through takes — wrapping back to LED_CHECK once ACTIVE ends, as if the
+// car had been shut down and restarted.
 function tickPrechargeSequence(state: DemoState, now: number) {
     if (now - state.prechargeStateEnteredAt < state.prechargeStateDurationMs) return
 
-    const index = PRECHARGE_SEQUENCE.indexOf(state.prechargeState)
-    const next = PRECHARGE_SEQUENCE[(index + 1) % PRECHARGE_SEQUENCE.length]!
+    const index = PRECHARGE_STATES.indexOf(state.prechargeState)
+    const next = PRECHARGE_STATES[(index + 1) % PRECHARGE_STATES.length]!
     enterPrechargeState(state, next, now)
 }
 
@@ -311,8 +269,8 @@ function deriveRtdPreventionFlags(
 function randomizeDiscreteState(state: DemoState) {
     state.onlineFlags = ONLINE_FLAGS.filter(() => Math.random() < 0.92)
     state.fuseOk = FUSE_FLAGS.filter(() => Math.random() < 0.96)
-    state.shutdownCause = Math.random() < 0.85 ? 'NONE' : pickRandom(SHUTDOWN_CAUSES.slice(1))
-    state.inverterFault = Math.random() < 0.9 ? 'NONE' : pickRandom(INVERTER_FAULTS.slice(1))
+    state.shutdownCause = Math.random() < 0.85 ? 'NONE' : pickRandom(SHUTDOWN_OPEN_CAUSES.slice(1))
+    state.inverterFault = Math.random() < 0.9 ? 'NONE' : pickRandom(INVERTER_FAULT_CODES.slice(1))
     state.tsRequested = Math.random() < 0.7
     state.rtdRequested = Math.random() < 0.7
     state.brakePressed = Math.random() < 0.7

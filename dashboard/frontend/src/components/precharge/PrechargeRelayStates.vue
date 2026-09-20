@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { PRECHARGE_RELAYS } from '@/telemetry'
 import type { PrechargeRelay } from '@/telemetry'
-import { PRECHARGE_RELAYS, PRECHARGE_RELAY_LABELS } from '@/domain/precharge'
+import { PRECHARGE_RELAY_LABELS } from '@/domain/precharge'
 
 const props = defineProps<{
     relays?: readonly PrechargeRelay[]
@@ -33,14 +34,14 @@ const rows = computed(() =>
     margin: 0;
     padding: 0;
     display: grid;
-    row-gap: 0.375rem;
+    row-gap: var(--gap-items);
 }
 
 .relay {
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: center;
-    column-gap: 0.75rem;
+    column-gap: var(--gap-inline);
     font-size: 0.8125rem;
 }
 

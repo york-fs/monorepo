@@ -23,14 +23,14 @@ defineProps<{
 <style scoped>
 .voltages {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--gap-rows);
 }
 
 .reading {
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: baseline;
-    column-gap: 0.75rem;
+    column-gap: var(--gap-inline);
 }
 
 .value {

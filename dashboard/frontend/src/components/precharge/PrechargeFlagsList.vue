@@ -56,13 +56,13 @@ const rows = computed(() =>
     margin: 0;
     padding: 0;
     display: grid;
-    row-gap: 0.625rem;
+    row-gap: var(--gap-rows);
 }
 
 .row {
     display: grid;
     grid-template-columns: auto 1fr;
-    column-gap: 0.5rem;
+    column-gap: var(--gap-rows);
 }
 
 .dot {
