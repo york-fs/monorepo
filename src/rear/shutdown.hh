@@ -47,6 +47,7 @@ using TsPreventionFlags = util::FlagBitset<TsPreventionFlag>;
 enum class RtdPreventionFlag : std::uint8_t {
     TsNotActive,
     NotRequested,
+    AppsNotCalibrated,
     BrakeNotPressed,
 };
 

@@ -448,7 +448,6 @@ void control_task(void *) {
         }
 
         // Compute RTD prevention flags.
-        // TODO: Add APPS checks.
         RtdPreventionFlags rtd_prevention_flags;
         if (ts_prevention_flags.any_set()) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
@@ -458,6 +457,9 @@ void control_task(void *) {
         }
         if (!front_status || !front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
+        }
+        if (!front_status || !front_status->apps_calibrated) {
+            rtd_prevention_flags.set(RtdPreventionFlag::AppsNotCalibrated);
         }
         rtd_latched &= rtd_prevention_flags.none_set();
 
