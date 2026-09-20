@@ -11,6 +11,7 @@ struct StatusMessage {
     ShutdownSamples shutdown_samples;
     bool ts_activation_desired;
     bool rtd_activation_desired;
+    bool apps_calibrated;
 
     static constexpr std::uint32_t packet_id() { return 0x200; }
     static constexpr std::uint32_t default_priority() { return 1; }

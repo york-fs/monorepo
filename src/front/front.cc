@@ -135,6 +135,7 @@ void main_task(void *) {
     std::optional<TickType_t> ts_activation_desired;
     std::optional<TickType_t> rtd_activation_desired;
     std::optional<TickType_t> rtd_activation_time;
+    bool apps_calibrated = false;
     freertos::PeriodScheduler scheduler;
     while (true) {
         // Handle dashboard button presses.
@@ -152,6 +153,9 @@ void main_task(void *) {
             } else {
                 rtd_activation_desired.emplace(xTaskGetTickCount());
             }
+        }
+        if ((notification & (1u << 2)) != 0) {
+            apps_calibrated = true;
         }
 
         // Update data expiration timers.
@@ -207,6 +211,7 @@ void main_task(void *) {
             .shutdown_samples = shutdown_samples,
             .ts_activation_desired = ts_activation_desired.has_value(),
             .rtd_activation_desired = rtd_activation_desired.has_value(),
+            .apps_calibrated = apps_calibrated,
         };
         can::transmit(config::k_front_can_id, status_message);
 
@@ -250,6 +255,9 @@ void throttle_task(void *) {
         sensors[1].update_limits(s_adc_buffer[8]);
         scheduler.delay_until_ms(k_throttle_period);
     }
+
+    // Notify main task of completed calibration.
+    s_main_task.notify_set_bits(0, 1u << 2);
 
     // Create a default throttle map.
     auto throttle_map = ThrottleMap::create_default();

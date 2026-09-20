@@ -12,13 +12,15 @@ std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream) {
     const auto shutdown_samples = stream.read_be<ShutdownSamples::type_t>();
     const auto ts_activation_desired = stream.read_byte();
     const auto rtd_activation_desired = stream.read_byte();
-    if (!shutdown_samples || !ts_activation_desired || !rtd_activation_desired) {
+    const auto apps_calibrated = stream.read_byte();
+    if (!shutdown_samples || !ts_activation_desired || !rtd_activation_desired || !apps_calibrated) {
         return std::nullopt;
     }
     return StatusMessage{
         .shutdown_samples = ShutdownSamples(*shutdown_samples),
         .ts_activation_desired = *ts_activation_desired == 0xaa,
         .rtd_activation_desired = *rtd_activation_desired == 0xaa,
+        .apps_calibrated = *apps_calibrated == 0xaa,
     };
 }
 
@@ -29,7 +31,10 @@ bool StatusMessage::encode(util::Stream &stream) const {
     if (!stream.write_byte(ts_activation_desired ? 0xaa : 0)) {
         return false;
     }
-    return stream.write_byte(rtd_activation_desired ? 0xaa : 0);
+    if (!stream.write_byte(rtd_activation_desired ? 0xaa : 0)) {
+        return false;
+    }
+    return stream.write_byte(apps_calibrated ? 0xaa : 0);
 }
 
 std::optional<LvsSampleMessage1> LvsSampleMessage1::decode(util::Stream &stream) {
