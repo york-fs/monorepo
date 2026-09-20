@@ -26,6 +26,6 @@ withDefaults(defineProps<{ min?: string }>(), { min: '10.5rem' })
 .auto-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(var(--auto-grid-min), 1fr));
-    gap: var(--gap-cards);
+    gap: var(--gap-tiles);
 }
 </style>

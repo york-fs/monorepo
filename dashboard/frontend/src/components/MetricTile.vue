@@ -8,12 +8,7 @@ import type { TelemetryFrame } from '@/telemetry'
 
 // The "live numeric reading + ever-min/max sub-row" tile, shared by every
 // scalar readout in the app (LV rail voltage, speed, DC input voltage, both
-// temperatures, pedal travel). Was five near-identical components differing
-// only in which field they read, how they format it, and which severity
-// function they key their colour off — all three of which are now props.
-//
-// Keeps the same split as Tile itself: callers own their domain vocabulary
-// (the formatter and the severity mapping), this only knows the shape.
+// temperatures, pedal travel).
 const props = defineProps<{
     name: string
     /** The live reading, already read off the frame by the caller. */

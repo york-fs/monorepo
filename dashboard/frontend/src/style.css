@@ -1,8 +1,6 @@
 @charset "UTF-8";
 
 :root {
-    /* Light/dark follows the OS preference only — no in-app toggle. Every
-       themed token below is defined once via light-dark(light, dark). */
     color-scheme: light dark;
 
     --surface-page: light-dark(hsl(60, 14%, 97%), hsl(0, 0%, 5%));
@@ -41,34 +39,15 @@
     --glyph-highlight: hsla(0, 0%, 100%, 0.35);
     --glyph-line: hsla(0, 0%, 100%, 0.9);
 
-    /* Spacing rhythm, largest to smallest. Every gap and padding in the app
-       comes from here rather than each component picking its own rem value —
-       these were the same handful of numbers repeated across a dozen scoped
-       style blocks, drifting slightly as they went. Named by what they
-       separate, not by a size step, so the right one to reach for is the one
-       describing what's being laid out. Geometry internal to a single drawn
-       thing (the fuse glyph's proportions, a stepper's dot) stays a literal
-       in that component — it isn't page rhythm and shouldn't move with it. */
-    --gap-sections: 1.75rem; /* between top-level sections */
+    --gap-sections: 1.5rem; /* between top-level sections */
     --gap-blocks: 1.25rem; /* between blocks within a section */
-    --gap-cards: 1rem; /* between cards/tiles in a row or column */
-    --gap-inline: 0.75rem; /* inline pairs: heading + badge, min + max */
+    --gap-tiles: 1rem; /* between tiles in a row or column */
+    --gap-inline: 1rem; /* inline pairs: heading + badge, min + max */
     --gap-rows: 0.5rem; /* between rows of a list */
     --gap-items: 0.375rem; /* icon + label, glyph + caption */
     --gap-tight: 0.25rem; /* label + value inside one readout */
-    --gap-hairline: 0.1875rem; /* arrow + number */
-    --gap-heading: 0.625rem; /* a heading and the block it names */
-
-    --tile-padding: 0.875rem 1rem;
-    --radius-tile: 0.375rem;
     --radius-badge: 0.25rem;
 }
-
-/* Layout breakpoints. CSS custom properties can't be used in media queries,
-   so these two values are still written out literally at each use site —
-   they're recorded here so there's one place saying what they mean.
-     47.5em — two-column bodies (precharge, the chart pairs) go single column
-      30em  — narrowest phones; only the fuse grid drops a step here */
 
 *,
 *::before,
@@ -97,20 +76,4 @@ h2 {
 h3 {
     font-size: 1rem;
     margin: 0 0 0.75rem;
-}
-
-/* Also worn by the tile names AccentTile renders in a span, which is why the
-   margin sits on the heading elements only: a tile's name is spaced by its
-   own grid gap, and a bottom margin there would double it up. */
-.tile-label {
-    font-size: 0.6875rem;
-    font-weight: 400;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-muted);
-}
-
-h3.tile-label,
-h4.tile-label {
-    margin: 0 0 var(--gap-heading);
 }

@@ -120,13 +120,13 @@ const online = computed<boolean | undefined>(() => {
 <style scoped>
 .summary {
     display: grid;
-    gap: var(--gap-cards);
+    gap: var(--gap-tiles);
 }
 
 .charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--gap-cards);
+    gap: var(--gap-tiles);
 }
 
 @media (max-width: 47.5em) {

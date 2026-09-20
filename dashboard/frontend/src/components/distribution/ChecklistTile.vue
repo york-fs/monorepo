@@ -31,13 +31,13 @@ defineProps<{
     padding: 0;
     display: grid;
     row-gap: var(--gap-rows);
+    font-size: 0.8125rem;
 }
 
 .checklist li {
     display: flex;
     align-items: center;
     gap: var(--gap-rows);
-    font-size: 0.8125rem;
     color: var(--ink-secondary);
 }
 
@@ -52,8 +52,6 @@ defineProps<{
     width: 1.125rem;
     height: 1.125rem;
     line-height: 1;
-    font-size: 0.875rem;
-    font-weight: 700;
 }
 
 .checklist li.met .icon {

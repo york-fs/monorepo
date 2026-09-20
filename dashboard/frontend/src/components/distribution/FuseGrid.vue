@@ -89,9 +89,8 @@ const severity = computed<Severity | undefined>(() =>
 }
 
 .fuse-label {
-    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-family: monospace;
     font-size: 0.6875rem;
-    letter-spacing: 0.02em;
     color: var(--ink-secondary);
     text-align: center;
     /* Belt and braces alongside the track sizing above: a flag name longer

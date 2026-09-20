@@ -46,13 +46,13 @@ const { frame } = useTelemetry()
 .body {
     display: grid;
     grid-template-columns: minmax(15rem, 20rem) 1fr;
-    gap: var(--gap-cards);
+    gap: var(--gap-tiles);
 }
 
 .status-col {
     display: grid;
     align-content: start;
-    gap: var(--gap-cards);
+    gap: var(--gap-tiles);
 }
 
 @media (max-width: 47.5em) {

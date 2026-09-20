@@ -3,14 +3,7 @@ import type { Severity } from '@/domain/severity'
 
 // The bordered box every readout in the app sits in — surface, border, radius,
 // padding, a label, an optional severity accent down the left edge, and two
-// content shapes. One noun for the shape: see STATUS.md on why "tile", "panel"
-// and "card" collapsed into this one.
-//
-// Merged from what were three components: SeverityCard (the accent bar, no
-// padding, no title), SectionPanel (padding and a title, no accent) and
-// AccentTile (the name + big value + sub-row arrangement, which passed its
-// severity down to SeverityCard and then read it back off the rendered
-// `data-severity` attribute to colour its own value text).
+// content shapes.
 //
 // **Two layouts, chosen by whether `value` is set:**
 //   - `value` given — a single headline reading: quiet name, big
@@ -19,7 +12,6 @@ import type { Severity } from '@/domain/severity'
 //     the default slot holds (a readout list, a chart, the fuse grid).
 withDefaults(
     defineProps<{
-        /** The tile's label, in the quiet `.tile-label` tier. */
         title?: string
         /**
          * The single headline reading, already formatted by the caller. Its
@@ -64,12 +56,12 @@ withDefaults(
         :data-severity="severity"
     >
         <template v-if="value !== undefined">
-            <span v-if="title" class="tile-label">{{ title }}</span>
+            <span v-if="title" class="title">{{ title }}</span>
             <span class="value">{{ value }}</span>
             <div class="sub"><slot name="sub" /></div>
         </template>
         <template v-else>
-            <component :is="`h${level}`" v-if="title" class="tile-label">{{ title }}</component>
+            <component :is="`h${level}`" v-if="title" class="title">{{ title }}</component>
             <slot />
         </template>
     </div>
@@ -79,12 +71,10 @@ withDefaults(
 .tile {
     background: var(--surface-tile);
     border: 1px solid var(--border);
-    border-radius: var(--radius-tile);
-    padding: var(--tile-padding);
+    border-radius: 0.375rem;
+    padding: 0.75rem 1rem;
 }
 
-/* Left in --border when no severity is set, so a tile with no signal yet
-   stays aligned with its coloured neighbours. */
 .tile.accent {
     border-left-width: 0.25rem;
 }
@@ -98,9 +88,6 @@ withDefaults(
     border-left-color: var(--status-critical);
 }
 
-/* Assumes the title + body pairing every current chart tile uses; the body
-   needs an explicit `1fr` track to stretch, which a bare `auto` flow
-   wouldn't give it. */
 .tile.chart {
     display: grid;
     grid-template-rows: auto 1fr;
@@ -111,10 +98,20 @@ withDefaults(
     gap: var(--gap-tight);
 }
 
+.title {
+    font-size: 0.8rem;
+    font-weight: 550;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+h3.title,
+h4.title {
+    margin: 0 0 0.75rem;
+}
+
 .value {
     font-size: 1.375rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
 }
 .tile[data-severity='good'] .value {

@@ -35,7 +35,6 @@ defineProps<{
 
 .value {
     font-size: 1.125rem;
-    font-weight: 650;
     color: var(--ink-primary);
     text-align: right;
     /* These tick every frame — proportional figures make the digits jitter

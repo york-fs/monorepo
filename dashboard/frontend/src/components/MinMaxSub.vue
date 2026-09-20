@@ -10,12 +10,8 @@ defineProps<{
 
 <template>
     <span class="ever-range">
-        <span class="arrow-stat" :data-severity="minSeverity">
-            <span class="arrow">↓</span>{{ minLabel }}
-        </span>
-        <span class="arrow-stat" :data-severity="maxSeverity">
-            <span class="arrow">↑</span>{{ maxLabel }}
-        </span>
+        <span class="arrow-stat" :data-severity="minSeverity"> <span>↓</span>{{ minLabel }} </span>
+        <span class="arrow-stat" :data-severity="maxSeverity"> <span>↑</span>{{ maxLabel }} </span>
     </span>
 </template>
 
@@ -28,9 +24,8 @@ defineProps<{
 .arrow-stat {
     display: inline-flex;
     align-items: center;
-    gap: var(--gap-hairline);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    gap: var(--gap-tight);
+    font-size: 0.75rem;
     color: var(--ink-muted);
     font-variant-numeric: tabular-nums;
 }
@@ -42,10 +37,5 @@ defineProps<{
 }
 .arrow-stat[data-severity='critical'] {
     color: var(--status-critical-text);
-}
-
-.arrow {
-    font-size: 0.75rem;
-    line-height: 1;
 }
 </style>

@@ -50,7 +50,6 @@ const rows = computed(() =>
 }
 
 .state {
-    font-weight: 600;
     text-align: right;
 }
 

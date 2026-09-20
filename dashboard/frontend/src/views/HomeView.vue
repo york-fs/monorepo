@@ -6,8 +6,6 @@ import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
 import { isDemoMode } from '@/demo'
 
-// Read once — it's a URL check, not reactive state, so calling it from the
-// template would re-parse the query string on every render.
 const demoMode = isDemoMode()
 </script>
 
@@ -26,10 +24,10 @@ const demoMode = isDemoMode()
 
 <style scoped>
 .home {
-    max-width: 68.75rem;
-    margin: 0 auto;
     display: grid;
     gap: var(--gap-sections);
+    max-width: 1200px;
+    margin: 0 auto;
     padding: 1.5rem 1.25rem;
 }
 

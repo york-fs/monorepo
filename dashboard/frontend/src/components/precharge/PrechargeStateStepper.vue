@@ -97,6 +97,6 @@ const currentIndex = computed(() => (props.state ? PRECHARGE_STATES.indexOf(prop
 
 .step.current .label {
     color: var(--ink-primary);
-    font-weight: 650;
+    font-weight: 600;
 }
 </style>

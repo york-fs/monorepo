@@ -101,12 +101,11 @@ const rows = computed(() =>
 }
 
 .latched-tag {
-    font-size: 0.65625rem;
+    font-size: 0.7rem;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--ink-muted);
-    margin-left: 0.375rem;
+    margin-left: 0.5rem;
 }
 
 .description {
