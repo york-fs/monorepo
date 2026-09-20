@@ -245,9 +245,9 @@ void throttle_task(void *) {
     // Calibrate based on the first sensor.
     // TODO: Save and load calibration data, it shouldn't be done on every start.
     Calibrator calibrator;
-    while (!calibrator.update(s_adc_buffer[0])) {
-        sensors[0].update_limits(s_adc_buffer[0]);
-        sensors[1].update_limits(s_adc_buffer[1]);
+    while (!calibrator.update(s_adc_buffer[7])) {
+        sensors[0].update_limits(s_adc_buffer[7]);
+        sensors[1].update_limits(s_adc_buffer[8]);
         scheduler.delay_until_ms(k_throttle_period);
     }
 
@@ -256,16 +256,15 @@ void throttle_task(void *) {
 
     while (true) {
         // Read sensors and calculate a desired current.
-        // TODO: Do proper plausibility cross checking as well as taking the minimum.
+        // TODO: Look at both sensors.
         // TODO: Deadzone.
         // TODO: Current preload.
-        const auto normalised = std::min(sensors[0].normalise(s_adc_buffer[0]).value_or(0),
-                                         sensors[1].normalise(s_adc_buffer[1]).value_or(0));
+        const auto normalised = sensors[0].normalise(s_adc_buffer[7]).value_or(0);
         ThrottleMessage throttle_message{
             .desired_throttle = throttle_map(normalised),
             .pedal_travel = ThrottleMap::to_percentage(normalised),
-            .raw_1 = s_adc_buffer[0],
-            .raw_2 = s_adc_buffer[1],
+            .raw_1 = s_adc_buffer[7],
+            .raw_2 = s_adc_buffer[8],
         };
         can::transmit(config::k_front_can_id, throttle_message);
 
