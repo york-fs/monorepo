@@ -1,3 +1,5 @@
+#include <bms/can_messages.hh>
+#include <bms/error.hh>
 #include <can.hh>
 #include <config.hh>
 #include <dti.hh>
@@ -277,7 +279,16 @@ void control_task(void *) {
     static std::atomic<std::int32_t> motor_erpm;
     static TimeTracked<dti::GeneralData3> inverter_gd3(250);
 
-    // Setup CAN listeners.
+    // Data from the BMS.
+    static TimeTracked<bms::MasterStatusMessage> bms_status(250);
+    static std::atomic<std::int32_t> positive_current;
+    static std::atomic<std::int32_t> negative_current;
+    static std::atomic<std::uint16_t> min_cell_voltage;
+    static std::atomic<std::uint16_t> max_cell_voltage;
+    static std::atomic<std::int8_t> min_cell_temperature;
+    static std::atomic<std::int8_t> max_cell_temperature;
+
+    // Setup front distribution CAN listeners.
     can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
         front_status.receive(message);
     }>(config::k_front_can_id, 0);
@@ -295,9 +306,13 @@ void control_task(void *) {
         front_lvs_voltages[5] = message.aux_1_voltage;
         front_lvs_voltages[6] = message.aux_2_voltage;
     }>(config::k_front_can_id, 3);
+
+    // Setup precharge CAN listener.
     can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
         precharge_status.receive(message);
     }>(config::k_precharge_can_id, 4);
+
+    // Setup inverter CAN listeners.
     can::listen<dti::GeneralData1, [](const dti::GeneralData1 &message) {
         inverter_input_voltage.store(message.input_voltage);
         motor_erpm.store(message.erpm);
@@ -308,6 +323,21 @@ void control_task(void *) {
     can::listen<dti::GeneralData3, [](const dti::GeneralData3 &message) {
         inverter_gd3.receive(message);
     }>(config::k_dti_can_id, 7);
+
+    // Setup BMS CAN listeners.
+    can::listen<bms::MasterStatusMessage, [](const bms::MasterStatusMessage &message) {
+        bms_status.receive(message);
+    }>(config::k_bms_can_id, 8);
+    can::listen<bms::MasterCurrentMessage, [](const bms::MasterCurrentMessage &message) {
+        positive_current.store(message.positive_current);
+        negative_current.store(message.negative_current);
+    }>(config::k_bms_can_id, 9);
+    can::listen<bms::MasterSummaryMessage, [](const bms::MasterSummaryMessage &message) {
+        min_cell_voltage.store(message.min_voltage);
+        max_cell_voltage.store(message.max_voltage);
+        min_cell_temperature.store(message.min_temperature);
+        max_cell_temperature.store(message.max_temperature);
+    }>(config::k_bms_can_id, 10);
 
     // Initialise ADC to sample all LVS inputs.
     std::array<std::uint16_t, 10> adc_buffer{};
