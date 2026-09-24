@@ -108,6 +108,15 @@ struct RadioData {
 
     // Precharge.
     std::optional<precharge::StatusMessage> precharge_status;
+
+    // BMS.
+    std::optional<bms::MasterStatusMessage> bms_status;
+    std::int32_t positive_current;
+    std::int32_t negative_current;
+    std::uint16_t min_cell_voltage;
+    std::uint16_t max_cell_voltage;
+    std::int8_t min_cell_temperature;
+    std::int8_t max_cell_temperature;
 };
 
 // Single-entry queue for consistent radio data.
@@ -582,6 +591,13 @@ void control_task(void *) {
             .inverter_gd3 = inverter_gd3,
             .front_throttle = front_throttle,
             .precharge_status = precharge_status,
+            .bms_status = bms_status,
+            .positive_current = positive_current,
+            .negative_current = negative_current,
+            .min_cell_voltage = min_cell_voltage,
+            .max_cell_voltage = max_cell_voltage,
+            .min_cell_temperature = min_cell_temperature,
+            .max_cell_temperature = max_cell_temperature,
         });
     }
 }
@@ -627,6 +643,7 @@ void radio_task(void *) {
     front::ThrottleMessage front_throttle;
     dti::GeneralData3 inverter_gd3;
     precharge::StatusMessage precharge_status;
+    bms::MasterStatusMessage bms_status;
 
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -647,6 +664,9 @@ void radio_task(void *) {
         }
         if (data.precharge_status) {
             precharge_status = *data.precharge_status;
+        }
+        if (data.bms_status) {
+            bms_status = *data.bms_status;
         }
 
         // Build a telemetry frame with the data offset by one byte to allow for the first COBS code. The size is also
@@ -686,6 +706,16 @@ void radio_task(void *) {
         stream.write_be(precharge_status.precharge_voltage);
         stream.write_be(precharge_status.tractive_voltage);
         stream.write_be(precharge_status.relay_states.value());
+
+        // Append BMS information.
+        stream.write_be(bms_status.master_flags.value());
+        stream.write_be(bms_status.i2c_error_count);
+        stream.write_be(data.positive_current);
+        stream.write_be(data.negative_current);
+        stream.write_be(data.min_cell_voltage);
+        stream.write_be(data.max_cell_voltage);
+        stream.write_be(data.min_cell_temperature);
+        stream.write_be(data.max_cell_temperature);
 
         // Append a checksum.
         stream.write_be(freertos::in_critical_section([&] {
