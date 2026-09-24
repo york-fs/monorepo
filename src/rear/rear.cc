@@ -403,6 +403,9 @@ void control_task(void *) {
         if (inverter_gd3) {
             online_flags.set(OnlineFlag::InverterOnline);
         }
+        if (bms_status) {
+            online_flags.set(OnlineFlag::BmsOnline);
+        }
 
         // Sample all ADC channels.
         hal::adc_start(ADC1);
@@ -450,7 +453,6 @@ void control_task(void *) {
         const auto shutdown_open_cause = compute_shutdown_open_cause(front_status, rear_shutdown_samples);
 
         // Compute TS activation prevention flags.
-        // TODO: Add BMS checks.
         TsPreventionFlags ts_prevention_flags;
         if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
             ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
@@ -475,6 +477,12 @@ void control_task(void *) {
         }
         if (!inverter_gd3 || !is_inverter_fault_good(inverter_gd3->fault_code)) {
             ts_prevention_flags.set(TsPreventionFlag::InverterFault);
+        }
+        if (online_flags.is_clear(OnlineFlag::BmsOnline)) {
+            ts_prevention_flags.set(TsPreventionFlag::BmsOffline);
+        }
+        if (!bms_status || bms_status->master_flags.any_set()) {
+            ts_prevention_flags.set(TsPreventionFlag::BmsFault);
         }
 
         // Compute RTD prevention flags.

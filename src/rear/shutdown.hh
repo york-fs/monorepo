@@ -40,6 +40,10 @@ enum class TsPreventionFlag : std::uint16_t {
     // Inverter.
     InverterOffline,
     InverterFault,
+
+    // BMS.
+    BmsOffline,
+    BmsFault,
 };
 
 using TsPreventionFlags = util::FlagBitset<TsPreventionFlag>;
