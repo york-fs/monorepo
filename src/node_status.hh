@@ -38,6 +38,6 @@ struct NodeStatusMessage3 {
 };
 
 void init(std::uint8_t node_id);
-void update(std::uint32_t mcu_temp_voltage);
+std::int8_t update(std::uint32_t mcu_temp_voltage);
 
 } // namespace node_status

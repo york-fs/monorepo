@@ -111,13 +111,14 @@ void init(std::uint8_t node_id) {
     s_task.init(&tx_task, "node_status", 0);
 }
 
-void update(std::uint32_t mcu_temp_voltage) {
+std::int8_t update(std::uint32_t mcu_temp_voltage) {
     // Calculate an approximate MCU temperature using constants from the datasheet.
     const auto mcu_temp =
         static_cast<std::int8_t>(((1430 - static_cast<std::int32_t>(mcu_temp_voltage)) * 10) / 43 + 25);
     s_queue.overwrite(QueueData{
         .mcu_temp = mcu_temp,
     });
+    return mcu_temp;
 }
 
 } // namespace node_status
