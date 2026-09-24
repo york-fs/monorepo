@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { PrechargeErrorFlag, PrechargeState } from '@/telemetry'
 import { PRECHARGE_FLAG_META, isFlagLive } from '@/domain/precharge'
+import FlagsList from '@/components/FlagsList.vue'
+import type { FlagRow } from '@/components/FlagsList.vue'
 
 const props = defineProps<{
     flags?: readonly PrechargeErrorFlag[]
@@ -10,106 +12,28 @@ const props = defineProps<{
 
 const KIND_ORDER = { fault: 0, waiting: 1, deactivation: 2 }
 
-const rows = computed(() =>
+// Only `fault` flags read as faults — "waiting" and "deactivation" are
+// informational, so they stay quiet. A flag that isn't live in the current
+// state is left over from the previous precharge attempt, not something
+// happening now, hence the dimming and the tag.
+const rows = computed<FlagRow[]>(() =>
     (props.flags ?? [])
-        .map((flag) => ({
-            flag,
-            meta: PRECHARGE_FLAG_META[flag],
-            live: isFlagLive(flag, props.state),
-        }))
-        .sort((a, b) => KIND_ORDER[a.meta.kind] - KIND_ORDER[b.meta.kind]),
+        .map((flag) => ({ flag, meta: PRECHARGE_FLAG_META[flag] }))
+        .sort((a, b) => KIND_ORDER[a.meta.kind] - KIND_ORDER[b.meta.kind])
+        .map(({ flag, meta }) => {
+            const live = isFlagLive(flag, props.state)
+            return {
+                key: flag,
+                label: meta.label,
+                description: meta.description,
+                tone: meta.kind === 'fault' ? ('fault' as const) : ('neutral' as const),
+                tag: live ? undefined : 'last attempt',
+                dimmed: !live,
+            }
+        }),
 )
 </script>
 
 <template>
-    <div class="flags">
-        <p v-if="rows.length === 0" class="empty">No flags set</p>
-        <ul v-else class="list">
-            <li
-                v-for="row in rows"
-                :key="row.flag"
-                class="row"
-                :class="[row.meta.kind, { latched: !row.live }]"
-            >
-                <span class="dot" />
-                <div class="text">
-                    <span class="name">
-                        {{ row.meta.label }}
-                        <span v-if="!row.live" class="latched-tag">last attempt</span>
-                    </span>
-                    <span class="description">{{ row.meta.description }}</span>
-                </div>
-            </li>
-        </ul>
-    </div>
+    <FlagsList :rows="rows" empty-text="No flags set" />
 </template>
-
-<style scoped>
-.empty {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--ink-muted);
-}
-
-.list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    row-gap: var(--gap-rows);
-}
-
-.row {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    column-gap: var(--gap-rows);
-}
-
-.dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    margin-top: 0.25rem;
-    background: var(--ink-muted);
-}
-
-.row.fault .dot {
-    background: var(--status-critical);
-}
-
-.row.latched .dot {
-    opacity: 0.4;
-}
-
-.text {
-    display: grid;
-    gap: 0.0625rem;
-}
-
-.name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--ink-primary);
-}
-
-.row.fault .name {
-    color: var(--status-critical-text);
-}
-
-.row.latched .name {
-    color: var(--ink-secondary);
-}
-
-.latched-tag {
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    margin-left: 0.5rem;
-}
-
-.description {
-    font-size: 0.75rem;
-    color: var(--ink-muted);
-}
-</style>
