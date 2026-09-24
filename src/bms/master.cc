@@ -21,16 +21,15 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <variant>
 
-// TODO: Send CAN status messages.
 // TODO: Implement current plausibility checks.
-// TODO: Receive CAN ready to drive message.
 // TODO: Control LED via DMA.
 // TODO: Charger control.
-// TODO: SOC estimation.
+// TODO: SoC estimation.
 // TODO: Enable stack overflow detection.
 // TODO: EEPROM page for self test (PCBA).
 
@@ -619,6 +618,52 @@ void status_task(void *) {
             s_mcu_temperature = temperature;
             s_last_mcu_sample_time = xTaskGetTickCount();
         });
+
+        // Sum up segment stats.
+        auto min_voltage = std::numeric_limits<std::uint16_t>::max();
+        auto max_voltage = std::numeric_limits<std::uint16_t>::min();
+        auto min_temperature = std::numeric_limits<std::int8_t>::max();
+        auto max_temperature = std::numeric_limits<std::int8_t>::min();
+        std::uint32_t i2c_error_count = 0;
+        s_segments_mutex.with_locked([&] {
+            for (const auto &segment : s_segments) {
+                for (const auto voltage : segment.cell_voltages()) {
+                    if (voltage) {
+                        min_voltage = std::min(min_voltage, *voltage);
+                        max_voltage = std::max(max_voltage, *voltage);
+                    }
+                }
+                for (const auto temperature : segment.temperatures()) {
+                    if (temperature) {
+                        min_temperature = std::min(min_temperature, *temperature);
+                        max_temperature = std::max(max_temperature, *temperature);
+                    }
+                }
+                i2c_error_count += segment.master_error_count() + segment.slave_error_count();
+            }
+        });
+
+        MasterStatusMessage master_status_message{
+            .master_flags = data.master_flags,
+            .i2c_error_count = i2c_error_count,
+        };
+        can::transmit(config::k_bms_can_id, master_status_message);
+
+        const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
+        const auto negative_current = static_cast<std::int32_t>(s_negative_sensor.current() * 1000.0f);
+        MasterCurrentMessage master_current_message{
+            .positive_current = positive_current,
+            .negative_current = negative_current,
+        };
+        can::transmit(config::k_bms_can_id, master_current_message);
+
+        MasterSummaryMessage master_summary_message{
+            .min_voltage = min_voltage,
+            .max_voltage = max_voltage,
+            .min_temperature = min_temperature,
+            .max_temperature = max_temperature,
+        };
+        can::transmit(config::k_bms_can_id, master_summary_message);
 
         scheduler.delay_until_ms(k_status_period);
     }
