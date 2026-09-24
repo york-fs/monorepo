@@ -7,6 +7,7 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <i2c.hh>
+#include <node_status.hh>
 #include <stm32f103xb.h>
 #include <util/scope_guard.hh>
 #include <util/stream.hh>
@@ -113,6 +114,11 @@ constexpr std::uint32_t k_config_magic = 0x6c72d132;
 constexpr std::uint32_t k_supervisor_period = 10;
 
 /**
+ * @brief CAN status message sending task period in milliseconds.
+ */
+constexpr std::uint32_t k_status_period = 100;
+
+/**
  * @brief Control task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_control_period = 1000;
@@ -121,11 +127,6 @@ constexpr std::uint32_t k_control_period = 1000;
  * @brief Segment sampling task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_segment_sample_period = 50;
-
-/**
- * @brief MCU ADC sampling task scheduling period in milliseconds.
- */
-constexpr std::uint32_t k_mcu_sample_period = 200;
 
 /**
  * @brief Current sensing voltage low pass filter time period in seconds.
@@ -267,6 +268,10 @@ public:
     TickType_t last_update_time() const { return m_last_update_time; }
 };
 
+struct StatusData {
+    MasterErrorFlags master_flags;
+};
+
 struct SwdData {
     MasterErrorFlags master_flags;
     std::optional<std::uint32_t> shutdown_duration;
@@ -289,7 +294,7 @@ bool s_selected_sensor{false};
 std::uint16_t s_lvs_voltage = 0;
 std::uint16_t s_ref_voltage = 0;
 std::int8_t s_mcu_temperature = 0;
-freertos::Mutex s_mcu_mutex;
+TickType_t s_last_mcu_sample_time = 0;
 
 // I2C state machines.
 i2c::StateMachine s_i2c1_sm(i2c::Bus::_1, i2c::Speed::_100);
@@ -298,16 +303,16 @@ i2c::StateMachine s_i2c2_sm(i2c::Bus::_2, i2c::Speed::_100);
 // Tasks.
 // TODO: Think about stack sizes more.
 freertos::Task<128> s_supervisor_task;
+freertos::Task<128> s_status_task;
 freertos::Task<256> s_sample_segments_task;
-freertos::Task<128> s_sample_mcu_task;
 freertos::Task<128> s_control_task;
 freertos::Task<256> s_config_task;
 freertos::Task<128> s_swd_task;
+freertos::Queue<StatusData, 1> s_status_queue;
 freertos::Queue<SwdData, 1> s_swd_queue;
 
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
-TickType_t s_last_mcu_sample_time = 0;
 
 // Watchdog pins.
 hal::Gpio s_wdi(hal::GpioPort::A, 3);
@@ -412,20 +417,18 @@ void supervisor_task(void *) {
         if (current_time - (s_last_segment_sample_time - k_segment_sample_period) >= k_schedule_tolerance) {
             master_flags.set(MasterError::DeadlineOverrun);
         }
-        if (current_time - (s_last_mcu_sample_time - k_mcu_sample_period) >= k_schedule_tolerance) {
+        if (current_time - s_last_mcu_sample_time >= k_schedule_tolerance) {
             master_flags.set(MasterError::DeadlineOverrun);
         }
 
         // Check on-board ADC reference for plausibility, and for MCU overheating. We don't check the LVS voltage since
         // the hardware has UVLO and OVLO protection.
-        s_mcu_mutex.with_locked([&] {
-            if (std::abs(static_cast<std::int16_t>(s_ref_voltage) - k_adc_vref / 10) > 50) {
-                master_flags.set(MasterError::BadReference);
-            }
-            if (s_mcu_temperature > k_mcu_overtemperature_threshold) {
-                master_flags.set(MasterError::Overtemperature);
-            }
-        });
+        if (std::abs(static_cast<std::int16_t>(s_ref_voltage) - k_adc_vref / 10) > 50) {
+            master_flags.set(MasterError::BadReference);
+        }
+        if (s_mcu_temperature > k_mcu_overtemperature_threshold) {
+            master_flags.set(MasterError::Overtemperature);
+        }
 
         // Check current sensor zero voltage plausibility.
         if (std::abs(s_positive_sensor.zero_voltage() - k_current_sense_ideal_zero) > k_current_sense_zero_tolerance) {
@@ -555,6 +558,12 @@ void supervisor_task(void *) {
             }
         }
 
+        // Update status data.
+        StatusData status_data{
+            .master_flags = master_flags,
+        };
+        s_status_queue.overwrite(status_data);
+
         // Update SWD data.
         if constexpr (config::enable_debug_logs()) {
             SwdData swd_data{
@@ -572,6 +581,46 @@ void supervisor_task(void *) {
         hal::gpio_reset(s_wdi);
         hal::gpio_set(s_wdi);
         scheduler.delay_until_ms(k_supervisor_period);
+    }
+}
+
+void status_task(void *) {
+    // Initialise periodic node status transmission.
+    node_status::init(config::k_front_can_id);
+
+    // Sequence the LVS voltage reading, external reference voltage, and the STM's internal temperature sensor.
+    hal::adc_init(ADC1, 3);
+    hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
+    hal::adc_sequence_channel(ADC1, 2, 7, 0b010u);
+    hal::adc_sequence_channel(ADC1, 3, 16, 0b111u);
+
+    std::array<std::uint16_t, 3> adc_buffer{};
+    hal::adc_init_dma(adc_buffer);
+
+    freertos::PeriodScheduler scheduler;
+    while (true) {
+        hal::adc_start(ADC1);
+        const auto data = *s_status_queue.receive(portMAX_DELAY);
+        scheduler.delay_until_ms(k_status_period);
+
+        // Calculate LVS input voltage. The input has a 5.3x divider.
+        const auto lvs_voltage = (((k_mcu_vref * adc_buffer[0]) >> 12) * 53) / 10;
+
+        // Calculate REF voltage. The input has a 2x divider.
+        const auto ref_voltage = ((k_mcu_vref * adc_buffer[1]) >> 12) * 2;
+
+        // Update node status temperature.
+        const auto temperature = node_status::update((k_mcu_vref * adc_buffer[2]) >> 12);
+
+        // Update global values for supervisor task to check.
+        freertos::in_critical_section([&] {
+            s_lvs_voltage = lvs_voltage;
+            s_ref_voltage = ref_voltage;
+            s_mcu_temperature = temperature;
+            s_last_mcu_sample_time = xTaskGetTickCount();
+        });
+
+        scheduler.delay_until_ms(k_status_period);
     }
 }
 
@@ -940,41 +989,6 @@ void sample_segments_task(void *) {
     }
 }
 
-void sample_mcu_task(void *) {
-    // Sequence the LVS voltage reading, external reference voltage, and the STM's internal temperature sensor.
-    hal::adc_init(ADC1, 3);
-    hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
-    hal::adc_sequence_channel(ADC1, 2, 7, 0b010u);
-    hal::adc_sequence_channel(ADC1, 3, 16, 0b111u);
-
-    std::array<std::uint16_t, 3> adc_buffer{};
-    hal::adc_init_dma(adc_buffer);
-
-    s_last_mcu_sample_time = xTaskGetTickCount();
-    while (true) {
-        // Calculate LVS input voltage. The input has a 5.3x divider.
-        const auto lvs_voltage = (((k_mcu_vref * adc_buffer[0]) >> 12) * 53) / 10;
-
-        // Calculate REF voltage. The input has a 2x divider.
-        const auto ref_voltage = ((k_mcu_vref * adc_buffer[1]) >> 12) * 2;
-
-        // Calculate an approximate temperature using constants from the datasheet.
-        const auto temperature_voltage = (k_mcu_vref * adc_buffer[2]) >> 12;
-        const auto temperature = ((1430 - temperature_voltage) * 10) / 43 + 25;
-
-        // Update global values.
-        s_mcu_mutex.with_locked([&] {
-            s_lvs_voltage = lvs_voltage;
-            s_ref_voltage = ref_voltage;
-            s_mcu_temperature = temperature;
-        });
-
-        // Start next ADC sample.
-        hal::adc_start(ADC1);
-        xTaskDelayUntil(&s_last_mcu_sample_time, pdMS_TO_TICKS(k_mcu_sample_period));
-    }
-}
-
 void swd_task(void *) {
     TickType_t last_schedule_time = xTaskGetTickCount();
     while (true) {
@@ -991,12 +1005,9 @@ void swd_task(void *) {
         const auto can_stats = can::get_stats();
         hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
                         can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
-
-        s_mcu_mutex.with_locked([] {
-            hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
-            hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
-            hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
-        });
+        hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
+        hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
+        hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);
 
         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
         const auto negative_current = static_cast<std::int32_t>(s_negative_sensor.current() * 1000.0f);
@@ -1214,12 +1225,12 @@ void app_main() {
     TIM3->CR1 |= TIM_CR1_CEN;
 
     s_segments_mutex.init();
-    s_mcu_mutex.init();
+    s_status_queue.init();
 
     // Initialise all tasks.
-    s_supervisor_task.init(&supervisor_task, "supervisor", 4);
+    s_supervisor_task.init(&supervisor_task, "supervisor", 5);
+    s_status_task.init(&status_task, "status", 4);
     s_sample_segments_task.init(&sample_segments_task, "sample_segs", 3);
-    s_sample_mcu_task.init(&sample_mcu_task, "sample_mcu", 3);
     s_control_task.init(&control_task, "control", 2);
     s_config_task.init(&config_task, "config", 1);
     if constexpr (config::enable_debug_logs()) {
