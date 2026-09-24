@@ -1,11 +1,79 @@
 #include <bms/can_messages.hh>
 
+#include <bms/error.hh>
 #include <util/stream.hh>
 
 #include <cstdint>
 #include <optional>
 
 namespace bms {
+
+std::optional<MasterStatusMessage> MasterStatusMessage::decode(util::Stream &stream) {
+    const auto master_flags = stream.read_be<MasterErrorFlags::type_t>();
+    const auto i2c_error_count = stream.read_be<std::uint32_t>();
+    if (!master_flags || !i2c_error_count) {
+        return std::nullopt;
+    }
+    return MasterStatusMessage{
+        .master_flags = MasterErrorFlags(*master_flags),
+        .i2c_error_count = *i2c_error_count,
+    };
+}
+
+bool MasterStatusMessage::encode(util::Stream &stream) const {
+    if (!stream.write_be(master_flags.value())) {
+        return false;
+    }
+    return stream.write_be(i2c_error_count);
+}
+
+std::optional<MasterCurrentMessage> MasterCurrentMessage::decode(util::Stream &stream) {
+    const auto positive_current = stream.read_be<std::int32_t>();
+    const auto negative_current = stream.read_be<std::int32_t>();
+    if (!positive_current || !negative_current) {
+        return std::nullopt;
+    }
+    return MasterCurrentMessage{
+        .positive_current = *positive_current,
+        .negative_current = *negative_current,
+    };
+}
+
+bool MasterCurrentMessage::encode(util::Stream &stream) const {
+    if (!stream.write_be(positive_current)) {
+        return false;
+    }
+    return stream.write_be(negative_current);
+}
+
+std::optional<MasterSummaryMessage> MasterSummaryMessage::decode(util::Stream &stream) {
+    const auto min_voltage = stream.read_be<std::uint16_t>();
+    const auto max_voltage = stream.read_be<std::uint16_t>();
+    const auto min_temperature = stream.read_be<std::int8_t>();
+    const auto max_temperature = stream.read_be<std::int8_t>();
+    if (!min_voltage || !max_temperature || !min_temperature || !max_temperature) {
+        return std::nullopt;
+    }
+    return MasterSummaryMessage{
+        .min_voltage = *min_voltage,
+        .max_voltage = *max_voltage,
+        .min_temperature = *min_temperature,
+        .max_temperature = *max_temperature,
+    };
+}
+
+bool MasterSummaryMessage::encode(util::Stream &stream) const {
+    if (!stream.write_be(min_voltage)) {
+        return false;
+    }
+    if (!stream.write_be(max_voltage)) {
+        return false;
+    }
+    if (!stream.write_be(min_temperature)) {
+        return false;
+    }
+    return stream.write_be(max_temperature);
+}
 
 std::optional<StartFullDischargeMessage> StartFullDischargeMessage::decode(util::Stream &stream) {
     const auto target_voltage = stream.read_be<std::uint16_t>();
