@@ -70,6 +70,8 @@ class TsPreventionFlags(Flag):
     PRECHARGE_STATE = enum.auto()
     INVERTER_OFFLINE = enum.auto()
     INVERTER_FAULT = enum.auto()
+    BMS_OFFLINE = enum.auto()
+    BMS_FAULT = enum.auto()
 
 
 class RtdPreventionFlags(Flag):
@@ -126,6 +128,19 @@ class PrechargeRelayStates(Flag):
     AIR_NEG_CLOSED = enum.auto()
 
 
+class BmsMasterErrorFlags(Flag):
+    CAN_OFFLINE = enum.auto()
+    NO_CONFIG = enum.auto()
+    DEADLINE_OVERRUN = enum.auto()
+    BAD_REFERENCE = enum.auto()
+    OVERTEMPERATURE = enum.auto()
+    BAD_CURRENT_SENSOR = enum.auto()
+    OVERCURRENT_THRESHOLD = enum.auto()
+    OVERCURRENT_MEASURED = enum.auto()
+    SEGMENT_ERROR = enum.auto()
+    BAD_SEGMENT_COUNT = enum.auto()
+
+
 @attrs.define
 class TelemetryFrame:
     uptime: int
@@ -172,6 +187,18 @@ class TelemetryFrame:
         converter=PrechargeRelayStates
     )
 
+    # BMS.
+    bms_master_error_flags: BmsMasterErrorFlags = attrs.field(
+        converter=BmsMasterErrorFlags
+    )
+    bms_i2c_error_count: int
+    positive_current: float = attrs.field(converter=lambda I: I / 1000)
+    negative_current: float = attrs.field(converter=lambda I: I / 1000)
+    min_cell_voltage: float = attrs.field(converter=lambda V: V / 10000)
+    max_cell_voltage: float = attrs.field(converter=lambda V: V / 10000)
+    min_cell_temperature: int
+    max_cell_temperature: int
+
     crc: int
 
     def serialize(self, inst, field, value):
@@ -186,7 +213,7 @@ class TelemetryFrame:
 
 
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBHBBhhhhiHHBHHHBI", data))
+    return TelemetryFrame(*struct.unpack(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbI", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:
