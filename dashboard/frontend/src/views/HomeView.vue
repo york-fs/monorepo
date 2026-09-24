@@ -3,6 +3,7 @@ import Badge from '@/components/Badge.vue'
 import StatusBar from '@/components/status-bar/StatusBar.vue'
 import DistributionSection from '@/components/distribution/DistributionSection.vue'
 import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
+import BmsSection from '@/components/bms/BmsSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
 import { isDemoMode } from '@/demo'
 
@@ -18,6 +19,7 @@ const demoMode = isDemoMode()
         <StatusBar />
         <DistributionSection />
         <PowertrainSection />
+        <BmsSection />
         <PrechargeSection />
     </main>
 </template>

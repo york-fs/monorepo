@@ -11,6 +11,7 @@ import {
     rpmSeverity,
 } from '@/domain/powertrain'
 import { formatPercent } from '@/utils/formatPercent'
+import { formatCelsius } from '@/utils/formatCelsius'
 import { formatVolts } from '@/utils/formatVolts'
 import Section from '@/components/Section.vue'
 import Tile from '@/components/Tile.vue'
@@ -33,7 +34,6 @@ const { frame } = useTelemetry()
 // still-placeholder wheel/gearing constants — and since `motorRpmToMph` is
 // linear and monotonic, the RPM ever-min/max are the mph ever-min/max too.
 const formatRpmAsMph = (rpm: number) => `${Math.round(motorRpmToMph(rpm))} mph`
-const formatCelsius = (celsius: number) => `${Math.round(celsius)}°C`
 
 const selectRpm = (f: TelemetryFrame) => f.motor_rpm
 const selectDcVoltage = (f: TelemetryFrame) => f.inverter_input_voltage

@@ -88,6 +88,8 @@ export const TS_PREVENTION_FLAGS = [
     'PRECHARGE_STATE',
     'INVERTER_OFFLINE',
     'INVERTER_FAULT',
+    'BMS_OFFLINE',
+    'BMS_FAULT',
 ] as const
 export type TsPreventionFlag = (typeof TS_PREVENTION_FLAGS)[number]
 
@@ -113,6 +115,20 @@ export const INVERTER_FAULT_CODES = [
     'ANALOG_INPUT_FAULT',
 ] as const
 export type InverterFaultCode = (typeof INVERTER_FAULT_CODES)[number]
+
+export const BMS_MASTER_ERROR_FLAGS = [
+    'CAN_OFFLINE',
+    'NO_CONFIG',
+    'DEADLINE_OVERRUN',
+    'BAD_REFERENCE',
+    'OVERTEMPERATURE',
+    'BAD_CURRENT_SENSOR',
+    'OVERCURRENT_THRESHOLD',
+    'OVERCURRENT_MEASURED',
+    'SEGMENT_ERROR',
+    'BAD_SEGMENT_COUNT',
+] as const
+export type BmsMasterErrorFlag = (typeof BMS_MASTER_ERROR_FLAGS)[number]
 
 export const FUSE_FLAGS = [
     'BMS',
@@ -157,6 +173,14 @@ export interface TelemetryFrame {
     motor_rpm?: number
     pedal_travel?: number
     desired_motor_current?: number
+    bms_master_error_flags?: BmsMasterErrorFlag[]
+    bms_i2c_error_count?: number
+    positive_current?: number
+    negative_current?: number
+    min_cell_voltage?: number
+    max_cell_voltage?: number
+    min_cell_temperature?: number
+    max_cell_temperature?: number
     [key: string]: unknown
 }
 
@@ -224,6 +248,18 @@ export function isTsPreventionFlagSet(
 export function isRtdPreventionFlagSet(
     flags: readonly RtdPreventionFlag[] | undefined,
     flag: RtdPreventionFlag,
+): boolean | undefined {
+    return isFlagSet(flags, flag)
+}
+
+/**
+ * Reads whether a single BMS master error is currently raised out of the
+ * `bms_master_error_flags` array — presence means the error is active.
+ * `undefined` when the array hasn't arrived yet (no signal).
+ */
+export function isBmsErrorFlagSet(
+    flags: readonly BmsMasterErrorFlag[] | undefined,
+    flag: BmsMasterErrorFlag,
 ): boolean | undefined {
     return isFlagSet(flags, flag)
 }

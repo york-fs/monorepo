@@ -1,4 +1,5 @@
 import {
+    BMS_MASTER_ERROR_FLAGS,
     FUSE_FLAGS,
     INVERTER_FAULT_CODES,
     ONLINE_FLAGS,
@@ -6,6 +7,7 @@ import {
     SHUTDOWN_OPEN_CAUSES,
 } from '@/telemetry'
 import type {
+    BmsMasterErrorFlag,
     FuseFlag,
     InverterFaultCode,
     OnlineFlag,
@@ -91,6 +93,17 @@ interface DemoState {
     pedalTravel: number
     desiredMotorCurrent: number
     motorCurrent: number
+
+    bmsErrorFlags: BmsMasterErrorFlag[]
+    i2cErrorCount: number
+    // The DC bus current both BMS sensors measure — one state field, since
+    // they're two sensors on the same current (see plan/BMS.md); the frame
+    // adds a little independent noise per sensor.
+    packCurrent: number
+    minCellVoltage: number
+    maxCellVoltage: number
+    minCellTemperature: number
+    maxCellTemperature: number
 }
 
 function enterPrechargeState(state: DemoState, next: PrechargeState, now: number) {
@@ -236,6 +249,31 @@ function tickPowertrain(state: DemoState) {
     )
 }
 
+// The DC side of what tickPowertrain is doing: pack current chases the motor
+// current the inverter is delivering, and goes negative on a closed throttle
+// while the motor is still turning (regen). Cell voltages sag in proportion
+// to it and recover when it drops; cell temperatures drift up under load
+// either way, since it's the magnitude that heats the pack. The i2c error
+// count ticks up rarely, the way a flaky bus would.
+function tickBms(state: DemoState) {
+    const regenerating = state.pedalTravel < 5 && state.motorRpm > 500
+    const target = regenerating ? -state.motorRpm / 80 : state.motorCurrent * 1.2
+    state.packCurrent += (target - state.packCurrent) * 0.2 + randomBetween(-0.5, 0.5)
+
+    const sag = state.packCurrent * 0.0015
+    state.minCellVoltage = Math.min(4.25, Math.max(2.85, 3.98 - sag))
+    state.maxCellVoltage = state.minCellVoltage + randomBetween(0.03, 0.08)
+
+    const loadFactor = Math.abs(state.packCurrent) / 150
+    state.maxCellTemperature = Math.min(
+        70,
+        Math.max(20, state.maxCellTemperature + loadFactor * 0.12 - 0.04),
+    )
+    state.minCellTemperature = state.maxCellTemperature - randomBetween(3, 8)
+
+    if (Math.random() < 0.002) state.i2cErrorCount += 1
+}
+
 function isOnline(state: DemoState, flag: OnlineFlag): boolean {
     return state.onlineFlags.includes(flag)
 }
@@ -245,11 +283,13 @@ function deriveTsPreventionFlags(state: DemoState): TsPreventionFlag[] {
     if (!isOnline(state, 'FRONT_ONLINE')) flags.push('FRONT_OFFLINE')
     if (!isOnline(state, 'PRECHARGE_ONLINE')) flags.push('PRECHARGE_OFFLINE')
     if (!isOnline(state, 'INVERTER_ONLINE')) flags.push('INVERTER_OFFLINE')
+    if (!isOnline(state, 'BMS_ONLINE')) flags.push('BMS_OFFLINE')
     if (state.prechargeState !== 'ACTIVE') flags.push('PRECHARGE_STATE')
     if (state.fuseOk.length < FUSE_FLAGS.length) flags.push('BAD_FUSE')
     if (state.shutdownCause !== 'NONE') flags.push('SHUTDOWN_OPEN')
     if (state.inverterFault !== 'NONE' && state.inverterFault !== 'UNDERVOLTAGE')
         flags.push('INVERTER_FAULT')
+    if (state.bmsErrorFlags.length > 0) flags.push('BMS_FAULT')
     if (!state.tsRequested) flags.push('NOT_REQUESTED')
     return flags
 }
@@ -277,6 +317,13 @@ function randomizeDiscreteState(state: DemoState) {
     state.rtdRequested = Math.random() < 0.7
     state.appsCalibrated = Math.random() < 0.7
     state.brakePressed = Math.random() < 0.7
+    // Usually clear; when not, one or two flags rather than a random subset
+    // of all ten — a real master raising half its error set at once isn't the
+    // case the layout needs to look good in.
+    state.bmsErrorFlags =
+        Math.random() < 0.85
+            ? []
+            : BMS_MASTER_ERROR_FLAGS.filter(() => Math.random() < 0.15).slice(0, 2)
 }
 
 function buildFrame(state: DemoState, now: number): TelemetryFrame {
@@ -306,6 +353,17 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
         motor_current: Number(state.motorCurrent.toFixed(1)),
         pedal_travel: Number(state.pedalTravel.toFixed(1)),
         desired_motor_current: Number(state.desiredMotorCurrent.toFixed(1)),
+        bms_master_error_flags: state.bmsErrorFlags,
+        bms_i2c_error_count: state.i2cErrorCount,
+        // Two sensors reading the same bus current, so the same figure plus
+        // independent noise — which is what makes them worth plotting
+        // together.
+        positive_current: Number((state.packCurrent + randomBetween(-0.4, 0.4)).toFixed(1)),
+        negative_current: Number((state.packCurrent + randomBetween(-0.4, 0.4)).toFixed(1)),
+        min_cell_voltage: Number(state.minCellVoltage.toFixed(4)),
+        max_cell_voltage: Number(state.maxCellVoltage.toFixed(4)),
+        min_cell_temperature: Number(state.minCellTemperature.toFixed(1)),
+        max_cell_temperature: Number(state.maxCellTemperature.toFixed(1)),
     }
 }
 
@@ -344,6 +402,7 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
 
         tsRequested: true,
         rtdRequested: true,
+        appsCalibrated: true,
         brakePressed: true,
 
         inverterFault: 'NONE',
@@ -353,6 +412,14 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
         pedalTravel: 0,
         desiredMotorCurrent: 0,
         motorCurrent: 0,
+
+        bmsErrorFlags: [],
+        i2cErrorCount: 0,
+        packCurrent: 0,
+        minCellVoltage: 3.98,
+        maxCellVoltage: 4.02,
+        minCellTemperature: 22,
+        maxCellTemperature: 25,
     }
 
     onFrame(buildFrame(state, Date.now()))
@@ -362,6 +429,7 @@ export function startDemoTelemetry(onFrame: (frame: TelemetryFrame) => void): ()
         tickPrechargeSequence(state, tickNow)
         tickVoltages(state, tickNow)
         tickPowertrain(state)
+        tickBms(state)
         onFrame(buildFrame(state, tickNow))
     }, CONTINUOUS_TICK_MS)
 
