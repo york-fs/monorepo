@@ -585,7 +585,7 @@ void supervisor_task(void *) {
 
 void status_task(void *) {
     // Initialise periodic node status transmission.
-    node_status::init(config::k_front_can_id);
+    node_status::init(config::k_bms_can_id);
 
     // Sequence the LVS voltage reading, external reference voltage, and the STM's internal temperature sensor.
     hal::adc_init(ADC1, 3);
