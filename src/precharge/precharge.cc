@@ -24,6 +24,9 @@ using namespace precharge;
 
 namespace {
 
+/**
+ * @brief Enumeration of different RC curve models.
+ */
 enum class CurveModel {
     Test,
     DtiHv550,
@@ -32,7 +35,7 @@ enum class CurveModel {
 /**
  * @brief The RC model to use to calculate the expected TS voltage at each instant during precharging.
  */
-constexpr CurveModel k_curve_model = CurveModel::DtiHv550;
+constexpr auto k_curve_model = CurveModel::DtiHv550;
 
 /**
  * @brief The maximum time to wait for a new heartbeat message to be received before opening the AIRs and thus
@@ -121,19 +124,19 @@ std::pair<State, ErrorFlags> led_check(std::uint32_t elapsed_ms) {
 }
 
 std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                              std::uint16_t tractive_voltage) {
+                                              std::uint16_t tractive_voltage, RelayStates relay_states) {
     // Check relay actual states. They should all be open with shutdown low (discharge relay closed).
     ErrorFlags error_flags;
-    if (s_shutdown_sample.read()) {
+    if (relay_states.is_clear(RelayState::DischargeClosed)) {
         error_flags.set(Error::DischargeOpen);
     }
-    if (!s_precharge_act.read()) {
+    if (relay_states.is_set(RelayState::PrechargeClosed)) {
         error_flags.set(Error::PrechargeClosed);
     }
-    if (!s_air_pos_act.read()) {
+    if (relay_states.is_set(RelayState::AirPosClosed)) {
         error_flags.set(Error::AirPosClosed);
     }
-    if (!s_air_neg_act.read()) {
+    if (relay_states.is_set(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegClosed);
     }
     if (s_heartbeat && elapsed_ms < 500) {
@@ -186,21 +189,21 @@ std::pair<float, float> model_curve<CurveModel::DtiHv550>(float t, float Vp) {
 }
 
 std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                       std::uint16_t tractive_voltage) {
+                                       std::uint16_t tractive_voltage, RelayStates relay_states) {
     ErrorFlags error_flags;
     if (!s_heartbeat) {
         error_flags.set(Error::Deactivation);
     }
-    if (!s_shutdown_sample.read()) {
+    if (relay_states.is_set(RelayState::DischargeClosed)) {
         error_flags.set(Error::ShutdownOpen);
     }
-    if (s_precharge_act.read()) {
+    if (relay_states.is_clear(RelayState::PrechargeClosed)) {
         error_flags.set(Error::PrechargeOpen);
     }
-    if (!s_air_pos_act.read()) {
+    if (relay_states.is_set(RelayState::AirPosClosed)) {
         error_flags.set(Error::AirPosClosed);
     }
-    if (s_air_neg_act.read()) {
+    if (relay_states.is_clear(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegOpen);
     }
 
@@ -244,21 +247,21 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
     return std::make_pair(State::Precharge, ErrorFlags());
 }
 
-std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
+std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayStates relay_states) {
     ErrorFlags error_flags;
     if (!s_heartbeat) {
         error_flags.set(Error::Deactivation);
     }
-    if (!s_shutdown_sample.read()) {
+    if (relay_states.is_set(RelayState::DischargeClosed)) {
         error_flags.set(Error::ShutdownOpen);
     }
-    if (s_precharge_act.read()) {
+    if (relay_states.is_clear(RelayState::PrechargeClosed)) {
         error_flags.set(Error::PrechargeOpen);
     }
-    if (s_air_pos_act.read()) {
+    if (relay_states.is_clear(RelayState::AirPosClosed)) {
         error_flags.set(Error::AirPosOpen);
     }
-    if (s_air_neg_act.read()) {
+    if (relay_states.is_clear(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegOpen);
     }
 
@@ -271,39 +274,39 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms) {
     return std::make_pair(elapsed_ms >= k_precharge_hold_time ? State::Active : State::PrechargeHold, error_flags);
 }
 
-std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms) {
+std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms, RelayStates relay_states) {
     ErrorFlags error_flags;
     if (!s_heartbeat) {
         error_flags.set(Error::Deactivation);
     }
-    if (!s_shutdown_sample.read()) {
+    if (relay_states.is_set(RelayState::DischargeClosed)) {
         error_flags.set(Error::ShutdownOpen);
     }
-    if (!s_precharge_act.read()) {
+    if (relay_states.is_set(RelayState::PrechargeClosed)) {
         error_flags.set(Error::PrechargeClosed);
     }
-    if (s_air_pos_act.read()) {
+    if (relay_states.is_clear(RelayState::AirPosClosed)) {
         error_flags.set(Error::AirPosOpen);
     }
-    if (s_air_neg_act.read()) {
+    if (relay_states.is_clear(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegOpen);
     }
     return std::make_pair(error_flags.any_set() ? State::Precheck : State::Active, error_flags);
 }
 
 std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                           std::uint16_t tractive_voltage) {
+                                           std::uint16_t tractive_voltage, RelayStates relay_states) {
     switch (state) {
     case State::LedCheck:
         return led_check(elapsed_ms);
     case State::Precharge:
-        return precharge(elapsed_ms, precharge_voltage, tractive_voltage);
+        return precharge(elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
     case State::PrechargeHold:
-        return precharge_hold(elapsed_ms);
+        return precharge_hold(elapsed_ms, relay_states);
     case State::Active:
-        return active(elapsed_ms);
+        return active(elapsed_ms, relay_states);
     default:
-        return precheck_standby(elapsed_ms, precharge_voltage, tractive_voltage);
+        return precheck_standby(elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
     }
 }
 
@@ -343,8 +346,27 @@ void sm_task(void *) {
         // Update heartbeat expiry.
         s_heartbeat.update();
 
+        // Build a flag bitset of relay actual states.
+        RelayStates relay_states;
+        if (!s_shutdown_sample.read()) {
+            relay_states.set(RelayState::DischargeClosed);
+        }
+        if (!s_precharge_act.read()) {
+            relay_states.set(RelayState::PrechargeClosed);
+        }
+        if (!s_air_pos_act.read()) {
+            relay_states.set(RelayState::AirPosClosed);
+        }
+        if (!s_air_neg_act.read()) {
+            relay_states.set(RelayState::AirNegClosed);
+        }
+
+        // Compute the elapsed time in the current state.
         const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
-        const auto [new_state, error_flags] = advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage);
+
+        // Advance the state machine.
+        const auto [new_state, error_flags] =
+            advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
         if (state != new_state) {
             state_epoch_time = xTaskGetTickCount();
             if (state != State::Precheck && state != State::Standby) {
@@ -353,7 +375,7 @@ void sm_task(void *) {
             state = new_state;
         }
 
-        // Calculate outputs from current state and error flags.
+        // Compute desired output bits based on the current state and error flags.
         OutputBits output_bits;
 
         // First set the state LEDs.
@@ -412,21 +434,6 @@ void sm_task(void *) {
 
         // Set bits all at once.
         GPIOB->ODR = (GPIOB->ODR & ~k_output_mask) | output_bits.value();
-
-        // Build a flag bitset of relay actual states.
-        RelayStates relay_states;
-        if (!s_shutdown_sample.read()) {
-            relay_states.set(RelayState::DischargeClosed);
-        }
-        if (!s_precharge_act.read()) {
-            relay_states.set(RelayState::PrechargeClosed);
-        }
-        if (!s_air_pos_act.read()) {
-            relay_states.set(RelayState::AirPosClosed);
-        }
-        if (!s_air_neg_act.read()) {
-            relay_states.set(RelayState::AirNegClosed);
-        }
 
         // Send status message over CAN.
         ErrorFlags send_flags;
