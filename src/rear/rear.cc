@@ -800,7 +800,7 @@ void vApplicationIdleHook() {
 
 void app_main() {
     s_radio_data.init();
-    s_control_task.init(&control_task, "main", 4);
+    s_control_task.init(&control_task, "main", 2);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
