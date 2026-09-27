@@ -5,6 +5,7 @@
 #include <front/shutdown.hh>
 #include <hal.hh>
 #include <hal/can.hh>
+#include <hal/gpio.hh>
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/state.hh>
@@ -42,6 +43,28 @@ constexpr std::uint32_t k_throttle_period = 10;
  */
 constexpr std::uint32_t k_mcu_vref = 3300;
 
+/**
+ * @brief Shutdown sample input pins.
+ */
+constexpr hal::gpio::Descriptor k_sdn_estop(hal::gpio::Port::B, 12);
+constexpr hal::gpio::Descriptor k_sdn_bots(hal::gpio::Port::B, 13);
+constexpr hal::gpio::Descriptor k_sdn_inertia(hal::gpio::Port::B, 14);
+constexpr hal::gpio::Descriptor k_sdn_aux(hal::gpio::Port::B, 15);
+
+/**
+ * @brief Horn and on-board LED outputs.
+ */
+constexpr hal::gpio::Descriptor k_rtd_horn(hal::gpio::Port::A, 8);
+constexpr hal::gpio::Descriptor k_led(hal::gpio::Port::B, 4);
+
+/**
+ * @brief Dashboard button inputs and associated indicator LED outputs.
+ */
+constexpr hal::gpio::Descriptor k_ts_button(hal::gpio::Port::B, 1);
+constexpr hal::gpio::Descriptor k_ts_button_led(hal::gpio::Port::B, 2);
+constexpr hal::gpio::Descriptor k_rtd_button(hal::gpio::Port::C, 14);
+constexpr hal::gpio::Descriptor k_rtd_button_led(hal::gpio::Port::C, 13);
+
 TimeTracked<precharge::State> s_precharge_state(25);
 TimeTracked<rear::StatusMessage> s_rear_status(25);
 std::array<std::uint16_t, 9> s_adc_buffer;
@@ -51,22 +74,6 @@ freertos::Task<2048> s_throttle_task;
 freertos::Task<128> s_debounce_task;
 freertos::Task<128> s_led_task;
 freertos::Task<128> s_swd_task;
-
-// Shutdown inputs.
-hal::Gpio s_sdn_estop(hal::GpioPort::B, 12);
-hal::Gpio s_sdn_bots(hal::GpioPort::B, 13);
-hal::Gpio s_sdn_inertia(hal::GpioPort::B, 14);
-hal::Gpio s_sdn_aux(hal::GpioPort::B, 15);
-
-// General outputs.
-hal::Gpio s_rtd_horn(hal::GpioPort::A, 8);
-hal::Gpio s_led(hal::GpioPort::B, 4);
-
-// Dashboard buttons with indicator LEDs.
-hal::Gpio s_ts_button(hal::GpioPort::B, 1);
-hal::Gpio s_ts_button_led(hal::GpioPort::B, 2);
-hal::Gpio s_rtd_button(hal::GpioPort::C, 14);
-hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
 
 void main_task(void *) {
     // Initialise CAN on port B.
@@ -88,10 +95,34 @@ void main_task(void *) {
         }
     }>(config::k_rear_can_id, 1);
 
+    // Configure shutdown sampling inputs.
+    hal::gpio::configure(k_sdn_estop, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_sdn_bots, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_sdn_inertia, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_sdn_aux, hal::gpio::InputMode::Floating);
+
+    // Configure outputs.
+    hal::gpio::configure(k_rtd_horn, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+
+    // Configure TS button.
+    hal::gpio::configure(k_ts_button, hal::gpio::InputMode::Floating);
+    AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;
+    EXTI->IMR |= EXTI_IMR_MR1;
+    EXTI->FTSR |= EXTI_FTSR_FT1;
+
+    // Configure RTD button.
+    hal::gpio::configure(k_rtd_button, hal::gpio::InputMode::Floating);
+    AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PC;
+    EXTI->IMR |= EXTI_IMR_MR14;
+    EXTI->FTSR |= EXTI_FTSR_FT14;
+
     // Initialise periodic node status transmission.
     node_status::init(config::k_front_can_id);
 
-    // Enable CAN IRQs.
+    // Enable CAN and EXTI IRQs.
+    hal::irq_enable(EXTI1_IRQn, 8);
+    hal::irq_enable(EXTI15_10_IRQn, 8);
     hal::irq_enable(CAN1_RX0_IRQn, 7);
     hal::irq_enable(CAN1_TX_IRQn, 6);
     hal::irq_enable(CAN1_SCE_IRQn, 5);
@@ -107,30 +138,6 @@ void main_task(void *) {
     // Enable continuous ADC sampling.
     ADC1->CR2 |= ADC_CR2_CONT;
     hal::adc_start(ADC1);
-
-    // Configure shutdown sampling inputs.
-    s_sdn_estop.configure(hal::GpioInputMode::Floating);
-    s_sdn_bots.configure(hal::GpioInputMode::Floating);
-    s_sdn_inertia.configure(hal::GpioInputMode::Floating);
-    s_sdn_aux.configure(hal::GpioInputMode::Floating);
-
-    // Configure outputs.
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_rtd_horn.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-    // Configure TS button.
-    s_ts_button.configure(hal::GpioInputMode::Floating);
-    AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;
-    EXTI->IMR |= EXTI_IMR_MR1;
-    EXTI->FTSR |= EXTI_FTSR_FT1;
-    hal::irq_enable(EXTI1_IRQn, 8);
-
-    // Configure RTD button.
-    s_rtd_button.configure(hal::GpioInputMode::Floating);
-    AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PC;
-    EXTI->IMR |= EXTI_IMR_MR14;
-    EXTI->FTSR |= EXTI_FTSR_FT14;
-    hal::irq_enable(EXTI15_10_IRQn, 8);
 
     std::optional<TickType_t> ts_activation_desired;
     std::optional<TickType_t> rtd_activation_desired;
@@ -187,23 +194,23 @@ void main_task(void *) {
 
         // Drive RTD horn.
         if (rtd_activation_time && xTaskGetTickCount() - *rtd_activation_time <= pdMS_TO_TICKS(k_rtd_horn_duration)) {
-            hal::gpio_set(s_rtd_horn);
+            hal::gpio::set(k_rtd_horn);
         } else {
-            hal::gpio_reset(s_rtd_horn);
+            hal::gpio::reset(k_rtd_horn);
         }
 
         // Build bitset of raw shutdown samples.
         ShutdownSamples shutdown_samples;
-        if (s_sdn_estop.read()) {
+        if (hal::gpio::read(k_sdn_estop)) {
             shutdown_samples.set(ShutdownSample::EmergencyStop);
         }
-        if (s_sdn_bots.read()) {
+        if (hal::gpio::read(k_sdn_bots)) {
             shutdown_samples.set(ShutdownSample::BrakeOverTravel);
         }
-        if (s_sdn_inertia.read()) {
+        if (hal::gpio::read(k_sdn_inertia)) {
             shutdown_samples.set(ShutdownSample::InertiaSwitch);
         }
-        if (s_sdn_aux.read()) {
+        if (hal::gpio::read(k_sdn_aux)) {
             shutdown_samples.set(ShutdownSample::Auxiliary);
         }
 
@@ -292,12 +299,12 @@ void debounce_task(void *) {
 
         // Button triggered if it's still pressed after the delay period and hasn't been pressed twice in the same
         // second.
-        if ((notification & (1u << 0)) != 0 && !s_ts_button.read() &&
+        if ((notification & (1u << 0)) != 0 && !hal::gpio::read(k_ts_button) &&
             xTaskGetTickCount() - last_ts_button_time >= pdMS_TO_TICKS(1000)) {
             last_ts_button_time = xTaskGetTickCount();
             s_main_task.notify_set_bits(0, 1u << 0);
         }
-        if ((notification & (1u << 1)) != 0 && !s_rtd_button.read() &&
+        if ((notification & (1u << 1)) != 0 && !hal::gpio::read(k_rtd_button) &&
             xTaskGetTickCount() - last_rtd_button_time >= pdMS_TO_TICKS(1000)) {
             last_rtd_button_time = xTaskGetTickCount();
             s_main_task.notify_set_bits(0, 1u << 1);
@@ -306,8 +313,9 @@ void debounce_task(void *) {
 }
 
 void led_task(void *) {
-    s_ts_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_rtd_button_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    // Configure LED GPIO outputs.
+    hal::gpio::configure(k_ts_button_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_rtd_button_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
 
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
     RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
@@ -346,18 +354,18 @@ void led_task(void *) {
         DMA1_Channel6->CCR &= ~DMA_CCR_EN;
         if (!s_precharge_state) {
             // Off.
-            ts_buffer[0] = 1u << (s_ts_button_led.pin() + 16);
+            ts_buffer[0] = 1u << (k_ts_button_led.pin + 16);
             DMA1_Channel6->CNDTR = 1;
         } else if (s_precharge_state == precharge::State::Active) {
             // Solid.
-            ts_buffer[0] = 1u << s_ts_button_led.pin();
+            ts_buffer[0] = 1u << k_ts_button_led.pin;
             DMA1_Channel6->CNDTR = 1;
         } else {
             // Slow flash for standby and fast for everything else.
             const auto count = s_precharge_state == precharge::State::Standby ? 5 : 1;
             for (std::uint32_t i = 0; i < count; i++) {
-                ts_buffer[i] = 1u << s_ts_button_led.pin();
-                ts_buffer[count + i] = 1u << (s_ts_button_led.pin() + 16);
+                ts_buffer[i] = 1u << k_ts_button_led.pin;
+                ts_buffer[count + i] = 1u << (k_ts_button_led.pin + 16);
             }
             DMA1_Channel6->CNDTR = count * 2;
         }
@@ -367,11 +375,11 @@ void led_task(void *) {
         DMA1_Channel2->CCR &= ~DMA_CCR_EN;
         if (!s_precharge_state || *s_precharge_state != precharge::State::Active) {
             // Off.
-            rtd_buffer[0] = 1u << (s_rtd_button_led.pin() + 16);
+            rtd_buffer[0] = 1u << (k_rtd_button_led.pin + 16);
             DMA1_Channel2->CNDTR = 1;
         } else if (s_rear_status && s_rear_status->rtd_prevention_flags.none_set()) {
             // Solid.
-            rtd_buffer[0] = 1u << s_rtd_button_led.pin();
+            rtd_buffer[0] = 1u << k_rtd_button_led.pin;
             DMA1_Channel2->CNDTR = 1;
         } else {
             // Slow flash to indicate ready to activate, fast for any additional errors set.
@@ -380,8 +388,8 @@ void led_task(void *) {
                     ? 5
                     : 1;
             for (std::uint32_t i = 0; i < count; i++) {
-                rtd_buffer[i] = 1u << s_rtd_button_led.pin();
-                rtd_buffer[count + i] = 1u << (s_rtd_button_led.pin() + 16);
+                rtd_buffer[i] = 1u << k_rtd_button_led.pin;
+                rtd_buffer[count + i] = 1u << (k_rtd_button_led.pin + 16);
             }
             DMA1_Channel2->CNDTR = count * 2;
         }
