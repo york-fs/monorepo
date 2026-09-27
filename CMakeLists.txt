@@ -98,6 +98,7 @@ if(BUILD_TARGET STREQUAL "host")
 elseif(BUILD_TARGET STREQUAL "stm32")
     # Create a library for the shared base STM code.
     add_library(stm-base STATIC
+        src/hal/gpio.cc
         src/hal.cc
         src/i2c.cc
         src/miniprintf.c
