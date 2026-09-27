@@ -2,6 +2,7 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <hal/can.hh>
+#include <hal/gpio.hh>
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/error.hh>
@@ -69,6 +70,16 @@ constexpr std::uint32_t k_mcu_vref = 3300;
 constexpr std::uint32_t k_output_mask = 0xfcf7;
 
 /**
+ * @brief Port A pin descriptors.
+ */
+constexpr hal::gpio::Descriptor k_precharge_sample(hal::gpio::Port::A, 1);
+constexpr hal::gpio::Descriptor k_tractive_sample(hal::gpio::Port::A, 2);
+constexpr hal::gpio::Descriptor k_shutdown_sample(hal::gpio::Port::A, 8);
+constexpr hal::gpio::Descriptor k_precharge_act(hal::gpio::Port::A, 9);
+constexpr hal::gpio::Descriptor k_air_pos_act(hal::gpio::Port::A, 10);
+constexpr hal::gpio::Descriptor k_air_neg_act(hal::gpio::Port::A, 11);
+
+/**
  * @brief Port B output pins.
  */
 enum class OutputBit : std::uint32_t {
@@ -99,14 +110,6 @@ TimeTracked<std::monostate> s_heartbeat(k_heartbeat_timeout);
 freertos::Task<256> s_sm_task;
 freertos::Task<128> s_swd_task;
 freertos::Queue<SwdData, 1> s_swd_queue;
-
-// Input pins.
-hal::Gpio s_precharge_sample(hal::GpioPort::A, 1);
-hal::Gpio s_tractive_sample(hal::GpioPort::A, 2);
-hal::Gpio s_shutdown_sample(hal::GpioPort::A, 8);
-hal::Gpio s_precharge_act(hal::GpioPort::A, 9);
-hal::Gpio s_air_pos_act(hal::GpioPort::A, 10);
-hal::Gpio s_air_neg_act(hal::GpioPort::A, 11);
 
 std::uint16_t convert_voltage(std::uint16_t adc_value) {
     // Convert ADC counts to voltage.
@@ -317,6 +320,23 @@ void sm_task(void *) {
         s_heartbeat.receive({});
     }>(config::k_precharge_can_id, 0);
 
+    // Configure analog inputs.
+    hal::gpio::configure(k_precharge_sample, hal::gpio::InputMode::Analog);
+    hal::gpio::configure(k_tractive_sample, hal::gpio::InputMode::Analog);
+
+    // Configure digital inputs. These all have external pull-ups/pull-downs.
+    hal::gpio::configure(k_shutdown_sample, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_precharge_act, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_air_pos_act, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_air_neg_act, hal::gpio::InputMode::Floating);
+
+    // Configure outputs on port B.
+    for (std::uint8_t pin = 0; pin < 16; pin++) {
+        if ((k_output_mask & (1u << pin)) != 0u) {
+            hal::gpio::configure({hal::gpio::Port::B, pin}, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+        }
+    }
+
     // Initialise periodic node status transmission.
     node_status::init(config::k_precharge_can_id);
 
@@ -348,16 +368,16 @@ void sm_task(void *) {
 
         // Build a flag bitset of relay actual states.
         RelayStates relay_states;
-        if (!s_shutdown_sample.read()) {
+        if (!hal::gpio::read(k_shutdown_sample)) {
             relay_states.set(RelayState::DischargeClosed);
         }
-        if (!s_precharge_act.read()) {
+        if (!hal::gpio::read(k_precharge_act)) {
             relay_states.set(RelayState::PrechargeClosed);
         }
-        if (!s_air_pos_act.read()) {
+        if (!hal::gpio::read(k_air_pos_act)) {
             relay_states.set(RelayState::AirPosClosed);
         }
-        if (!s_air_neg_act.read()) {
+        if (!hal::gpio::read(k_air_neg_act)) {
             relay_states.set(RelayState::AirNegClosed);
         }
 
@@ -486,23 +506,6 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
-    // Configure analog inputs.
-    s_precharge_sample.configure(hal::GpioInputMode::Analog);
-    s_tractive_sample.configure(hal::GpioInputMode::Analog);
-
-    // Configure digital inputs. These all have external pull-ups/pull-downs.
-    s_shutdown_sample.configure(hal::GpioInputMode::Floating);
-    s_precharge_act.configure(hal::GpioInputMode::Floating);
-    s_air_pos_act.configure(hal::GpioInputMode::Floating);
-    s_air_neg_act.configure(hal::GpioInputMode::Floating);
-
-    // Configure outputs on port B.
-    for (std::uint32_t pin = 0; pin < 16; pin++) {
-        if ((k_output_mask & (1u << pin)) != 0) {
-            hal::Gpio(hal::GpioPort::B, pin).configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-        }
-    }
-
     s_sm_task.init(&sm_task, "sm", 2);
     if constexpr (config::enable_debug_logs()) {
         s_swd_queue.init();
