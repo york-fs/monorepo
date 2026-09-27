@@ -4,6 +4,7 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <hal/can.hh>
+#include <hal/gpio.hh>
 
 #include <FreeRTOS.h>
 #include <semphr.h>
@@ -51,6 +52,15 @@ constexpr std::uint32_t k_cv_set_ratio = 205;
  */
 constexpr std::uint32_t k_maximum_drop = (1024 * 3300) / k_cv_set_ratio;
 
+/**
+ * @brief GPIO pin descriptors.
+ */
+constexpr hal::gpio::Descriptor k_vcc_sense(hal::gpio::Port::A, 2);
+constexpr hal::gpio::Descriptor k_cc_set(hal::gpio::Port::A, 8);
+constexpr hal::gpio::Descriptor k_cv_set(hal::gpio::Port::A, 9);
+constexpr hal::gpio::Descriptor k_enable(hal::gpio::Port::A, 12);
+constexpr hal::gpio::Descriptor k_led(hal::gpio::Port::B, 6);
+
 struct SwdData {
     ErrorFlags error_flags;
     std::uint16_t charge_voltage;
@@ -66,12 +76,6 @@ freertos::Queue<SwdData, 1> s_swd_queue;
 // Tasks.
 freertos::Task<128> s_control_task;
 freertos::Task<128> s_swd_task;
-
-hal::Gpio s_vcc_sense(hal::GpioPort::A, 2);
-hal::Gpio s_cc_set(hal::GpioPort::A, 8);
-hal::Gpio s_cv_set(hal::GpioPort::A, 9);
-hal::Gpio s_enable(hal::GpioPort::A, 12);
-hal::Gpio s_led(hal::GpioPort::B, 6);
 
 [[nodiscard]] ErrorFlags set_current(std::uint32_t current) {
     ErrorFlags error_flags;
@@ -140,6 +144,16 @@ void control_task(void *) {
         freertos::InterruptYielder interrupt_yielder;
         s_control_queue.send_to_back_isr(control_message, interrupt_yielder);
     }>(config::k_charger_can_id, 0);
+
+    // Configure GPIO pins.
+    hal::gpio::configure(k_vcc_sense, hal::gpio::InputMode::Analog);
+    hal::gpio::configure(k_cc_set, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_50M);
+    hal::gpio::configure(k_cv_set, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_50M);
+    hal::gpio::configure(k_enable, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+
+    // Default open-drain enable pin to high.
+    hal::gpio::set(k_enable);
 
     // Enable CAN IRQs.
     hal::irq_enable(CAN1_TX_IRQn, 7);
@@ -239,8 +253,8 @@ void control_task(void *) {
 
         // Update enable pin. The pin is inverted.
         const bool enable = !error_flags.any_set();
-        s_enable.write(!enable);
-        s_led.write(enable);
+        hal::gpio::write(k_enable, !enable);
+        hal::gpio::write(k_led, enable);
 
         // Send status message over CAN.
         StatusMessage status_message{
@@ -281,18 +295,8 @@ void swd_task(void *) {
 } // namespace
 
 void app_main() {
-    s_vcc_sense.configure(hal::GpioInputMode::Analog);
-    s_cc_set.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
-    s_cv_set.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
-    s_enable.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-
-    // Default open-drain enable pin to high.
-    hal::gpio_set(s_enable);
-
     s_control_queue.init();
     s_swd_queue.init();
-
     s_control_task.init(&control_task, "control", 4);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 1);
