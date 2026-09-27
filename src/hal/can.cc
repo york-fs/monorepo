@@ -2,6 +2,7 @@
 
 #include <freertos.hh>
 #include <hal.hh>
+#include <hal/gpio.hh>
 #include <stm32f103xb.h>
 
 #include <FreeRTOS.h>
@@ -160,14 +161,17 @@ void tx_task(void *) {
     }
 }
 
-std::pair<hal::Gpio, hal::Gpio> pin_pair(Port port) {
+std::pair<hal::gpio::Descriptor, hal::gpio::Descriptor> pin_pair(Port port) {
     switch (port) {
     case Port::B:
-        return std::make_pair(hal::Gpio(hal::GpioPort::B, 8), hal::Gpio(hal::GpioPort::B, 9));
+        return std::make_pair(hal::gpio::Descriptor(hal::gpio::Port::B, 8),
+                              hal::gpio::Descriptor(hal::gpio::Port::B, 9));
     case Port::D:
-        return std::make_pair(hal::Gpio(hal::GpioPort::D, 0), hal::Gpio(hal::GpioPort::D, 1));
+        return std::make_pair(hal::gpio::Descriptor(hal::gpio::Port::D, 0),
+                              hal::gpio::Descriptor(hal::gpio::Port::D, 1));
     default:
-        return std::make_pair(hal::Gpio(hal::GpioPort::A, 11), hal::Gpio(hal::GpioPort::A, 12));
+        return std::make_pair(hal::gpio::Descriptor(hal::gpio::Port::A, 11),
+                              hal::gpio::Descriptor(hal::gpio::Port::A, 12));
     }
 }
 
@@ -269,8 +273,8 @@ void init(Port port, Speed speed, std::uint32_t task_priority) {
 
     // Configure pin functions.
     const auto [rx_pin, tx_pin] = pin_pair(port);
-    rx_pin.configure(hal::GpioInputMode::Floating);
-    tx_pin.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max50);
+    hal::gpio::configure(rx_pin, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(tx_pin, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_50M);
 
     // Configure alternate function if not the default pin pair (port A).
     AFIO->MAPR &= ~AFIO_MAPR_CAN_REMAP;
