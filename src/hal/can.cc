@@ -21,8 +21,7 @@ namespace {
 // Allow 10 milliseconds for synchronising with the bus.
 constexpr std::uint32_t k_init_timeout = 10;
 
-// TODO: Tune task stack sizes.
-freertos::Task<128> s_task;
+freertos::Task<configMINIMAL_STACK_SIZE> s_task;
 freertos::Queue<Frame, 8> s_tx_queue;
 Speed s_speed;
 std::array<rx_callback_t, 14> s_rx_callbacks{};
