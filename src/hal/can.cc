@@ -1,4 +1,4 @@
-#include <can.hh>
+#include <hal/can.hh>
 
 #include <freertos.hh>
 #include <hal.hh>
@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace can {
+namespace hal::can {
 namespace {
 
 // Allow 10 milliseconds for synchronising with the bus.
@@ -330,4 +330,4 @@ Stats get_stats() {
     };
 }
 
-} // namespace can
+} // namespace hal::can

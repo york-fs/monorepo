@@ -1,11 +1,11 @@
 #include <bms/can_messages.hh>
 #include <bms/error.hh>
 #include <bms/segment_mode.hh>
-#include <can.hh>
 #include <config.hh>
 #include <dti.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <hal/can.hh>
 #include <i2c.hh>
 #include <node_status.hh>
 #include <stm32f103xb.h>
@@ -377,7 +377,7 @@ void supervisor_task(void *) {
     hal::gpio_set(s_wds);
 
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 2);
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 2);
 
     // Enable all IRQs after enabling the watchdog.
     hal::irq_enable(CAN1_SCE_IRQn, 6);
@@ -402,7 +402,7 @@ void supervisor_task(void *) {
         MasterErrorFlags master_flags;
 
         // Check if CAN is functional.
-        if (!can::is_online()) {
+        if (!hal::can::is_online()) {
             master_flags.set(MasterError::CanOffline);
         }
 
@@ -647,7 +647,7 @@ void status_task(void *) {
             .master_flags = data.master_flags,
             .i2c_error_count = i2c_error_count,
         };
-        can::transmit(config::k_bms_can_id, master_status_message);
+        hal::can::transmit(config::k_bms_can_id, master_status_message);
 
         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
         const auto negative_current = static_cast<std::int32_t>(s_negative_sensor.current() * 1000.0f);
@@ -655,7 +655,7 @@ void status_task(void *) {
             .positive_current = positive_current,
             .negative_current = negative_current,
         };
-        can::transmit(config::k_bms_can_id, master_current_message);
+        hal::can::transmit(config::k_bms_can_id, master_current_message);
 
         MasterSummaryMessage master_summary_message{
             .min_voltage = min_voltage,
@@ -663,7 +663,7 @@ void status_task(void *) {
             .min_temperature = min_temperature,
             .max_temperature = max_temperature,
         };
-        can::transmit(config::k_bms_can_id, master_summary_message);
+        hal::can::transmit(config::k_bms_can_id, master_summary_message);
 
         scheduler.delay_until_ms(k_status_period);
     }
@@ -671,7 +671,7 @@ void status_task(void *) {
 
 void control_task(void *) {
     // Install control listeners.
-    can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
+    hal::can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
         s_control_mode.emplace<StartFullDischargeMessage>(message);
     }>(config::k_bms_can_id, 0);
 
@@ -947,17 +947,17 @@ void config_task(void *) {
     }
 
     // Install config message listeners.
-    can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
+    hal::can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
         freertos::InterruptYielder interrupt_yielder;
         s_config_task.notify_give_isr(1, interrupt_yielder);
     }>(config::k_bms_can_id, 1);
-    can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
+    hal::can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
         s_config.segment_start_address = new_config.start_address;
         s_config.segment_count = new_config.segment_count;
         s_config.cell_count = new_config.cell_count;
         s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
     }>(config::k_bms_can_id, 2);
-    can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
+    hal::can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
         s_config.undervoltage_threshold = new_config.undervoltage_threshold;
         s_config.overvoltage_threshold = new_config.overvoltage_threshold;
         s_config.overcurrent_threshold = new_config.overcurrent_threshold;
@@ -1047,9 +1047,9 @@ void swd_task(void *) {
             hal::swd_printf("Shutdown duration: %u\n", *data.shutdown_duration);
         }
 
-        const auto can_stats = can::get_stats();
-        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
-                        can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
+        const auto can_stats = hal::can::get_stats();
+        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", hal::can::is_online() ? "online" : "offline",
+                        can_stats.rx_count, can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
         hal::swd_printf("LVS voltage: %u\n", s_lvs_voltage);
         hal::swd_printf("REF voltage: %u\n", s_ref_voltage);
         hal::swd_printf("MCU temperature: %d\n", s_mcu_temperature);

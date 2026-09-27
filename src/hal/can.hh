@@ -10,7 +10,7 @@
 #include <span>
 #include <variant>
 
-namespace can {
+namespace hal::can {
 
 template <typename T>
 concept HasId = requires {
@@ -302,4 +302,4 @@ void listen(std::uint8_t node_id, std::uint8_t filter) {
         });
 }
 
-} // namespace can
+} // namespace hal::can

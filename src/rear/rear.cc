@@ -1,12 +1,12 @@
 #include <bms/can_messages.hh>
 #include <bms/error.hh>
-#include <can.hh>
 #include <config.hh>
 #include <dti.hh>
 #include <freertos.hh>
 #include <front/can_messages.hh>
 #include <front/shutdown.hh>
 #include <hal.hh>
+#include <hal/can.hh>
 #include <i2c.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/state.hh>
@@ -267,7 +267,7 @@ bool expander_write(ExpanderRegister reg, std::uint8_t value) {
  */
 void control_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 3);
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 3);
 
     // TODO: Instead of having TimeTracked with special handling and not very well defined data consistency between
     //       interrupts and task, each message type could have its own single-entry queue. If the main loop reads a
@@ -298,50 +298,50 @@ void control_task(void *) {
     static std::atomic<std::int8_t> max_cell_temperature;
 
     // Setup front distribution CAN listeners.
-    can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
+    hal::can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
         front_status.receive(message);
     }>(config::k_front_can_id, 0);
-    can::listen<front::ThrottleMessage, [](const front::ThrottleMessage &message) {
+    hal::can::listen<front::ThrottleMessage, [](const front::ThrottleMessage &message) {
         front_throttle.receive(message);
     }>(config::k_front_can_id, 1);
-    can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &message) {
+    hal::can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &message) {
         front_lvs_voltages[0] = message.rtd_voltage;
         front_lvs_voltages[1] = message.apps_1_voltage;
         front_lvs_voltages[2] = message.apps_2_voltage;
         front_lvs_voltages[3] = message.front_voltage;
     }>(config::k_front_can_id, 2);
-    can::listen<front::LvsSampleMessage2, [](const front::LvsSampleMessage2 &message) {
+    hal::can::listen<front::LvsSampleMessage2, [](const front::LvsSampleMessage2 &message) {
         front_lvs_voltages[4] = message.dwin_voltage;
         front_lvs_voltages[5] = message.aux_1_voltage;
         front_lvs_voltages[6] = message.aux_2_voltage;
     }>(config::k_front_can_id, 3);
 
     // Setup precharge CAN listener.
-    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
+    hal::can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
         precharge_status.receive(message);
     }>(config::k_precharge_can_id, 4);
 
     // Setup inverter CAN listeners.
-    can::listen<dti::GeneralData1, [](const dti::GeneralData1 &message) {
+    hal::can::listen<dti::GeneralData1, [](const dti::GeneralData1 &message) {
         inverter_input_voltage.store(message.input_voltage);
         motor_erpm.store(message.erpm);
     }>(config::k_dti_can_id, 5);
-    can::listen<dti::GeneralData2, [](const dti::GeneralData2 &message) {
+    hal::can::listen<dti::GeneralData2, [](const dti::GeneralData2 &message) {
         motor_current.store(message.ac_current);
     }>(config::k_dti_can_id, 6);
-    can::listen<dti::GeneralData3, [](const dti::GeneralData3 &message) {
+    hal::can::listen<dti::GeneralData3, [](const dti::GeneralData3 &message) {
         inverter_gd3.receive(message);
     }>(config::k_dti_can_id, 7);
 
     // Setup BMS CAN listeners.
-    can::listen<bms::MasterStatusMessage, [](const bms::MasterStatusMessage &message) {
+    hal::can::listen<bms::MasterStatusMessage, [](const bms::MasterStatusMessage &message) {
         bms_status.receive(message);
     }>(config::k_bms_can_id, 8);
-    can::listen<bms::MasterCurrentMessage, [](const bms::MasterCurrentMessage &message) {
+    hal::can::listen<bms::MasterCurrentMessage, [](const bms::MasterCurrentMessage &message) {
         positive_current.store(message.positive_current);
         negative_current.store(message.negative_current);
     }>(config::k_bms_can_id, 9);
-    can::listen<bms::MasterSummaryMessage, [](const bms::MasterSummaryMessage &message) {
+    hal::can::listen<bms::MasterSummaryMessage, [](const bms::MasterSummaryMessage &message) {
         min_cell_voltage.store(message.min_voltage);
         max_cell_voltage.store(message.max_voltage);
         min_cell_temperature.store(message.min_temperature);
@@ -525,7 +525,7 @@ void control_task(void *) {
         dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
             .current = 0,
         };
-        can::transmit(config::k_dti_can_id, set_max_charge);
+        hal::can::transmit(config::k_dti_can_id, set_max_charge);
 
         // Cut all power to the inverter if any flags are present preventing TS activation. If this happens, the
         // precharge allows an approximately 250 ms window for the heartbeat to expire before opening the AIRs. That
@@ -534,17 +534,17 @@ void control_task(void *) {
             dti::SetMaxDirectCurrentMessage set_max_discharge{
                 .current = 0,
             };
-            can::transmit(config::k_dti_can_id, set_max_discharge);
+            hal::can::transmit(config::k_dti_can_id, set_max_discharge);
         } else {
             // Good to set 200 amp discharge limit.
             // TODO: Get this from the BMS.
             dti::SetMaxDirectCurrentMessage set_max_discharge{
                 .current = 2000,
             };
-            can::transmit(config::k_dti_can_id, set_max_discharge);
+            hal::can::transmit(config::k_dti_can_id, set_max_discharge);
 
             // Send precharge heatbeat.
-            can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
+            hal::can::transmit(config::k_precharge_can_id, precharge::HeartbeatMessage{});
         }
 
         // Always send a throttle to the inverter to avoid it coasting. If RTD flags are present (including if TS is
@@ -553,12 +553,12 @@ void control_task(void *) {
             dti::SetRelativeCurrentMessage set_relative_current{
                 .percentage = util::clamp(static_cast<std::int16_t>(front_throttle->desired_throttle), 0, 1000),
             };
-            can::transmit(config::k_dti_can_id, set_relative_current);
+            hal::can::transmit(config::k_dti_can_id, set_relative_current);
         } else {
             dti::SetCurrentMessage set_current{
                 .current = 0,
             };
-            can::transmit(config::k_dti_can_id, set_current);
+            hal::can::transmit(config::k_dti_can_id, set_current);
         }
 
         // Broadcast status message.
@@ -567,7 +567,7 @@ void control_task(void *) {
             .ts_prevention_flags = ts_prevention_flags,
             .rtd_prevention_flags = rtd_prevention_flags,
         };
-        can::transmit(config::k_rear_can_id, status_message);
+        hal::can::transmit(config::k_rear_can_id, status_message);
 
         // Write to GPIO expander outputs.
         std::uint8_t expander_out = 0;
@@ -754,9 +754,9 @@ void swd_task(void *) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
 
-        const auto can_stats = can::get_stats();
-        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
-                        can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
+        const auto can_stats = hal::can::get_stats();
+        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", hal::can::is_online() ? "online" : "offline",
+                        can_stats.rx_count, can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
     }
 }
 

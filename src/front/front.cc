@@ -1,10 +1,10 @@
-#include <can.hh>
 #include <config.hh>
 #include <freertos.hh>
 #include <front/apps.hh>
 #include <front/can_messages.hh>
 #include <front/shutdown.hh>
 #include <hal.hh>
+#include <hal/can.hh>
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/state.hh>
@@ -70,17 +70,17 @@ hal::Gpio s_rtd_button_led(hal::GpioPort::C, 13);
 
 void main_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 4);
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 4);
 
     // Setup CAN listeners.
-    can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
+    hal::can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
         freertos::InterruptYielder interrupt_yielder;
         const auto previous = s_precharge_state.receive(precharge_status.state);
         if (!previous || *previous != precharge_status.state) {
             s_led_task.notify_give_isr(0, interrupt_yielder);
         }
     }>(config::k_precharge_can_id, 0);
-    can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
+    hal::can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
         freertos::InterruptYielder interrupt_yielder;
         const auto previous = s_rear_status.receive(rear_status);
         if (!previous || previous->rtd_prevention_flags.value() != rear_status.rtd_prevention_flags.value()) {
@@ -213,7 +213,7 @@ void main_task(void *) {
             .rtd_activation_desired = rtd_activation_desired.has_value(),
             .apps_calibrated = apps_calibrated,
         };
-        can::transmit(config::k_front_can_id, status_message);
+        hal::can::transmit(config::k_front_can_id, status_message);
 
         // Calculate LVS voltages by reversing the 5.7x divider on each.
         std::array<std::uint16_t, 7> fuse_voltages{};
@@ -227,14 +227,14 @@ void main_task(void *) {
             .apps_2_voltage = fuse_voltages[2],
             .front_voltage = fuse_voltages[3],
         };
-        can::transmit(config::k_front_can_id, lvs_sample_message_1);
+        hal::can::transmit(config::k_front_can_id, lvs_sample_message_1);
 
         LvsSampleMessage2 lvs_sample_message_2{
             .dwin_voltage = fuse_voltages[4],
             .aux_1_voltage = fuse_voltages[5],
             .aux_2_voltage = fuse_voltages[6],
         };
-        can::transmit(config::k_front_can_id, lvs_sample_message_2);
+        hal::can::transmit(config::k_front_can_id, lvs_sample_message_2);
 
         // Update node status temperature.
         node_status::update((k_mcu_vref * s_adc_buffer[9]) >> 12);
@@ -274,7 +274,7 @@ void throttle_task(void *) {
             .raw_1 = s_adc_buffer[7],
             .raw_2 = s_adc_buffer[8],
         };
-        can::transmit(config::k_front_can_id, throttle_message);
+        hal::can::transmit(config::k_front_can_id, throttle_message);
 
         scheduler.delay_until_ms(k_throttle_period);
     }
@@ -396,9 +396,9 @@ void swd_task(void *) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Uptime: %u\n", freertos::uptime_ms() / 1000);
 
-        const auto can_stats = can::get_stats();
-        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", can::is_online() ? "online" : "offline", can_stats.rx_count,
-                        can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
+        const auto can_stats = hal::can::get_stats();
+        hal::swd_printf("CAN status: %s %u/%u %u/%u\n", hal::can::is_online() ? "online" : "offline",
+                        can_stats.rx_count, can_stats.lost_rx_count, can_stats.tx_count, can_stats.lost_tx_count);
     }
 }
 

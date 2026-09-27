@@ -1,7 +1,7 @@
-#include <can.hh>
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <hal/can.hh>
 #include <node_status.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/error.hh>
@@ -312,8 +312,8 @@ std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms
 
 void sm_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 1);
-    can::listen<HeartbeatMessage, [](const HeartbeatMessage &) {
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 1);
+    hal::can::listen<HeartbeatMessage, [](const HeartbeatMessage &) {
         s_heartbeat.receive({});
     }>(config::k_precharge_can_id, 0);
 
@@ -446,7 +446,7 @@ void sm_task(void *) {
             .relay_states = relay_states,
             .state = state,
         };
-        can::transmit(config::k_precharge_can_id, status_message);
+        hal::can::transmit(config::k_precharge_can_id, status_message);
 
         // Update node status temperature.
         const auto mcu_temp_voltage = (k_mcu_vref * adc_buffer[2]) >> 12;

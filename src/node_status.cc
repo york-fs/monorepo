@@ -1,7 +1,7 @@
 #include <node_status.hh>
 
-#include <can.hh>
 #include <freertos.hh>
+#include <hal/can.hh>
 #include <util/stream.hh>
 
 #include <cstdint>
@@ -22,25 +22,25 @@ void tx_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         const auto queue_data = *s_queue.receive(portMAX_DELAY);
-        const auto can_stats = can::get_stats();
+        const auto can_stats = hal::can::get_stats();
 
         NodeStatusMessage1 message_1{
             .can_rx_count = can_stats.rx_count,
             .can_tx_count = can_stats.tx_count,
         };
-        can::transmit(s_node_id, message_1);
+        hal::can::transmit(s_node_id, message_1);
 
         NodeStatusMessage2 message_2{
             .can_lost_rx_count = can_stats.lost_rx_count,
             .can_lost_tx_count = can_stats.lost_tx_count,
         };
-        can::transmit(s_node_id, message_2);
+        hal::can::transmit(s_node_id, message_2);
 
         NodeStatusMessage3 message_3{
             .uptime_ms = freertos::uptime_ms(),
             .mcu_temp = queue_data.mcu_temp,
         };
-        can::transmit(s_node_id, message_3);
+        hal::can::transmit(s_node_id, message_3);
 
         scheduler.delay_until_ms(1000);
     }

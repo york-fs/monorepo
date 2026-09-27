@@ -1,9 +1,9 @@
-#include <can.hh>
 #include <charger/can_messages.hh>
 #include <charger/error.hh>
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <hal/can.hh>
 
 #include <FreeRTOS.h>
 #include <semphr.h>
@@ -135,8 +135,8 @@ hal::Gpio s_led(hal::GpioPort::B, 6);
 
 void control_task(void *) {
     // Initialise CAN on port B.
-    can::init(can::Port::B, config::k_can_speed, 3);
-    can::listen<ControlMessage, [](const ControlMessage &control_message) {
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 3);
+    hal::can::listen<ControlMessage, [](const ControlMessage &control_message) {
         freertos::InterruptYielder interrupt_yielder;
         s_control_queue.send_to_back_isr(control_message, interrupt_yielder);
     }>(config::k_charger_can_id, 0);
@@ -222,7 +222,7 @@ void control_task(void *) {
         if (!enable_requested) {
             error_flags.set(Error::Disabled);
         }
-        if (!can::is_online()) {
+        if (!hal::can::is_online()) {
             error_flags.set(Error::CanOffline);
         }
 
@@ -248,7 +248,7 @@ void control_task(void *) {
             .charge_voltage = charge_voltage,
             .enabled = enable,
         };
-        can::transmit(config::k_charger_can_id, status_message);
+        hal::can::transmit(config::k_charger_can_id, status_message);
 
         // Update SWD data.
         SwdData swd_data{
@@ -270,7 +270,7 @@ void swd_task(void *) {
 
         hal::swd_printf("-------------------------\n");
         hal::swd_printf("Enabled: %s\n", data.enabled ? "yes" : "no");
-        hal::swd_printf("CAN online: %s\n", can::is_online() ? "yes" : "no");
+        hal::swd_printf("CAN online: %s\n", hal::can::is_online() ? "yes" : "no");
         hal::swd_printf("Error flags: 0x%x\n", data.error_flags.value());
         hal::swd_printf("Charge voltage: %u mV\n", data.charge_voltage);
         hal::swd_printf("Target current: %u mA\n", data.target_current);

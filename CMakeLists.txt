@@ -112,21 +112,21 @@ elseif(BUILD_TARGET STREQUAL "stm32")
         FREERTOS src/bms/segment_freertos_config.h
         CLOCK 8)
     add_stm_executable(bms-master
-        SOURCES src/bms/characterisation.cc src/bms/master.cc src/can.cc src/node_status.cc
+        SOURCES src/bms/characterisation.cc src/bms/master.cc src/hal/can.cc src/node_status.cc
         FREERTOS src/bms/master_freertos_config.h)
     add_stm_executable(charger
-        SOURCES src/charger/charger.cc src/can.cc
+        SOURCES src/charger/charger.cc src/hal/can.cc
         FREERTOS src/charger/freertos_config.h)
     add_stm_executable(front
-        SOURCES src/front/front.cc src/can.cc src/node_status.cc
+        SOURCES src/front/front.cc src/hal/can.cc src/node_status.cc
         FREERTOS src/front/freertos_config.h)
     add_stm_executable(logging-board
         SOURCES src/logging_board.cc)
     add_stm_executable(precharge
-        SOURCES src/precharge/precharge.cc src/can.cc src/node_status.cc
+        SOURCES src/precharge/precharge.cc src/hal/can.cc src/node_status.cc
         FREERTOS src/precharge/freertos_config.h)
     add_stm_executable(rear
-        SOURCES src/rear/rear.cc src/can.cc
+        SOURCES src/rear/rear.cc src/hal/can.cc
         FREERTOS src/rear/freertos_config.h)
     target_link_libraries(logging-board PRIVATE protodef)
 else()

@@ -1,6 +1,6 @@
 #include <dti.hh>
 
-#include <can.hh>
+#include <hal/can.hh>
 #include <util/stream.hh>
 
 #include <cstdint>

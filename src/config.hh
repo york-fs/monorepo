@@ -1,12 +1,12 @@
 #pragma once
 
-#include <can.hh>
+#include <hal/can.hh>
 
 #include <cstdint>
 
 namespace config {
 
-constexpr auto k_can_speed = can::Speed::_500;
+constexpr auto k_can_speed = hal::can::Speed::_500;
 
 constexpr std::uint8_t k_rear_can_id = 0x1;
 constexpr std::uint8_t k_front_can_id = 0x2;
