@@ -120,15 +120,12 @@ elseif(BUILD_TARGET STREQUAL "stm32")
     add_stm_executable(front
         SOURCES src/front/front.cc src/hal/can.cc src/node_status.cc
         FREERTOS src/front/freertos_config.h)
-    add_stm_executable(logging-board
-        SOURCES src/logging_board.cc)
     add_stm_executable(precharge
         SOURCES src/precharge/precharge.cc src/hal/can.cc src/node_status.cc
         FREERTOS src/precharge/freertos_config.h)
     add_stm_executable(rear
         SOURCES src/rear/rear.cc src/hal/can.cc
         FREERTOS src/rear/freertos_config.h)
-    target_link_libraries(logging-board PRIVATE protodef)
 else()
     message(FATAL_ERROR "Unknown target ${BUILD_TARGET}")
 endif()
