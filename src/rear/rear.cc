@@ -7,6 +7,7 @@
 #include <front/shutdown.hh>
 #include <hal.hh>
 #include <hal/can.hh>
+#include <hal/gpio.hh>
 #include <i2c.hh>
 #include <precharge/can_messages.hh>
 #include <precharge/state.hh>
@@ -59,6 +60,26 @@ constexpr std::uint32_t k_mcu_vref = 3300;
  * @brief I2C address of the GPIO expander.
  */
 constexpr std::uint8_t k_expander_address = 0x20;
+
+/**
+ * @brief I2C pins for GPIO expander.
+ */
+constexpr hal::gpio::Descriptor k_scl(hal::gpio::Port::B, 6);
+constexpr hal::gpio::Descriptor k_sda(hal::gpio::Port::B, 7);
+
+/**
+ * @brief General pins.
+ */
+constexpr hal::gpio::Descriptor k_dti_ok_sample(hal::gpio::Port::B, 2);
+constexpr hal::gpio::Descriptor k_brake_switch(hal::gpio::Port::B, 10);
+
+/**
+ * @brief UART pins for telemetry radio.
+ */
+constexpr hal::gpio::Descriptor k_radio_tx(hal::gpio::Port::A, 9);
+constexpr hal::gpio::Descriptor k_radio_rx(hal::gpio::Port::A, 10);
+constexpr hal::gpio::Descriptor k_radio_cts(hal::gpio::Port::A, 11);
+constexpr hal::gpio::Descriptor k_radio_rts(hal::gpio::Port::A, 12);
 
 enum class ExpanderRegister : std::uint8_t {
     InputPort0 = 0x00,
@@ -358,17 +379,13 @@ void control_task(void *) {
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
 
     // Configure expander I2C pins for peripheral use and initialise the state machine.
-    hal::Gpio scl(hal::GpioPort::B, 6);
-    hal::Gpio sda(hal::GpioPort::B, 7);
-    scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-    sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    hal::gpio::configure(k_scl, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_sda, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_2M);
     s_i2c_sm.init();
 
     // Configure the DTI_OK and brake switch sample pins which are not on the expander.
-    hal::Gpio dti_ok_sample(hal::GpioPort::B, 2);
-    hal::Gpio brake_switch(hal::GpioPort::B, 10);
-    dti_ok_sample.configure(hal::GpioInputMode::Floating);
-    brake_switch.configure(hal::GpioInputMode::Floating);
+    hal::gpio::configure(k_dti_ok_sample, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_brake_switch, hal::gpio::InputMode::Floating);
 
     // Enable CAN, ADC, and I2C IRQs.
     hal::irq_enable(CAN1_SCE_IRQn, 5);
@@ -454,7 +471,7 @@ void control_task(void *) {
         if ((expander_port_1 & (1u << 3)) != 0) {
             rear_shutdown_samples.set(RearShutdownSample::ImdOk);
         }
-        if (dti_ok_sample.read()) {
+        if (hal::gpio::read(k_dti_ok_sample)) {
             rear_shutdown_samples.set(RearShutdownSample::DtiOk);
         }
 
@@ -511,7 +528,7 @@ void control_task(void *) {
         rtd_latched &= rtd_prevention_flags.none_set();
 
         // Brake switch RTD flag is latched since it's only required when activating RTD.
-        const bool brake_pressed = brake_switch.read();
+        const bool brake_pressed = hal::gpio::read(k_brake_switch);
         if (!rtd_latched && !brake_pressed) {
             rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
         }
@@ -607,14 +624,10 @@ void radio_task(void *) {
     vTaskDelay(pdMS_TO_TICKS(50));
 
     // Configure GPIOs.
-    hal::Gpio radio_tx(hal::GpioPort::A, 9);
-    hal::Gpio radio_rx(hal::GpioPort::A, 10);
-    hal::Gpio radio_cts(hal::GpioPort::A, 11);
-    hal::Gpio radio_rts(hal::GpioPort::A, 12);
-    radio_tx.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
-    radio_rx.configure(hal::GpioInputMode::Floating);
-    radio_cts.configure(hal::GpioInputMode::Floating);
-    radio_rts.configure(hal::GpioInputMode::PullDown);
+    hal::gpio::configure(k_radio_tx, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_radio_rx, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_radio_cts, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_radio_rts, hal::gpio::InputMode::PullDown);
 
     // Enable peripheral clocks.
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
@@ -650,7 +663,7 @@ void radio_task(void *) {
         scheduler.delay_until_ms(k_radio_period);
 
         // Don't transmit if the radio's UART buffer is near full.
-        if (radio_cts.read()) {
+        if (hal::gpio::read(k_radio_cts)) {
             missed_tx_count++;
             continue;
         }
