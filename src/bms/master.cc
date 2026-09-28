@@ -6,6 +6,7 @@
 #include <freertos.hh>
 #include <hal.hh>
 #include <hal/can.hh>
+#include <hal/gpio.hh>
 #include <i2c.hh>
 #include <node_status.hh>
 #include <stm32f103xb.h>
@@ -206,6 +207,47 @@ static_assert(k_maximum_reaction_time > k_shutdown_assert_delay + k_supervisor_p
  */
 constexpr std::uint32_t k_schedule_tolerance = pdMS_TO_TICKS(k_maximum_reaction_time - k_shutdown_assert_delay);
 
+/**
+ * @brief GPIO pins for external watchdog control.
+ */
+constexpr hal::gpio::Descriptor k_wdi(hal::gpio::Port::A, 3);
+constexpr hal::gpio::Descriptor k_wds(hal::gpio::Port::A, 4);
+
+/**
+ * @brief Analog rail sensing pins.
+ */
+constexpr hal::gpio::Descriptor k_lvs_sample(hal::gpio::Port::A, 1);
+constexpr hal::gpio::Descriptor k_ref_sample(hal::gpio::Port::A, 7);
+
+/**
+ * @brief GPIO pin for shutdown output.
+ */
+constexpr hal::gpio::Descriptor k_shutdown_output(hal::gpio::Port::B, 1);
+
+/**
+ * @brief GPIO pin for onboard LED.
+ */
+constexpr hal::gpio::Descriptor k_led(hal::gpio::Port::B, 5);
+
+/**
+ * @brief I2C pins for segment and EEPROM communication.
+ */
+constexpr hal::gpio::Descriptor k_eeprom_wc(hal::gpio::Port::B, 2);
+constexpr hal::gpio::Descriptor k_scl_1(hal::gpio::Port::B, 6);
+constexpr hal::gpio::Descriptor k_sda_1(hal::gpio::Port::B, 7);
+constexpr hal::gpio::Descriptor k_scl_2(hal::gpio::Port::B, 10);
+constexpr hal::gpio::Descriptor k_sda_2(hal::gpio::Port::B, 11);
+
+/**
+ * @brief Current sensing SPI, analog switch control, and threshold overcurrent trigger pins.
+ */
+constexpr hal::gpio::Descriptor k_current_switch(hal::gpio::Port::A, 10);
+constexpr hal::gpio::Descriptor k_adc_cs(hal::gpio::Port::A, 8);
+constexpr hal::gpio::Descriptor k_sck(hal::gpio::Port::B, 13);
+constexpr hal::gpio::Descriptor k_miso(hal::gpio::Port::B, 14);
+constexpr hal::gpio::Descriptor k_oc_n(hal::gpio::Port::A, 11);
+constexpr hal::gpio::Descriptor k_oc_p(hal::gpio::Port::A, 12);
+
 struct Config {
     // Segment config.
     std::uint8_t segment_start_address;
@@ -313,31 +355,6 @@ freertos::Queue<SwdData, 1> s_swd_queue;
 // Task timing.
 TickType_t s_last_segment_sample_time = 0;
 
-// Watchdog pins.
-hal::Gpio s_wdi(hal::GpioPort::A, 3);
-hal::Gpio s_wds(hal::GpioPort::A, 4);
-
-hal::Gpio s_lvs_sample(hal::GpioPort::A, 1);
-hal::Gpio s_ref_sample(hal::GpioPort::A, 7);
-hal::Gpio s_oc_n(hal::GpioPort::A, 11);
-hal::Gpio s_oc_p(hal::GpioPort::A, 12);
-
-hal::Gpio s_shutdown(hal::GpioPort::B, 1);
-hal::Gpio s_eeprom_wc(hal::GpioPort::B, 2);
-hal::Gpio s_led(hal::GpioPort::B, 5);
-
-// I2C pins.
-hal::Gpio s_scl_1(hal::GpioPort::B, 6);
-hal::Gpio s_sda_1(hal::GpioPort::B, 7);
-hal::Gpio s_scl_2(hal::GpioPort::B, 10);
-hal::Gpio s_sda_2(hal::GpioPort::B, 11);
-
-// Switch and ADC SPI pins for current sensing.
-hal::Gpio s_current_switch(hal::GpioPort::A, 10);
-hal::Gpio s_adc_cs(hal::GpioPort::A, 8);
-hal::Gpio s_sck(hal::GpioPort::B, 13);
-hal::Gpio s_miso(hal::GpioPort::B, 14);
-
 std::uint32_t compute_crc(std::span<const std::uint8_t> data) {
     return freertos::in_critical_section([&] {
         return hal::crc_compute(data);
@@ -374,7 +391,7 @@ void supervisor_task(void *) {
     fault_cleared_time.emplace(k_shutdown_start_delay - k_shutdown_deassert_delay);
 
     // Enable the external TPS3851 watchdog.
-    hal::gpio_set(s_wds);
+    hal::gpio::set(k_wds);
 
     // Initialise CAN on port B.
     hal::can::init(hal::can::Port::B, config::k_can_speed, 2);
@@ -438,7 +455,7 @@ void supervisor_task(void *) {
         }
 
         // Check overcurrent threshold pins coming from the current sensors. These pins are active-low.
-        if (!s_oc_n.read() || !s_oc_p.read()) {
+        if (!hal::gpio::read(k_oc_n) || !hal::gpio::read(k_oc_p)) {
             master_flags.set(MasterError::OvercurrentThreshold);
         }
 
@@ -544,7 +561,7 @@ void supervisor_task(void *) {
         }
 
         // Update the shutdown pin as the first priority. The pin is inverted since active-high signals no fault.
-        s_shutdown.write(!shutdown_time.has_value());
+        hal::gpio::write(k_shutdown_output, !shutdown_time.has_value());
 
         // Signal the control task to keep working.
         if (!shutdown_time) {
@@ -577,8 +594,8 @@ void supervisor_task(void *) {
         // Feed the watchdog and wait until next supervision period. The TPS3851 is extremely fast and only needs a 50
         // ns pulse, so we don't need any delays here. A longer pulse is fine since it is still orders of magnitude
         // before the timeout period.
-        hal::gpio_reset(s_wdi);
-        hal::gpio_set(s_wdi);
+        hal::gpio::reset(k_wdi);
+        hal::gpio::set(k_wdi);
         scheduler.delay_until_ms(k_supervisor_period);
     }
 }
@@ -860,9 +877,9 @@ bool eeprom_read(std::uint16_t page_index, T &object) {
 bool eeprom_write_page(std::uint16_t page_index, std::span<const std::uint8_t> page) {
     // Allow writes.
     util::ScopeGuard wc_guard([] {
-        hal::gpio_set(s_eeprom_wc);
+        hal::gpio::set(k_eeprom_wc);
     });
-    hal::gpio_reset(s_eeprom_wc);
+    hal::gpio::reset(k_eeprom_wc);
 
     const auto address = page_index * k_eeprom_page_size;
     const auto to_copy = std::min(page.size(), static_cast<std::size_t>(k_eeprom_page_size));
@@ -1110,8 +1127,8 @@ extern "C" void TIM3_IRQHandler() {
     EXTI->IMR |= EXTI_IMR_MR14;
 
     // Initiate an ADC conversion.
-    hal::gpio_set(s_adc_cs);
-    hal::gpio_reset(s_adc_cs);
+    hal::gpio::set(k_adc_cs);
+    hal::gpio::reset(k_adc_cs);
 }
 
 extern "C" void EXTI15_10_IRQHandler() {
@@ -1119,10 +1136,10 @@ extern "C" void EXTI15_10_IRQHandler() {
     EXTI->PR = EXTI_PR_PR14;
 
     // Skip over the MAX11163's busy bit by clocking once manually.
-    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max10);
-    hal::gpio_set(s_sck);
-    hal::gpio_reset(s_sck);
-    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_10M);
+    hal::gpio::set(k_sck);
+    hal::gpio::reset(k_sck);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
 
     // Disable the external interrupt so that it doesn't false trigger when doing the real SPI transfer.
     EXTI->IMR &= ~EXTI_IMR_MR14;
@@ -1143,9 +1160,9 @@ extern "C" void SPI2_IRQHandler() {
 
         s_selected_sensor = !s_selected_sensor;
         if (s_selected_sensor) {
-            hal::gpio_reset(s_current_switch);
+            hal::gpio::reset(k_current_switch);
         } else {
-            hal::gpio_set(s_current_switch);
+            hal::gpio::set(k_current_switch);
         }
     }
 }
@@ -1197,42 +1214,40 @@ void vApplicationIdleHook() {
 }
 
 void app_main() {
-    // Configure ADC inputs.
-    s_lvs_sample.configure(hal::GpioInputMode::Analog);
-    s_ref_sample.configure(hal::GpioInputMode::Analog);
-
     // Configure watchdog input (feed) and set pins. Default WDI to high since the watchdog feeds on a falling edge.
-    s_wdi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_wds.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    hal::gpio_set(s_wdi);
+    hal::gpio::configure(k_wdi, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_wds, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::set(k_wdi);
 
-    // The overcurrent pins have external pull-ups.
-    s_oc_n.configure(hal::GpioInputMode::Floating);
-    s_oc_p.configure(hal::GpioInputMode::Floating);
+    // Configure analog input pins.
+    hal::gpio::configure(k_lvs_sample, hal::gpio::InputMode::Analog);
+    hal::gpio::configure(k_ref_sample, hal::gpio::InputMode::Analog);
 
-    // Shutdown output is push-pull but also has an external pull-down in case of MCU failure.
-    s_shutdown.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_eeprom_wc.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    // Configure shutdown output pin, which is push-pull but also has an external pull-down in case of MCU failure.
+    hal::gpio::configure(k_shutdown_output, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
 
-    // Default write control pin high (writes disabled).
-    hal::gpio_set(s_eeprom_wc);
+    // Configure LED drive pin.
+    hal::gpio::configure(k_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+
+    // Configure current sensor overcurrent threshold pins. These pins have external pull-ups.
+    hal::gpio::configure(k_oc_n, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_oc_p, hal::gpio::InputMode::Floating);
+
+    // Configure EEPROM write control pin and default it to high (writes disabled).
+    hal::gpio::configure(k_eeprom_wc, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::set(k_eeprom_wc);
 
     // Configure I2C pins for peripheral use.
-    s_scl_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
-    s_sda_1.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
-    s_scl_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
-    s_sda_2.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max2);
+    hal::gpio::configure(k_scl_1, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_sda_1, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_scl_2, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_sda_2, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_2M);
 
     // Configure current sensing and SPI pins. Drive SCK to avoid the ADC going into sleep.
-    s_current_switch.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_miso.configure(hal::GpioInputMode::PullUp);
-
-    // Lock pins whose configurations don't need to change.
-    hal::gpio_lock(s_lvs_sample, s_ref_sample, s_adc_cs, s_current_switch, s_wdi, s_wds, s_oc_n, s_oc_p, s_shutdown,
-                   s_eeprom_wc, s_led, s_miso);
+    hal::gpio::configure(k_current_switch, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_adc_cs, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_miso, hal::gpio::InputMode::PullUp);
 
     // Enable the backup domain and disable write protection.
     RCC->APB1ENR |= RCC_APB1ENR_BKPEN;
@@ -1241,7 +1256,7 @@ void app_main() {
     // Perform watchdog self-test if needed.
     if (std::exchange(BKP->DR1, 0xaaaa) != 0xaaaa) {
         // Activate the watchdog and don't feed it to force a reset.
-        hal::gpio_set(s_wds, s_led);
+        hal::gpio::set(k_wds, k_led);
         while (true) {
             hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
         }
@@ -1287,6 +1302,6 @@ void app_main() {
     vTaskStartScheduler();
     while (true) {
         // If we somehow get here, signal shutdown and let the watchdog timeout.
-        hal::gpio_reset(s_shutdown);
+        hal::gpio::reset(k_shutdown_output);
     }
 }
