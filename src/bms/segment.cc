@@ -5,6 +5,7 @@
 #include <i2c.hh>
 #include <stm32f103xb.h>
 #include <util/numeric.hh>
+#include <util/scope_guard.hh>
 #include <util/stream.hh>
 
 #include <FreeRTOS.h>
@@ -183,7 +184,11 @@ hal::Gpio s_sda(hal::GpioPort::B, 7);
         static_cast<std::uint8_t>(balance),
         selection,
     };
-    if (!hal::spi_transfer(SPI2, s_afe_cs, bytes, 1)) {
+    util::ScopeGuard cs_guard([] {
+        hal::gpio_set(s_afe_cs);
+    });
+    hal::gpio_reset(s_afe_cs);
+    if (!hal::spi_transfer(SPI2, bytes, 1)) {
         return false;
     }
 
@@ -207,7 +212,11 @@ std::optional<std::uint16_t> adc_sample_raw() {
 
     // Read value over SPI.
     std::array<std::uint8_t, 2> bytes{};
-    if (!hal::spi_transfer(SPI2, s_adc_cs, bytes, 2)) {
+    util::ScopeGuard cs_guard([] {
+        hal::gpio_set(s_adc_cs);
+    });
+    hal::gpio_reset(s_adc_cs);
+    if (!hal::spi_transfer(SPI2, bytes, 2)) {
         return std::nullopt;
     }
 

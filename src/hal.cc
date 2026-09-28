@@ -460,13 +460,7 @@ void spi_init_master(SPI_TypeDef *spi, std::uint32_t baud_rate) {
     spi->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | baud_rate | SPI_CR1_MSTR;
 }
 
-bool spi_transfer(SPI_TypeDef *spi, const Gpio &chip_select, std::span<std::uint8_t> data, std::uint32_t timeout) {
-    // Pull CS low and create a scope guard to pull it high again on return.
-    util::ScopeGuard cs_guard([&chip_select] {
-        hal::gpio_set(chip_select);
-    });
-    hal::gpio_reset(chip_select);
-
+bool spi_transfer(SPI_TypeDef *spi, std::span<std::uint8_t> data, std::uint32_t timeout) {
     // Transmit and receive each byte.
     for (auto &byte : data) {
         // Transmit byte.

@@ -451,11 +451,10 @@ void spi_init_master(SPI_TypeDef *spi, std::uint32_t baud_rate);
  * slave.
  *
  * @param spi the target SPI peripheral
- * @param chip_select the chip select pin of the target slave
  * @param data the bidirectional buffer to transmit from and receive the slave's response into
  * @param timeout the maximum time to wait for transmit and receive readiness in milliseconds
  */
-bool spi_transfer(SPI_TypeDef *spi, const Gpio &chip_select, std::span<std::uint8_t> data, std::uint32_t timeout);
+bool spi_transfer(SPI_TypeDef *spi, std::span<std::uint8_t> data, std::uint32_t timeout);
 
 /**
  * @brief Writes a single character to the SWO SWD output.
