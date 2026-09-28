@@ -17,20 +17,6 @@
 namespace hal {
 namespace {
 
-void set_gpio(GPIO_TypeDef *port, std::uint32_t pin, std::uint32_t cnf, std::uint32_t mode) {
-    const auto shift = (pin % 8) * 4;
-    auto &reg = pin > 7 ? port->CRH : port->CRL;
-    reg &= ~(0xf << shift);
-    reg |= cnf << (shift + 2);
-    reg |= mode << shift;
-}
-
-GPIO_TypeDef *gpio_port(GpioPort port) {
-    return std::array{
-        GPIOA, GPIOB, GPIOC, GPIOD, GPIOE,
-    }[static_cast<std::uint32_t>(port)];
-}
-
 template <typename Predicate>
 bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
     // Start TIM2 with a 1 ms period.
@@ -53,45 +39,6 @@ bool wait_until(std::uint32_t timeout, Predicate &&predicate) {
 }
 
 } // namespace
-
-Gpio::Gpio(GpioPort port, std::uint8_t pin) : m_port(gpio_port(port)), m_pin(pin) {}
-
-void Gpio::configure(GpioInputMode mode) const {
-    auto cnf_bits = static_cast<std::uint32_t>(mode);
-    if (mode == GpioInputMode::PullDown || mode == GpioInputMode::PullUp) {
-        cnf_bits = 0b10u;
-    }
-    set_gpio(m_port, m_pin, cnf_bits, 0b00u);
-    if (mode == GpioInputMode::PullUp) {
-        hal::gpio_set(*this);
-    } else if (mode == GpioInputMode::PullDown) {
-        hal::gpio_reset(*this);
-    }
-}
-
-void Gpio::configure(GpioOutputMode mode, GpioOutputSpeed speed) const {
-    set_gpio(m_port, m_pin, static_cast<std::uint32_t>(mode), static_cast<std::uint32_t>(speed));
-    hal::gpio_reset(*this);
-}
-
-bool Gpio::read() const {
-    return (m_port->IDR & (1u << m_pin)) != 0u;
-}
-
-void Gpio::write(bool value) const {
-    if (value) {
-        hal::gpio_set(*this);
-    } else {
-        hal::gpio_reset(*this);
-    }
-}
-
-void gpio_lock(GPIO_TypeDef *port, std::uint16_t bitset) {
-    port->LCKR = GPIO_LCKR_LCKK | bitset;
-    port->LCKR = static_cast<std::uint32_t>(bitset);
-    port->LCKR = GPIO_LCKR_LCKK | bitset;
-    port->LCKR;
-}
 
 void irq_enable(IRQn_Type irq, std::uint32_t priority) {
     NVIC_SetPriority(irq, priority);
