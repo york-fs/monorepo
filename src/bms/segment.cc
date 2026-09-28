@@ -2,6 +2,7 @@
 #include <config.hh>
 #include <freertos.hh>
 #include <hal.hh>
+#include <hal/gpio.hh>
 #include <i2c.hh>
 #include <stm32f103xb.h>
 #include <util/numeric.hh>
@@ -90,6 +91,56 @@ constexpr std::array<std::array<std::uint32_t, 3>, 8> k_thermistor_mapping{{
 }};
 static_assert(k_thermistor_mapping.size() * k_thermistor_mapping[0].size() == k_thermistor_count);
 
+/**
+ * @brief GPIO pins for I2C slave address configuration.
+ */
+constexpr std::array k_address_pins{
+    hal::gpio::Descriptor(hal::gpio::Port::A, 8),
+    hal::gpio::Descriptor(hal::gpio::Port::A, 9),
+    hal::gpio::Descriptor(hal::gpio::Port::A, 10),
+    hal::gpio::Descriptor(hal::gpio::Port::A, 11),
+};
+
+/**
+ * @brief GPIO pins for thermistor MUX control and sampling.
+ */
+constexpr hal::gpio::Descriptor k_rail_sample(hal::gpio::Port::A, 1);
+constexpr std::array k_mux_sample{
+    hal::gpio::Descriptor(hal::gpio::Port::A, 2),
+    hal::gpio::Descriptor(hal::gpio::Port::A, 3),
+    hal::gpio::Descriptor(hal::gpio::Port::A, 4),
+};
+constexpr hal::gpio::Descriptor k_mux_en(hal::gpio::Port::B, 10);
+constexpr std::array k_mux_control{
+    hal::gpio::Descriptor(hal::gpio::Port::B, 11),
+    hal::gpio::Descriptor(hal::gpio::Port::B, 9),
+    hal::gpio::Descriptor(hal::gpio::Port::B, 8),
+};
+
+/**
+ * @brief General pins.
+ */
+constexpr hal::gpio::Descriptor k_wakeup(hal::gpio::Port::A, 0);
+constexpr hal::gpio::Descriptor k_afe_en(hal::gpio::Port::B, 0);
+constexpr hal::gpio::Descriptor k_ref_en(hal::gpio::Port::B, 1);
+constexpr hal::gpio::Descriptor k_led(hal::gpio::Port::B, 5);
+constexpr hal::gpio::Descriptor k_ref_sample(hal::gpio::Port::A, 7);
+
+/**
+ * @brief SPI pins for ADC and AFE.
+ */
+constexpr hal::gpio::Descriptor k_adc_cs(hal::gpio::Port::A, 5);
+constexpr hal::gpio::Descriptor k_afe_cs(hal::gpio::Port::A, 6);
+constexpr hal::gpio::Descriptor k_sck(hal::gpio::Port::B, 13);
+constexpr hal::gpio::Descriptor k_miso(hal::gpio::Port::B, 14);
+constexpr hal::gpio::Descriptor k_mosi(hal::gpio::Port::B, 15);
+
+/**
+ * @brief I2C pins for master communication.
+ */
+constexpr hal::gpio::Descriptor k_scl(hal::gpio::Port::B, 6);
+constexpr hal::gpio::Descriptor k_sda(hal::gpio::Port::B, 7);
+
 // I2C communication to master.
 i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
 std::uint8_t s_i2c_address = 0;
@@ -119,46 +170,6 @@ freertos::Task<128> s_sample_voltages_task;
 freertos::Task<128> s_sample_temperatures_task;
 freertos::Task<128> s_swd_task;
 
-// I2C slave address configuration pins.
-std::array s_address_pins{
-    hal::Gpio(hal::GpioPort::A, 8),
-    hal::Gpio(hal::GpioPort::A, 9),
-    hal::Gpio(hal::GpioPort::A, 10),
-    hal::Gpio(hal::GpioPort::A, 11),
-};
-
-// Thermistor control and input pins.
-hal::Gpio s_rail_sample(hal::GpioPort::A, 1);
-std::array s_mux_sample{
-    hal::Gpio(hal::GpioPort::A, 2),
-    hal::Gpio(hal::GpioPort::A, 3),
-    hal::Gpio(hal::GpioPort::A, 4),
-};
-hal::Gpio s_mux_en(hal::GpioPort::B, 10);
-std::array s_mux_control{
-    hal::Gpio(hal::GpioPort::B, 11),
-    hal::Gpio(hal::GpioPort::B, 9),
-    hal::Gpio(hal::GpioPort::B, 8),
-};
-
-// General pins.
-hal::Gpio s_wakeup(hal::GpioPort::A, 0);
-hal::Gpio s_afe_en(hal::GpioPort::B, 0);
-hal::Gpio s_ref_en(hal::GpioPort::B, 1);
-hal::Gpio s_led(hal::GpioPort::B, 5);
-hal::Gpio s_ref_sample(hal::GpioPort::A, 7);
-
-// SPI pins for ADC and AFE.
-hal::Gpio s_adc_cs(hal::GpioPort::A, 5);
-hal::Gpio s_afe_cs(hal::GpioPort::A, 6);
-hal::Gpio s_sck(hal::GpioPort::B, 13);
-hal::Gpio s_miso(hal::GpioPort::B, 14);
-hal::Gpio s_mosi(hal::GpioPort::B, 15);
-
-// I2C pins.
-hal::Gpio s_scl(hal::GpioPort::B, 6);
-hal::Gpio s_sda(hal::GpioPort::B, 7);
-
 [[nodiscard]] bool afe_transfer(std::uint8_t selection, bool allow_leakage) {
     // Make sure bottom control bits are clear.
     selection &= ~0b111u;
@@ -185,9 +196,9 @@ hal::Gpio s_sda(hal::GpioPort::B, 7);
         selection,
     };
     util::ScopeGuard cs_guard([] {
-        hal::gpio_set(s_afe_cs);
+        hal::gpio::set(k_afe_cs);
     });
-    hal::gpio_reset(s_afe_cs);
+    hal::gpio::reset(k_afe_cs);
     if (!hal::spi_transfer(SPI2, bytes, 1)) {
         return false;
     }
@@ -203,8 +214,8 @@ hal::Gpio s_sda(hal::GpioPort::B, 7);
 
 std::optional<std::uint16_t> adc_sample_raw() {
     // Trigger conversion.
-    hal::gpio_reset(s_adc_cs);
-    hal::gpio_set(s_adc_cs);
+    hal::gpio::reset(k_adc_cs);
+    hal::gpio::set(k_adc_cs);
 
     // Wait maximum conversion time.
     // TODO: This should be done with interrupts like in the master firmware.
@@ -213,9 +224,9 @@ std::optional<std::uint16_t> adc_sample_raw() {
     // Read value over SPI.
     std::array<std::uint8_t, 2> bytes{};
     util::ScopeGuard cs_guard([] {
-        hal::gpio_set(s_adc_cs);
+        hal::gpio::set(k_adc_cs);
     });
-    hal::gpio_reset(s_adc_cs);
+    hal::gpio::reset(k_adc_cs);
     if (!hal::spi_transfer(SPI2, bytes, 2)) {
         return std::nullopt;
     }
@@ -346,20 +357,20 @@ std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std:
 
 void sample_temperatures_task(void *) {
     // Configure analog inputs.
-    s_rail_sample.configure(hal::GpioInputMode::Analog);
-    s_ref_sample.configure(hal::GpioInputMode::Analog);
-    for (const auto &pin : s_mux_sample) {
-        pin.configure(hal::GpioInputMode::Analog);
+    hal::gpio::configure(k_rail_sample, hal::gpio::InputMode::Analog);
+    hal::gpio::configure(k_ref_sample, hal::gpio::InputMode::Analog);
+    for (const auto &pin : k_mux_sample) {
+        hal::gpio::configure(pin, hal::gpio::InputMode::Analog);
     }
 
     // Configure open-drain enable output. This pin controls the output enable line for each MUX, as well the P-channel
     // MOSFET powering the thermistors.
-    s_mux_en.configure(hal::GpioOutputMode::OpenDrain, hal::GpioOutputSpeed::Max2);
-    hal::gpio_set(s_mux_en);
+    hal::gpio::configure(k_mux_en, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_2M);
+    hal::gpio::set(k_mux_en);
 
     // Configure commoned MUX selection pins.
-    for (const auto &pin : s_mux_control) {
-        pin.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    for (const auto &pin : k_mux_control) {
+        hal::gpio::configure(pin, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
     }
 
     // Use the maximum sample time since we have a fairly high source impedance from the thermistors.
@@ -382,7 +393,7 @@ void sample_temperatures_task(void *) {
         vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
 
         // Enable the thermistors and MUX outputs.
-        hal::gpio_reset(s_mux_en);
+        hal::gpio::reset(k_mux_en);
 
         // Give some time for the MOSFET to turn on, the thermistors and rail voltage to settle.
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -391,9 +402,9 @@ void sample_temperatures_task(void *) {
         std::array<std::int8_t, k_thermistor_count> temperatures{};
         for (std::uint32_t selection = 0; selection < 8; selection++) {
             // Set A, B, and C MUX selection outputs.
-            s_mux_control[0].write((selection & 0b1u) != 0);
-            s_mux_control[1].write((selection & 0b10u) != 0);
-            s_mux_control[2].write((selection & 0b100u) != 0);
+            hal::gpio::write(k_mux_control[0], (selection & 0b1u) != 0u);
+            hal::gpio::write(k_mux_control[1], (selection & 0b10u) != 0u);
+            hal::gpio::write(k_mux_control[2], (selection & 0b100u) != 0u);
 
             // Allow a very small delay to allow the small amount of capacitance to discharge from the previous sample.
             vTaskDelay(pdMS_TO_TICKS(1));
@@ -417,7 +428,7 @@ void sample_temperatures_task(void *) {
         }
 
         // Disable the thermistors.
-        hal::gpio_set(s_mux_en);
+        hal::gpio::set(k_mux_en);
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         freertos::in_critical_section([&] {
@@ -490,48 +501,48 @@ void i2c_listen() {
 void cmd_task(void *) {
     // Read configured I2C address from the 4 solder jumper pins. Reset the pins back to a pull-down configuration
     // afterwards to avoid pull-up power draw.
-    for (const auto &pin : s_address_pins) {
-        pin.configure(hal::GpioInputMode::PullUp);
+    for (const auto &pin : k_address_pins) {
+        hal::gpio::configure(pin, hal::gpio::InputMode::PullUp);
     }
     s_i2c_address = k_i2c_address_base | util::bit_reverse<std::uint8_t>(~GPIOA->IDR >> 4) & 0xfu;
-    for (const auto &pin : s_address_pins) {
-        pin.configure(hal::GpioInputMode::PullDown);
+    for (const auto &pin : k_address_pins) {
+        hal::gpio::configure(pin, hal::gpio::InputMode::PullDown);
     }
 
     // Configure simple outputs.
-    s_adc_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_afe_cs.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_afe_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_ref_en.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_led.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
+    hal::gpio::configure(k_adc_cs, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_afe_cs, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_afe_en, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_ref_en, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_led, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
 
     // Configure PA0 wakeup pin as floating since it is directly connected to SCL.
-    s_wakeup.configure(hal::GpioInputMode::Floating);
+    hal::gpio::configure(k_wakeup, hal::gpio::InputMode::Floating);
 
     // Enable a pull-up on MISO to avoid it floating when no slave is selected.
-    s_miso.configure(hal::GpioInputMode::PullUp);
+    hal::gpio::configure(k_miso, hal::gpio::InputMode::PullUp);
 
     // Initialise I2C to the master.
     s_i2c_sm.init();
-    s_scl.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
-    s_sda.configure(hal::GpioOutputMode::AlternateOpenDrain, hal::GpioOutputSpeed::Max10);
+    hal::gpio::configure(k_scl, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_sda, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_10M);
     i2c_listen();
 
     // Wake the external ADC.
-    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    hal::gpio_reset(s_sck, s_adc_cs);
-    hal::gpio_set(s_adc_cs, s_afe_cs);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_mosi, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::reset(k_sck, k_adc_cs);
+    hal::gpio::set(k_adc_cs, k_afe_cs);
 
     // Reconfigure SCK and MOSI for use with the SPI peripheral.
-    s_sck.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
-    s_mosi.configure(hal::GpioOutputMode::AlternatePushPull, hal::GpioOutputSpeed::Max10);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_mosi, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
 
     // Enable SPI2 in master mode at 2 MHz (4x divider).
     hal::spi_init_master(SPI2, SPI_CR1_BR_0);
 
     // Enable the frontend, reference, and indicator LED.
-    hal::gpio_set(s_afe_en, s_ref_en, s_led);
+    hal::gpio::set(k_afe_en, k_ref_en, k_led);
 
     // Wait for the frontend and reference to turn on.
     vTaskDelay(pdMS_TO_TICKS(250));
@@ -566,21 +577,21 @@ void cmd_task(void *) {
 
     // Disable I2C and stop driving the lines.
     I2C1->CR1 &= ~I2C_CR1_PE;
-    s_scl.configure(hal::GpioInputMode::Floating);
-    s_sda.configure(hal::GpioInputMode::Floating);
+    hal::gpio::configure(k_scl, hal::gpio::InputMode::Floating);
+    hal::gpio::configure(k_sda, hal::gpio::InputMode::Floating);
 
     // Pull CS lines high (active-low) and put the ADC into shutdown.
-    s_sck.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    s_mosi.configure(hal::GpioOutputMode::PushPull, hal::GpioOutputSpeed::Max2);
-    hal::gpio_set(s_adc_cs, s_afe_cs, s_sck);
-    hal::gpio_reset(s_adc_cs);
-    hal::gpio_set(s_adc_cs);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_mosi, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::set(k_adc_cs, k_afe_cs, k_sck);
+    hal::gpio::reset(k_adc_cs);
+    hal::gpio::set(k_adc_cs);
 
     // Disable the frontend and reference.
-    hal::gpio_reset(s_afe_en, s_ref_en, s_led);
+    hal::gpio::reset(k_afe_en, k_ref_en, k_led);
 
     // Ensure that the thermistor MOSFET and MUX outputs are off.
-    hal::gpio_set(s_mux_en);
+    hal::gpio::set(k_mux_en);
 
     // Setup an external event on SCL (PB6).
     // TODO: Make a HAL function for this.
