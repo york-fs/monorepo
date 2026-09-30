@@ -409,13 +409,14 @@ void sm_task(void *) {
         }
 
         // Compute the elapsed time in the current state.
-        const auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
+        auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
 
         // Advance the state machine.
         const auto [new_state, error_flags] =
             advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
         if (state != new_state) {
             state_epoch_time = xTaskGetTickCount();
+            elapsed_ms = 0;
             if (state != State::Precheck && state != State::Standby) {
                 last_error_flags = error_flags;
             }
