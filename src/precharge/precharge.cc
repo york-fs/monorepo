@@ -50,6 +50,31 @@ constexpr auto k_curve_model = CurveModel::DtiHv550;
 constexpr std::uint32_t k_heartbeat_timeout = 250;
 
 /**
+ * @brief The time to stay in precheck after entering from another state in milliseconds.
+ */
+constexpr std::uint32_t k_rate_limit_time = 500;
+
+/**
+ * @brief The voltage for which to consider anything below as zero in volts.
+ */
+constexpr std::uint32_t k_zero_voltage_tolerance = 5;
+
+/**
+ * @brief The percentage completion to precharge to in terms of ratio of TS voltage to ACC voltage.
+ */
+constexpr float k_precharge_percentage = 0.98f;
+
+/**
+ * @brief The time to allow for relays to close in milliseconds.
+ */
+constexpr std::uint32_t k_relay_close_time = 500;
+
+/**
+ * @brief The maximum deviation allowed between the measured TS voltage and the expected RC curve voltage in volts.
+ */
+constexpr float k_deviation_threshold = 10.0f;
+
+/**
  * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
  */
 constexpr std::uint32_t k_precharge_hold_time = 500;
@@ -142,17 +167,16 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     if (relay_states.is_set(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegClosed);
     }
-    if (s_heartbeat && elapsed_ms < 500) {
+    if (s_heartbeat && elapsed_ms < k_rate_limit_time) {
         error_flags.set(Error::RateLimit);
     }
 
     // The voltage measured directly after the precharge relay should be zero. Wait for discharge of any residual
     // voltage on the TS side before continuing.
-    // TODO: Tune thresholds.
-    if (precharge_voltage > 5) {
+    if (precharge_voltage > k_zero_voltage_tolerance) {
         error_flags.set(Error::PrecheckVoltage);
     }
-    if (tractive_voltage > 5) {
+    if (tractive_voltage > k_zero_voltage_tolerance) {
         error_flags.set(Error::WaitingDischarge);
     }
     if (error_flags.any_set()) {
@@ -212,7 +236,7 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
 
     // Don't continue with bad relays.
     if (error_flags.any_set()) {
-        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > 500) {
+        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > k_relay_close_time) {
             return std::make_pair(State::Precheck, error_flags);
         }
         return std::make_pair(State::Precharge, error_flags);
@@ -230,21 +254,22 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
     const auto deviation = std::abs(Vt - Ve);
 
     // Check for deviation against the expected curve. Allow 30 ms for the precharge relay to fully close.
-    // TODO: How to pick a good maximum deviation threshold?
-    if (t > 0.03f && deviation > 10.0f) {
+    if (t > 0.03f && deviation > k_deviation_threshold) {
         // TODO: Check whether matches against welded discharge curve.
         // TODO: If precharge_voltage == tractive_voltage at t=0 then likely TS+ open circuit.
         return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
     }
 
-    // Check voltage and time for completion. We check both to ensure that we don't close the AIRs too early. 4 * RC is
-    // around 98% completion.
-    if (Vt > 0.98f * Vp && t > 4.0f * tau) {
+    // Calculate the expected precharge time.
+    const float precharge_time = -std::log(1.0f - k_precharge_percentage) * tau;
+
+    // Check voltage and time for completion. We check both to ensure that we don't close the AIRs too early.
+    if (Vt >= k_precharge_percentage * Vp && t >= precharge_time) {
         return std::make_pair(State::PrechargeHold, ErrorFlags());
     }
 
-    // Precharge has gone on for too long.
-    if (t > 7.0f * tau) {
+    // Check that precharge hasn't gone on for too long.
+    if (t > 1.5f * precharge_time) {
         return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
     }
     return std::make_pair(State::Precharge, ErrorFlags());
@@ -269,7 +294,7 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayState
     }
 
     if (error_flags.any_set()) {
-        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > 500) {
+        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > k_relay_close_time) {
             return std::make_pair(State::Precheck, error_flags);
         }
         return std::make_pair(State::PrechargeHold, error_flags);
