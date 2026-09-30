@@ -438,7 +438,6 @@ void sm_task(void *) {
         }
 
         // Set some error LEDs.
-        // TODO: Add more as errors are figured out more.
         if (error_flags.is_set(Error::WaitingDischarge)) {
             output_bits.set(OutputBit::DischargeErrorLed);
         }
