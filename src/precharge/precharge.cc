@@ -234,12 +234,14 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
         error_flags.set(Error::AirNegOpen);
     }
 
-    // Don't continue with bad relays.
     if (error_flags.any_set()) {
-        if (error_flags.is_set(Error::Deactivation) || elapsed_ms > k_relay_close_time) {
-            return std::make_pair(State::Precheck, error_flags);
-        }
-        return std::make_pair(State::Precharge, error_flags);
+        bool abort = false;
+        abort |= error_flags.is_set(Error::Deactivation);
+        abort |= error_flags.is_set(Error::AirPosClosed);
+        abort |= error_flags.is_set(Error::ShutdownOpen) && elapsed_ms > k_relay_close_time;
+        abort |= error_flags.is_set(Error::AirNegOpen) && elapsed_ms > k_relay_close_time * 2;
+        abort |= error_flags.is_set(Error::PrechargeOpen) && elapsed_ms > k_relay_close_time * 3;
+        return abort ? std::make_pair(State::Precheck, error_flags) : std::make_pair(State::Precharge, error_flags);
     }
 
     // Convert some values to float.
@@ -449,7 +451,9 @@ void sm_task(void *) {
         // Open discharge and close AIR- in precharge and active states.
         if (state == State::Precharge || state == State::PrechargeHold || state == State::Active) {
             output_bits.set(OutputBit::McuShutdown);
-            output_bits.set(OutputBit::AirNegCmd);
+            if (state != State::Precharge || elapsed_ms > k_relay_close_time) {
+                output_bits.set(OutputBit::AirNegCmd);
+            }
         }
 
         // Close AIR+ in precharge to active transition and active states.
@@ -459,7 +463,9 @@ void sm_task(void *) {
 
         // Close precharge relay in precharge and precharge to active transition states.
         if (state == State::Precharge || state == State::PrechargeHold) {
-            output_bits.set(OutputBit::PrechargeCmd);
+            if (state != State::Precharge || elapsed_ms > k_relay_close_time * 2) {
+                output_bits.set(OutputBit::PrechargeCmd);
+            }
         }
 
         // Set some error LEDs.
