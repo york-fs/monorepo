@@ -67,7 +67,7 @@ constexpr float k_precharge_percentage = 0.98f;
 /**
  * @brief The time to allow for relays to close in milliseconds.
  */
-constexpr std::uint32_t k_relay_close_time = 500;
+constexpr std::uint32_t k_relay_close_time = 100;
 
 /**
  * @brief The maximum deviation allowed between the measured TS voltage and the expected RC curve voltage in volts.
