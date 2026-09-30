@@ -52,7 +52,7 @@ constexpr std::uint32_t k_heartbeat_timeout = 250;
 /**
  * @brief The time to stay in precheck after entering from another state in milliseconds.
  */
-constexpr std::uint32_t k_rate_limit_time = 500;
+constexpr std::uint32_t k_rate_limit_time = 3000;
 
 /**
  * @brief The voltage for which to consider anything below as zero in volts.
