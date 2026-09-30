@@ -57,7 +57,7 @@ constexpr std::uint32_t k_rate_limit_time = 500;
 /**
  * @brief The voltage for which to consider anything below as zero in volts.
  */
-constexpr std::uint32_t k_zero_voltage_tolerance = 5;
+constexpr std::uint32_t k_zero_voltage_tolerance = 2;
 
 /**
  * @brief The percentage completion to precharge to in terms of ratio of TS voltage to ACC voltage.
