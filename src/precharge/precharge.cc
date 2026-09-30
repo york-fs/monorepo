@@ -253,8 +253,8 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
     // Calculate the absolute deviation between the expected and the measured.
     const auto deviation = std::abs(Vt - Ve);
 
-    // Check for deviation against the expected curve. Allow 30 ms for the precharge relay to fully close.
-    if (t > 0.03f && deviation > k_deviation_threshold) {
+    // Check for deviation against the expected curve.
+    if (deviation > k_deviation_threshold) {
         // TODO: Check whether matches against welded discharge curve.
         // TODO: If precharge_voltage == tractive_voltage at t=0 then likely TS+ open circuit.
         return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
