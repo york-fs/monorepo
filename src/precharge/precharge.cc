@@ -8,6 +8,7 @@
 #include <precharge/error.hh>
 #include <precharge/relay.hh>
 #include <precharge/state.hh>
+#include <stm32f103xb.h>
 #include <time_tracked.hh>
 #include <util/flag_bitset.hh>
 #include <util/type_traits.hh>
@@ -20,6 +21,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
 using namespace precharge;
 
@@ -384,11 +386,6 @@ void sm_task(void *) {
     // Initialise periodic node status transmission.
     node_status::init(config::k_precharge_can_id);
 
-    // Enable CAN IRQs.
-    hal::irq_enable(CAN1_TX_IRQn, 7);
-    hal::irq_enable(CAN1_RX0_IRQn, 6);
-    hal::irq_enable(CAN1_SCE_IRQn, 5);
-
     // Sequence the two HV sampling inputs as well as the STM's internal temperature sensor.
     hal::adc_init(ADC1, 3);
     hal::adc_sequence_channel(ADC1, 1, 1, 0b010u);
@@ -397,6 +394,13 @@ void sm_task(void *) {
 
     std::array<volatile std::uint16_t, 3> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
+    DMA1_Channel1->CCR |= DMA_CCR_TCIE;
+
+    // Enable CAN and ADC DMA IRQs.
+    hal::irq_enable(CAN1_SCE_IRQn, 5);
+    hal::irq_enable(CAN1_RX0_IRQn, 6);
+    hal::irq_enable(CAN1_TX_IRQn, 7);
+    hal::irq_enable(DMA1_Channel1_IRQn, 8);
 
     auto state = State::LedCheck;
     ErrorFlags last_error_flags;
@@ -404,6 +408,10 @@ void sm_task(void *) {
     std::optional<TickType_t> precharge_close_time;
     freertos::PeriodScheduler scheduler;
     while (true) {
+        // Sample ADC channels.
+        hal::adc_start(ADC1);
+        freertos::notify_take(0, true, portMAX_DELAY);
+
         // Calculate HV sample inputs.
         const auto precharge_voltage = convert_voltage(adc_buffer[0]);
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
@@ -537,8 +545,7 @@ void sm_task(void *) {
             s_swd_queue.overwrite(status_message);
         }
 
-        // Start next ADC sample and delay until next state machine period.
-        hal::adc_start(ADC1);
+        // Delay until next state machine period.
         scheduler.delay_until_ms(k_sm_period);
     }
 }
@@ -560,6 +567,12 @@ void swd_task(void *) {
 }
 
 } // namespace
+
+extern "C" void DMA1_Channel1_IRQHandler() {
+    freertos::InterruptYielder interrupt_yielder;
+    DMA1->IFCR |= DMA_IFCR_CTCIF1;
+    s_sm_task.notify_give_isr(0, interrupt_yielder);
+}
 
 void vApplicationIdleHook() {
     hal::enter_sleep_mode(hal::WakeupSource::Interrupt);
