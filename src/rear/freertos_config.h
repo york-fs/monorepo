@@ -9,7 +9,7 @@
 #define configUSE_16_BIT_TICKS 0
 #define configUSE_TICKLESS_IDLE 0
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
-#define configMAX_PRIORITIES 2
+#define configMAX_PRIORITIES 4
 
 // Task configuration.
 #define configIDLE_SHOULD_YIELD 1

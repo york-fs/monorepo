@@ -288,7 +288,7 @@ bool expander_write(ExpanderRegister reg, std::uint8_t value) {
  */
 void control_task(void *) {
     // Initialise CAN on port B.
-    hal::can::init(hal::can::Port::B, config::k_can_speed, 3);
+    hal::can::init(hal::can::Port::B, config::k_can_speed, 2);
 
     // TODO: Instead of having TimeTracked with special handling and not very well defined data consistency between
     //       interrupts and task, each message type could have its own single-entry queue. If the main loop reads a
@@ -813,7 +813,7 @@ void vApplicationIdleHook() {
 
 void app_main() {
     s_radio_data.init();
-    s_control_task.init(&control_task, "main", 2);
+    s_control_task.init(&control_task, "main", 3);
     s_radio_task.init(&radio_task, "radio", 1);
     if constexpr (config::enable_debug_logs()) {
         s_swd_task.init(&swd_task, "swd", 0);
