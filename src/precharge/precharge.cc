@@ -50,7 +50,8 @@ constexpr auto k_curve_model = CurveModel::DtiHv550;
 constexpr std::uint32_t k_heartbeat_timeout = 250;
 
 /**
- * @brief The time to stay in precheck after entering from another state in milliseconds.
+ * @brief The time to stay in precheck after entering from another state in milliseconds. This value should exceed the
+ * front distribution's TS activation desired timeout.
  */
 constexpr std::uint32_t k_rate_limit_time = 3000;
 
@@ -162,7 +163,7 @@ std::pair<State, ErrorFlags> led_check(std::uint32_t elapsed_ms) {
 }
 
 std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                              std::uint16_t tractive_voltage, RelayStates relay_states) {
+                                              std::uint16_t tractive_voltage, RelayStates relay_states, bool precheck) {
     // Check relay actual states. They should all be open with shutdown low (discharge relay closed).
     ErrorFlags error_flags;
     if (relay_states.is_clear(RelayState::DischargeClosed)) {
@@ -177,7 +178,7 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     if (relay_states.is_set(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegClosed);
     }
-    if (s_heartbeat && elapsed_ms < k_rate_limit_time) {
+    if (precheck && elapsed_ms < k_rate_limit_time) {
         error_flags.set(Error::RateLimit);
     }
 
@@ -341,7 +342,8 @@ std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms
     case State::Active:
         return active(elapsed_ms, relay_states);
     default:
-        return precheck_standby(elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
+        return precheck_standby(elapsed_ms, precharge_voltage, tractive_voltage, relay_states,
+                                state == State::Precheck);
     }
 }
 
