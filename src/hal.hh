@@ -104,7 +104,7 @@ void adc_deinit(ADC_TypeDef *adc);
  *
  * @param data the DMA destination buffer
  */
-void adc_init_dma(std::span<std::uint16_t> data);
+void adc_init_dma(std::span<volatile std::uint16_t> data);
 
 /**
  * @brief Sets the channel to be sequenced at the given index. Refer to the datasheet for sample time meaning.

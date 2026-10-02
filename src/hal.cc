@@ -124,7 +124,7 @@ void adc_deinit(ADC_TypeDef *adc) {
     adc->CR2 &= ~ADC_CR2_ADON;
 }
 
-void adc_init_dma(std::span<std::uint16_t> data) {
+void adc_init_dma(std::span<volatile std::uint16_t> data) {
     // Enable DMA peripheral clock.
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
 

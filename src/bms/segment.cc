@@ -381,7 +381,7 @@ void sample_temperatures_task(void *) {
     hal::adc_sequence_channel(ADC1, 4, 4, 0b111u);
     hal::adc_sequence_channel(ADC1, 5, 7, 0b111u);
 
-    std::array<std::uint16_t, 5> adc_buffer{};
+    std::array<volatile std::uint16_t, 5> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;

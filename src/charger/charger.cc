@@ -165,7 +165,7 @@ void control_task(void *) {
     hal::adc_sequence_channel(ADC1, 1, 2, 0b010u);
     hal::adc_sequence_channel(ADC1, 2, 16, 0b111u);
 
-    std::array<std::uint16_t, 2> adc_buffer;
+    std::array<volatile std::uint16_t, 2> adc_buffer;
     hal::adc_init_dma(adc_buffer);
 
     // Enable automatic continuous ADC sampling.

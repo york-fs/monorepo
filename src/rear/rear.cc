@@ -370,7 +370,7 @@ void control_task(void *) {
     }>(config::k_bms_can_id, 10);
 
     // Initialise ADC to sample all LVS inputs.
-    std::array<std::uint16_t, 10> adc_buffer{};
+    std::array<volatile std::uint16_t, 10> adc_buffer{};
     hal::adc_init(ADC1, adc_buffer.size());
     for (std::uint32_t i = 0; i < adc_buffer.size(); i++) {
         hal::adc_sequence_channel(ADC1, i + 1, i, 0b010u);

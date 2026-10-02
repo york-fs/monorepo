@@ -395,7 +395,7 @@ void sm_task(void *) {
     hal::adc_sequence_channel(ADC1, 2, 2, 0b010u);
     hal::adc_sequence_channel(ADC1, 3, 16, 0b111u);
 
-    std::array<std::uint16_t, 3> adc_buffer{};
+    std::array<volatile std::uint16_t, 3> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
     auto state = State::LedCheck;
