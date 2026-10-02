@@ -58,7 +58,13 @@ constexpr std::uint32_t k_rate_limit_time = 3000;
 /**
  * @brief The voltage for which to consider anything below as zero in volts.
  */
-constexpr std::uint32_t k_zero_voltage_tolerance = 2;
+constexpr std::uint16_t k_zero_voltage_tolerance = 2;
+
+/**
+ * @brief Minimum allowed accumulator voltage to allow a precharge to occur. This should match the threshold of the
+ * hardware comparator which computes the precharge relay's actual state.
+ */
+constexpr std::uint16_t k_precharge_voltage_min = 30;
 
 /**
  * @brief The absolute maximum time the precharge can run for before error in milliseconds.
@@ -185,7 +191,7 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     // The voltage measured directly after the precharge relay should be zero. Wait for discharge of any residual
     // voltage on the TS side before continuing.
     if (precharge_voltage > k_zero_voltage_tolerance) {
-        error_flags.set(Error::PrecheckVoltage);
+        error_flags.set(Error::PrechargeSampleVoltage);
     }
     if (tractive_voltage > k_zero_voltage_tolerance) {
         error_flags.set(Error::WaitingDischarge);
@@ -247,6 +253,9 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t p
     if (elapsed_ms > k_precharge_absolute_max_time) {
         error_flags.set(Error::SlowDeviation);
     }
+    if (precharge_voltage < k_precharge_voltage_min) {
+        error_flags.set(Error::PrechargeSampleVoltage);
+    }
 
     if (error_flags.any_set()) {
         bool abort = false;
@@ -256,6 +265,7 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t p
         abort |= error_flags.is_set(Error::ShutdownOpen) && elapsed_ms > k_relay_close_time;
         abort |= error_flags.is_set(Error::AirNegOpen) && elapsed_ms > k_relay_close_time * 2;
         abort |= error_flags.is_set(Error::PrechargeOpen) && elapsed_ms > k_relay_close_time * 3;
+        abort |= error_flags.is_set(Error::PrechargeSampleVoltage) && elapsed_ms > k_relay_close_time * 3;
         return abort ? std::make_pair(State::Precheck, error_flags) : std::make_pair(State::Precharge, error_flags);
     }
 

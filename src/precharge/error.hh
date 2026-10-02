@@ -11,7 +11,7 @@ enum class Error : std::uint16_t {
     PrechargeClosed,
     AirPosClosed,
     AirNegClosed,
-    PrecheckVoltage,
+    PrechargeSampleVoltage,
     WaitingDischarge,
     WaitingActivation,
     ShutdownOpen,
