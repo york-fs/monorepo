@@ -302,7 +302,7 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayState
         }
         return std::make_pair(State::PrechargeHold, error_flags);
     }
-    return std::make_pair(elapsed_ms >= k_precharge_hold_time ? State::Active : State::PrechargeHold, error_flags);
+    return std::make_pair(elapsed_ms >= k_precharge_hold_time ? State::Active : State::PrechargeHold, ErrorFlags());
 }
 
 std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms, RelayStates relay_states) {
@@ -322,7 +322,10 @@ std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms, RelayStates relay_
     if (relay_states.is_clear(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegOpen);
     }
-    return std::make_pair(error_flags.any_set() ? State::Precheck : State::Active, error_flags);
+    if (error_flags.any_set() && (error_flags.is_set(Error::Deactivation) || elapsed_ms > k_relay_close_time)) {
+        return std::make_pair(State::Precheck, error_flags);
+    }
+    return std::make_pair(State::Active, error_flags);
 }
 
 std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms, std::uint32_t precharge_elapsed_ms,
