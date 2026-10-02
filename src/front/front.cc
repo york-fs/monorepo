@@ -24,6 +24,23 @@ using namespace front;
 namespace {
 
 /**
+ * @brief The timeout to use for the TS and RTD actual activation state latching in milliseconds. This should be kept
+ * well below the precharge's rate limit time.
+ */
+constexpr std::uint32_t k_activation_desired_timeout = 500;
+
+/**
+ * @brief The minimum duration a dashboard button must be held to register a press in milliseconds.
+ */
+constexpr std::uint32_t k_button_hold_duration = 100;
+
+/**
+ * @brief The duration to ignore subsequent button presses after a successful button press in milliseconds. This should
+ * be kept longer than the activation desired timeout and the hold duration.
+ */
+constexpr std::uint32_t k_button_lockout_duration = 1000;
+
+/**
  * @brief The duration to drive the RTD horn after activation in milliseconds.
  */
 constexpr std::uint32_t k_rtd_horn_duration = 1000;
@@ -174,11 +191,13 @@ void main_task(void *) {
         }
 
         // Desired state timeouts if the TS and RTD actual states don't activate in time.
-        if (ts_activation_desired && xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(100) &&
+        if (ts_activation_desired &&
+            xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(k_activation_desired_timeout) &&
             (!s_rear_status || s_rear_status->ts_prevention_flags.any_set())) {
             ts_activation_desired.reset();
         }
-        if (rtd_activation_desired && xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(100) &&
+        if (rtd_activation_desired &&
+            xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(k_activation_desired_timeout) &&
             (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
             rtd_activation_desired.reset();
         }
@@ -294,19 +313,20 @@ void debounce_task(void *) {
         // Wait for either button to be pressed. Clearing on both entry and exit is important here.
         const auto notification = freertos::notify_wait(0, UINT32_MAX, UINT32_MAX, portMAX_DELAY);
 
-        // Only trigger if the button has been held for a minimum period.
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Only trigger if the button has been held for a minimum period. A delay is intentional here to ignore other
+        // presses in this time.
+        vTaskDelay(pdMS_TO_TICKS(k_button_hold_duration));
 
-        // Button triggered if it's still pressed after the delay period and hasn't been pressed twice in the same
-        // second.
+        // Button triggered if it's still pressed after the delay period and hasn't already been pressed recently.
+        const auto current_ticks = xTaskGetTickCount();
         if ((notification & (1u << 0)) != 0 && !hal::gpio::read(k_ts_button) &&
-            xTaskGetTickCount() - last_ts_button_time >= pdMS_TO_TICKS(1000)) {
-            last_ts_button_time = xTaskGetTickCount();
+            current_ticks - last_ts_button_time >= pdMS_TO_TICKS(k_button_lockout_duration)) {
+            last_ts_button_time = current_ticks;
             s_main_task.notify_set_bits(0, 1u << 0);
         }
         if ((notification & (1u << 1)) != 0 && !hal::gpio::read(k_rtd_button) &&
-            xTaskGetTickCount() - last_rtd_button_time >= pdMS_TO_TICKS(1000)) {
-            last_rtd_button_time = xTaskGetTickCount();
+            current_ticks - last_rtd_button_time >= pdMS_TO_TICKS(k_button_lockout_duration)) {
+            last_rtd_button_time = current_ticks;
             s_main_task.notify_set_bits(0, 1u << 1);
         }
     }
