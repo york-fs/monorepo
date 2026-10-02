@@ -94,6 +94,12 @@ constexpr float k_time_tolerance_factor_lower = 0.7f;
 constexpr float k_time_tolerance_factor_upper = 1.4f;
 
 /**
+ * @brief Extra slack allowed in the time deviation check in seconds. This should be set to around 2.5x the update
+ * period (k_sm_period).
+ */
+constexpr float k_time_tolerance_slack = 0.025f;
+
+/**
  * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
  */
 constexpr std::uint32_t k_precharge_hold_time = 500;
@@ -280,10 +286,10 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t p
 
     // Check for time deviation.
     const auto t = static_cast<float>(precharge_elapsed_ms) / 1000.0f;
-    if (t < k_time_tolerance_factor_lower * expected_elapsed) {
+    if (t < std::max(k_time_tolerance_factor_lower * expected_elapsed - k_time_tolerance_slack, 0.0f)) {
         return std::make_pair(State::Precheck, ErrorFlags(Error::FastDeviation));
     }
-    if (t > k_time_tolerance_factor_upper * expected_elapsed) {
+    if (t > k_time_tolerance_factor_upper * expected_elapsed + k_time_tolerance_slack) {
         return std::make_pair(State::Precheck, ErrorFlags(Error::SlowDeviation));
     }
 
