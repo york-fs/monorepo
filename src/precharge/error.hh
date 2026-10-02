@@ -19,7 +19,8 @@ enum class Error : std::uint16_t {
     AirPosOpen,
     AirNegOpen,
     Deactivation,
-    Deviation,
+    SlowDeviation,
+    FastDeviation,
     RateLimit,
 };
 

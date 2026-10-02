@@ -60,6 +60,11 @@ constexpr std::uint32_t k_rate_limit_time = 3000;
 constexpr std::uint32_t k_zero_voltage_tolerance = 2;
 
 /**
+ * @brief The absolute maximum time the precharge can run for before error in milliseconds.
+ */
+constexpr std::uint32_t k_precharge_absolute_max_time = 2000;
+
+/**
  * @brief The percentage completion to precharge to in terms of ratio of TS voltage to ACC voltage.
  */
 constexpr float k_precharge_percentage = 0.98f;
@@ -70,9 +75,14 @@ constexpr float k_precharge_percentage = 0.98f;
 constexpr std::uint32_t k_relay_close_time = 100;
 
 /**
- * @brief The maximum deviation allowed between the measured TS voltage and the expected RC curve voltage in volts.
+ * @brief Factor for the too fast time deviation threshold.
  */
-constexpr float k_deviation_threshold = 10.0f;
+constexpr float k_time_tolerance_factor_lower = 0.7f;
+
+/**
+ * @brief Factor for the too slow time deviation threshold.
+ */
+constexpr float k_time_tolerance_factor_upper = 1.4f;
 
 /**
  * @brief The extra time to hold the precharge relay after closing the positive AIR in milliseconds.
@@ -188,35 +198,35 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     return std::make_pair(State::Precharge, ErrorFlags());
 }
 
-std::pair<float, float> rc_curve(float t, float Vp, float C, float Rs, float Rg) {
-    // Calculate thevenin equivalent of series resistor and resistor to ground.
-    const float R = (Rs * Rg) / (Rs + Rg);
+float rc_curve(float y, float C, float Rs, float Rg) {
+    // Calculate the ratio of the slight potential divider formed.
+    const float factor = Rg / (Rs + Rg);
 
-    // Calculate voltage factor taking into account the slight potential divider formed.
-    const float factor = (Vp * Rg) / (Rs + Rg);
+    // Calculate the RC constant using the capacitance and thevenin equivalent resistance.
+    const float tau = factor * Rs * C;
 
-    // Calculate the curve.
-    const float V = factor * (1.0f - std::exp(-t / (R * C)));
-    return std::make_pair(V, R * C);
+    // Calculate the elapsed time of the charge.
+    return -std::log(1.0f - (y / factor)) * tau;
 }
 
 template <CurveModel>
-std::pair<float, float> model_curve(float t, float Vp);
+float model_curve(float y);
 
 template <>
-std::pair<float, float> model_curve<CurveModel::Test>(float t, float Vp) {
+float model_curve<CurveModel::Test>(float y) {
     // Model with 3300 uF capacitor and no resistance to ground used during testing.
-    return rc_curve(t, Vp, 3300e-6f, 1e3f, 1e9f);
+    return rc_curve(y, 3300e-6f, 1e3f, 1e9f);
 }
 
 template <>
-std::pair<float, float> model_curve<CurveModel::DtiHv550>(float t, float Vp) {
+float model_curve<CurveModel::DtiHv550>(float y) {
     // DTI HV-550 inverter model with 200 uF capacitance and 188k always-active discharge resistor.
-    return rc_curve(t, Vp, 200e-6f, 1e3f, 188e3f);
+    return rc_curve(y, 200e-6f, 1e3f, 188e3f);
 }
 
-std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                       std::uint16_t tractive_voltage, RelayStates relay_states) {
+std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t precharge_elapsed_ms,
+                                       std::uint16_t precharge_voltage, std::uint16_t tractive_voltage,
+                                       RelayStates relay_states) {
     ErrorFlags error_flags;
     if (!s_heartbeat) {
         error_flags.set(Error::Deactivation);
@@ -233,48 +243,39 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint16_t p
     if (relay_states.is_clear(RelayState::AirNegClosed)) {
         error_flags.set(Error::AirNegOpen);
     }
+    if (elapsed_ms > k_precharge_absolute_max_time) {
+        error_flags.set(Error::SlowDeviation);
+    }
 
     if (error_flags.any_set()) {
         bool abort = false;
         abort |= error_flags.is_set(Error::Deactivation);
         abort |= error_flags.is_set(Error::AirPosClosed);
+        abort |= error_flags.is_set(Error::SlowDeviation);
         abort |= error_flags.is_set(Error::ShutdownOpen) && elapsed_ms > k_relay_close_time;
         abort |= error_flags.is_set(Error::AirNegOpen) && elapsed_ms > k_relay_close_time * 2;
         abort |= error_flags.is_set(Error::PrechargeOpen) && elapsed_ms > k_relay_close_time * 3;
         return abort ? std::make_pair(State::Precheck, error_flags) : std::make_pair(State::Precharge, error_flags);
     }
 
-    // Convert some values to float.
-    const auto t = static_cast<float>(elapsed_ms) / 1000.0f;
-    const auto Vp = static_cast<float>(precharge_voltage);
-    const auto Vt = static_cast<float>(tractive_voltage);
+    // Calculate the measured completed precharge percentage.
+    const float completion =
+        std::clamp(static_cast<float>(tractive_voltage) / precharge_voltage, 0.0f, k_precharge_percentage);
 
-    // Calculate the expected TS voltage.
-    const auto [Ve, tau] = model_curve<k_curve_model>(t, Vp);
+    // Use the configured RC model to calculate the expected elapsed time.
+    const float expected_elapsed = model_curve<k_curve_model>(completion);
 
-    // Calculate the absolute deviation between the expected and the measured.
-    const auto deviation = std::abs(Vt - Ve);
-
-    // Check for deviation against the expected curve.
-    if (deviation > k_deviation_threshold) {
-        // TODO: Check whether matches against welded discharge curve.
-        // TODO: If precharge_voltage == tractive_voltage at t=0 then likely TS+ open circuit.
-        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
+    // Check for time deviation.
+    const auto t = static_cast<float>(precharge_elapsed_ms) / 1000.0f;
+    if (t < k_time_tolerance_factor_lower * expected_elapsed) {
+        return std::make_pair(State::Precheck, ErrorFlags(Error::FastDeviation));
+    }
+    if (t > k_time_tolerance_factor_upper * expected_elapsed) {
+        return std::make_pair(State::Precheck, ErrorFlags(Error::SlowDeviation));
     }
 
-    // Calculate the expected precharge time.
-    const float precharge_time = -std::log(1.0f - k_precharge_percentage) * tau;
-
-    // Check voltage and time for completion. We check both to ensure that we don't close the AIRs too early.
-    if (Vt >= k_precharge_percentage * Vp && t >= precharge_time) {
-        return std::make_pair(State::PrechargeHold, ErrorFlags());
-    }
-
-    // Check that precharge hasn't gone on for too long.
-    if (t > 1.5f * precharge_time) {
-        return std::make_pair(State::Precheck, ErrorFlags(Error::Deviation));
-    }
-    return std::make_pair(State::Precharge, ErrorFlags());
+    // Check if we have passed the completion threshold.
+    return std::make_pair(completion >= k_precharge_percentage ? State::PrechargeHold : State::Precharge, ErrorFlags());
 }
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayStates relay_states) {
@@ -324,13 +325,14 @@ std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms, RelayStates relay_
     return std::make_pair(error_flags.any_set() ? State::Precheck : State::Active, error_flags);
 }
 
-std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms, std::uint16_t precharge_voltage,
-                                           std::uint16_t tractive_voltage, RelayStates relay_states) {
+std::pair<State, ErrorFlags> advance_state(State state, std::uint32_t elapsed_ms, std::uint32_t precharge_elapsed_ms,
+                                           std::uint16_t precharge_voltage, std::uint16_t tractive_voltage,
+                                           RelayStates relay_states) {
     switch (state) {
     case State::LedCheck:
         return led_check(elapsed_ms);
     case State::Precharge:
-        return precharge(elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
+        return precharge(elapsed_ms, precharge_elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
     case State::PrechargeHold:
         return precharge_hold(elapsed_ms, relay_states);
     case State::Active:
@@ -384,6 +386,7 @@ void sm_task(void *) {
     auto state = State::LedCheck;
     ErrorFlags last_error_flags;
     TickType_t state_epoch_time = xTaskGetTickCount();
+    std::optional<TickType_t> precharge_close_time;
     freertos::PeriodScheduler scheduler;
     while (true) {
         // Calculate HV sample inputs.
@@ -408,14 +411,25 @@ void sm_task(void *) {
             relay_states.set(RelayState::AirNegClosed);
         }
 
+        // Keep track of precharge relay close time.
+        const auto current_ticks = xTaskGetTickCount();
+        if (relay_states.is_set(RelayState::PrechargeClosed)) {
+            if (!precharge_close_time) {
+                precharge_close_time.emplace(current_ticks);
+            }
+        } else {
+            precharge_close_time.reset();
+        }
+
         // Compute the elapsed time in the current state.
-        auto elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - state_epoch_time);
+        auto elapsed_ms = pdTICKS_TO_MS(current_ticks - state_epoch_time);
+        const auto precharge_elapsed_ms = pdTICKS_TO_MS(current_ticks - precharge_close_time.value_or(current_ticks));
 
         // Advance the state machine.
         const auto [new_state, error_flags] =
-            advance_state(state, elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
+            advance_state(state, elapsed_ms, precharge_elapsed_ms, precharge_voltage, tractive_voltage, relay_states);
         if (state != new_state) {
-            state_epoch_time = xTaskGetTickCount();
+            state_epoch_time = current_ticks;
             elapsed_ms = 0;
             if (state != State::Precheck && state != State::Standby) {
                 last_error_flags = error_flags;
