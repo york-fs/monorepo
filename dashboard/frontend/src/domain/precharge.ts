@@ -49,11 +49,11 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
         kind: 'fault',
         liveStates: ['PRECHECK', 'STANDBY'],
     },
-    PRECHECK_VOLTAGE: {
-        label: 'Precheck Voltage',
-        description: 'Unexpected voltage measured on the output side of the precharge relay',
+    PRECHARGE_SAMPLE_VOLTAGE: {
+        label: 'Precharge Sample Voltage',
+        description: 'The voltage sampling after the precharge relay is not functioning correctly',
         kind: 'fault',
-        liveStates: ['PRECHECK', 'STANDBY'],
+        liveStates: ['PRECHECK', 'STANDBY', 'PRECHARGE'],
     },
     WAITING_DISCHARGE: {
         label: 'Waiting Discharge',
@@ -97,9 +97,15 @@ export const PRECHARGE_FLAG_META: Record<PrechargeErrorFlag, PrechargeFlagMeta> 
         kind: 'deactivation',
         liveStates: ['PRECHARGE', 'PRECHARGE_HOLD', 'ACTIVE'],
     },
-    DEVIATION: {
-        label: 'Deviation',
-        description: "TS voltage didn't match the expected precharge RC curve",
+    SLOW_DEVIATION: {
+        label: 'Slow Deviation',
+        description: 'The precharge was too slow',
+        kind: 'fault',
+        liveStates: ['PRECHARGE'],
+    },
+    FAST_DEVIATION: {
+        label: 'Fast Deviation',
+        description: 'The precharge was too fast',
         kind: 'fault',
         liveStates: ['PRECHARGE'],
     },

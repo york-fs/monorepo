@@ -30,7 +30,7 @@ export const PRECHARGE_ERROR_FLAGS = [
     'PRECHARGE_CLOSED',
     'AIR_POS_CLOSED',
     'AIR_NEG_CLOSED',
-    'PRECHECK_VOLTAGE',
+    'PRECHARGE_SAMPLE_VOLTAGE',
     'WAITING_DISCHARGE',
     'WAITING_ACTIVATION',
     'SHUTDOWN_OPEN',
@@ -38,7 +38,8 @@ export const PRECHARGE_ERROR_FLAGS = [
     'AIR_POS_OPEN',
     'AIR_NEG_OPEN',
     'DEACTIVATION',
-    'DEVIATION',
+    'SLOW_DEVIATION',
+    'FAST_DEVIATION',
     'RATE_LIMIT',
 ] as const
 export type PrechargeErrorFlag = (typeof PRECHARGE_ERROR_FLAGS)[number]

@@ -109,7 +109,7 @@ class PrechargeErrorFlags(Flag):
     PRECHARGE_CLOSED = enum.auto()
     AIR_POS_CLOSED = enum.auto()
     AIR_NEG_CLOSED = enum.auto()
-    PRECHECK_VOLTAGE = enum.auto()
+    PRECHARGE_SAMPLE_VOLTAGE = enum.auto()
     WAITING_DISCHARGE = enum.auto()
     WAITING_ACTIVATION = enum.auto()
     SHUTDOWN_OPEN = enum.auto()
@@ -117,7 +117,8 @@ class PrechargeErrorFlags(Flag):
     AIR_POS_OPEN = enum.auto()
     AIR_NEG_OPEN = enum.auto()
     DEACTIVATION = enum.auto()
-    DEVIATION = enum.auto()
+    SLOW_DEVIATION = enum.auto()
+    FAST_DEVIATION = enum.auto()
     RATE_LIMIT = enum.auto()
 
 
