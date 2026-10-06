@@ -19,7 +19,7 @@ void set_config(Descriptor descriptor, std::uint32_t bits) {
     auto *gpio = gpio_for(descriptor.port);
     const auto shift = (descriptor.pin % 8) * 4;
     auto &reg = descriptor.pin > 7 ? gpio->CRH : gpio->CRL;
-    reg = (reg & ~(0xf << shift)) | bits;
+    reg = (reg & ~(0xf << shift)) | (bits << shift);
 }
 
 } // namespace
