@@ -417,6 +417,7 @@ void control_task(void *) {
         front_throttle.update();
         precharge_status.update();
         inverter_gd3.update();
+        bms_status.update();
 
         // Build a bitset of component online states.
         OnlineFlags online_flags;
