@@ -297,7 +297,7 @@ void throttle_task(void *) {
         const auto percentage = ThrottleMap::to_percentage(normalised);
 
         // Calculate a desired throttle (motor current percentage) using the throttle map and a 10% deadzone.
-        const auto desired_throttle = percentage > 100 ? throttle_map(normalised) : 0;
+        const std::uint16_t desired_throttle = percentage > 100 ? throttle_map(normalised) : 0;
 
         ThrottleMessage throttle_message{
             .desired_throttle = desired_throttle,
