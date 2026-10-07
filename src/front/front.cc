@@ -289,14 +289,19 @@ void throttle_task(void *) {
     auto throttle_map = ThrottleMap::create_default();
 
     while (true) {
-        // Read sensors and calculate a desired current.
+        // Read the first sensor, normalise it to a throttle map index, and calculate a travel percentage between the
+        // range of [0, 1000].
         // TODO: Look at both sensors.
-        // TODO: Deadzone.
         // TODO: Current preload.
         const auto normalised = sensors[0].normalise(s_adc_buffer[7]).value_or(0);
+        const auto percentage = ThrottleMap::to_percentage(normalised);
+
+        // Calculate a desired throttle (motor current percentage) using the throttle map and a 10% deadzone.
+        const auto desired_throttle = percentage > 100 ? throttle_map(normalised) : 0;
+
         ThrottleMessage throttle_message{
-            .desired_throttle = throttle_map(normalised),
-            .pedal_travel = ThrottleMap::to_percentage(normalised),
+            .desired_throttle = desired_throttle,
+            .pedal_travel = percentage,
             .raw_1 = s_adc_buffer[7],
             .raw_2 = s_adc_buffer[8],
         };
