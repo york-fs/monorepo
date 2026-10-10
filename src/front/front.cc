@@ -164,20 +164,13 @@ void main_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         // Handle dashboard button presses.
+        // TODO: Re-implement deactivation logic when the button is pressed in the active state.
         const auto notification = freertos::notify_wait(0, 0, UINT32_MAX, 0);
-        if ((notification & (1u << 0)) != 0) {
-            if (ts_activation_desired) {
-                ts_activation_desired.reset();
-            } else {
-                ts_activation_desired.emplace(xTaskGetTickCount());
-            }
+        if ((notification & (1u << 0)) != 0 && !ts_activation_desired) {
+            ts_activation_desired.emplace(xTaskGetTickCount());
         }
-        if ((notification & (1u << 1)) != 0) {
-            if (rtd_activation_desired) {
-                rtd_activation_desired.reset();
-            } else {
-                rtd_activation_desired.emplace(xTaskGetTickCount());
-            }
+        if ((notification & (1u << 1)) != 0 && !rtd_activation_desired) {
+            rtd_activation_desired.emplace(xTaskGetTickCount());
         }
         if ((notification & (1u << 2)) != 0) {
             apps_calibrated = true;
