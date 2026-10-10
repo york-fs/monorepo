@@ -82,8 +82,8 @@ constexpr hal::gpio::Descriptor k_ts_button_led(hal::gpio::Port::B, 2);
 constexpr hal::gpio::Descriptor k_rtd_button(hal::gpio::Port::C, 14);
 constexpr hal::gpio::Descriptor k_rtd_button_led(hal::gpio::Port::C, 13);
 
-TimeTracked<precharge::State> s_precharge_state(25);
-TimeTracked<rear::StatusMessage> s_rear_status(25);
+TimeTracked<precharge::State> s_precharge_state(75);
+TimeTracked<rear::StatusMessage> s_rear_status(75);
 std::array<volatile std::uint16_t, 9> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
