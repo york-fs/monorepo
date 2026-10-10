@@ -16,7 +16,7 @@ constexpr std::uint16_t k_absolute_start = 400;
 /**
  * @brief The absolute end point in ADC counts. A measured value above this results in a sensor error.
  */
-constexpr std::uint16_t k_absolute_end = 2000;
+constexpr std::uint16_t k_absolute_end = 2200;
 
 /**
  * @brief The computed size of the throttle map lookup table.
