@@ -138,6 +138,7 @@ void main_task(void *) {
     node_status::init(config::k_front_can_id);
 
     // Enable CAN and EXTI IRQs.
+    EXTI->PR = EXTI_PR_PR14 | EXTI_PR_PR1;
     hal::irq_enable(EXTI1_IRQn, 8);
     hal::irq_enable(EXTI15_10_IRQn, 8);
     hal::irq_enable(CAN1_RX0_IRQn, 7);
