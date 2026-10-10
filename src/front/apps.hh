@@ -43,9 +43,10 @@ public:
 };
 
 class Calibrator {
-    std::array<std::uint16_t, 100> m_ring_buffer;
+    std::array<std::uint16_t, 100> m_ring_buffer{};
     std::uint16_t m_ring_index{0};
     std::optional<std::uint16_t> m_start_value;
+    bool m_reached_end{false};
 
 public:
     bool update(std::uint16_t value);

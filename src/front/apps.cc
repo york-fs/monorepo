@@ -62,6 +62,14 @@ bool Calibrator::update(std::uint16_t value) {
     m_ring_buffer[m_ring_index] = value;
     m_ring_index = (m_ring_index + 1) % m_ring_buffer.size();
 
+    // If ring index is zero, we have wrapped around and therefore the ring buffer is full of real data.
+    if (m_ring_index == 0) {
+        m_reached_end = true;
+    }
+    if (!m_reached_end) {
+        return false;
+    }
+
     // Check if the pedal has moved enough from its start position.
     if (abs_distance(value, *m_start_value) < 100) {
         return false;
