@@ -290,27 +290,22 @@ void control_task(void *) {
     // Initialise CAN on port B.
     hal::can::init(hal::can::Port::B, config::k_can_speed, 2);
 
-    // TODO: Instead of having TimeTracked with special handling and not very well defined data consistency between
-    //       interrupts and task, each message type could have its own single-entry queue. If the main loop reads a
-    //       message from, for example, any of the inverter message queues, a inverter_last_time variable could be
-    //       updated and checked for stale data.
-
     // Data from the front distribution.
-    static TimeTracked<front::StatusMessage> front_status(250);
-    static TimeTracked<front::ThrottleMessage> front_throttle(25);
+    static TimeTracked<front::StatusMessage, 250> front_status_tracked;
+    static TimeTracked<front::ThrottleMessage, 25> front_throttle_tracked;
     static std::array<std::uint16_t, 7> front_lvs_voltages{};
 
     // Data from the precharge board.
-    static TimeTracked<precharge::StatusMessage> precharge_status(25);
+    static TimeTracked<precharge::StatusMessage, 25> precharge_status_tracked;
 
     // Data from the inverter.
     static std::atomic<std::int16_t> inverter_input_voltage;
     static std::atomic<std::int16_t> motor_current;
     static std::atomic<std::int32_t> motor_erpm;
-    static TimeTracked<dti::GeneralData3> inverter_gd3(250);
+    static TimeTracked<dti::GeneralData3, 250> inverter_gd3_tracked;
 
     // Data from the BMS.
-    static TimeTracked<bms::MasterStatusMessage> bms_status(250);
+    static TimeTracked<bms::MasterStatusMessage, 250> bms_status_tracked;
     static std::atomic<std::int32_t> positive_current;
     static std::atomic<std::int32_t> negative_current;
     static std::atomic<std::uint16_t> min_cell_voltage;
@@ -320,10 +315,10 @@ void control_task(void *) {
 
     // Setup front distribution CAN listeners.
     hal::can::listen<front::StatusMessage, [](const front::StatusMessage &message) {
-        front_status.receive(message);
+        front_status_tracked.receive_isr(message);
     }>(config::k_front_can_id, 0);
     hal::can::listen<front::ThrottleMessage, [](const front::ThrottleMessage &message) {
-        front_throttle.receive(message);
+        front_throttle_tracked.receive_isr(message);
     }>(config::k_front_can_id, 1);
     hal::can::listen<front::LvsSampleMessage1, [](const front::LvsSampleMessage1 &message) {
         front_lvs_voltages[0] = message.rtd_voltage;
@@ -339,7 +334,7 @@ void control_task(void *) {
 
     // Setup precharge CAN listener.
     hal::can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &message) {
-        precharge_status.receive(message);
+        precharge_status_tracked.receive_isr(message);
     }>(config::k_precharge_can_id, 4);
 
     // Setup inverter CAN listeners.
@@ -351,12 +346,12 @@ void control_task(void *) {
         motor_current.store(message.ac_current);
     }>(config::k_dti_can_id, 6);
     hal::can::listen<dti::GeneralData3, [](const dti::GeneralData3 &message) {
-        inverter_gd3.receive(message);
+        inverter_gd3_tracked.receive_isr(message);
     }>(config::k_dti_can_id, 7);
 
     // Setup BMS CAN listeners.
     hal::can::listen<bms::MasterStatusMessage, [](const bms::MasterStatusMessage &message) {
-        bms_status.receive(message);
+        bms_status_tracked.receive_isr(message);
     }>(config::k_bms_can_id, 8);
     hal::can::listen<bms::MasterCurrentMessage, [](const bms::MasterCurrentMessage &message) {
         positive_current.store(message.positive_current);
@@ -412,12 +407,16 @@ void control_task(void *) {
     while (true) {
         scheduler.delay_until_ms(k_control_period);
 
-        // Update message expiry detections for all of the important time tracked messages.
-        front_status.update();
-        front_throttle.update();
-        precharge_status.update();
-        inverter_gd3.update();
-        bms_status.update();
+        // Sample all ADC channels.
+        hal::adc_start(ADC1);
+        freertos::notify_take(0, true, portMAX_DELAY);
+
+        // Retrieve expiry tracked data.
+        const auto front_status = front_status_tracked.get();
+        const auto front_throttle = front_throttle_tracked.get();
+        const auto precharge_status = precharge_status_tracked.get();
+        const auto inverter_gd3 = inverter_gd3_tracked.get();
+        const auto bms_status = bms_status_tracked.get();
 
         // Build a bitset of component online states.
         OnlineFlags online_flags;
@@ -433,10 +432,6 @@ void control_task(void *) {
         if (bms_status) {
             online_flags.set(OnlineFlag::BmsOnline);
         }
-
-        // Sample all ADC channels.
-        hal::adc_start(ADC1);
-        freertos::notify_take(0, true, portMAX_DELAY);
 
         // Create an array of rear and front measured fuse voltages. The sampling inputs have a 5.7x divider on them.
         std::array<std::uint16_t, 17> fuse_voltages{};
@@ -465,7 +460,7 @@ void control_task(void *) {
         // Sample rear-local shutdown pins.
         const auto expander_port_0 = expander_read(ExpanderRegister::InputPort0).value_or(0);
         const auto expander_port_1 = expander_read(ExpanderRegister::InputPort1).value_or(0);
-        auto rear_shutdown_samples = RearShutdownSamples(expander_port_0);
+        auto rear_shutdown_samples = static_cast<RearShutdownSamples>(expander_port_0);
         if ((expander_port_1 & (1u << 2)) != 0) {
             rear_shutdown_samples.set(RearShutdownSample::BmsOk);
         }

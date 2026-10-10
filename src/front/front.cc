@@ -82,8 +82,8 @@ constexpr hal::gpio::Descriptor k_ts_button_led(hal::gpio::Port::B, 2);
 constexpr hal::gpio::Descriptor k_rtd_button(hal::gpio::Port::C, 14);
 constexpr hal::gpio::Descriptor k_rtd_button_led(hal::gpio::Port::C, 13);
 
-TimeTracked<precharge::State> s_precharge_state(75);
-TimeTracked<rear::StatusMessage> s_rear_status(75);
+TimeTracked<precharge::State, 75> s_precharge_state;
+TimeTracked<rear::StatusMessage, 75> s_rear_status;
 std::array<volatile std::uint16_t, 9> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
@@ -99,14 +99,14 @@ void main_task(void *) {
     // Setup CAN listeners.
     hal::can::listen<precharge::StatusMessage, [](const precharge::StatusMessage &precharge_status) {
         freertos::InterruptYielder interrupt_yielder;
-        const auto previous = s_precharge_state.receive(precharge_status.state);
+        const auto previous = s_precharge_state.receive_isr(precharge_status.state);
         if (!previous || *previous != precharge_status.state) {
             s_led_task.notify_give_isr(0, interrupt_yielder);
         }
     }>(config::k_precharge_can_id, 0);
     hal::can::listen<rear::StatusMessage, [](const rear::StatusMessage &rear_status) {
         freertos::InterruptYielder interrupt_yielder;
-        const auto previous = s_rear_status.receive(rear_status);
+        const auto previous = s_rear_status.receive_isr(rear_status);
         if (!previous || previous->rtd_prevention_flags.value() != rear_status.rtd_prevention_flags.value()) {
             s_led_task.notify_give_isr(0, interrupt_yielder);
         }
@@ -183,29 +183,30 @@ void main_task(void *) {
             apps_calibrated = true;
         }
 
-        // Update data expiration timers.
-        s_precharge_state.update();
-        s_rear_status.update();
-        if (!s_precharge_state || !s_rear_status) {
-            // Update LED task since CAN messages are not being received.
+        // Retrieve expiry tracked data.
+        const auto precharge_state = s_precharge_state.get();
+        const auto rear_status = s_rear_status.get();
+
+        // Update LED task if CAN messages are not being received.
+        if (!precharge_state || !rear_status) {
             s_led_task.notify_give(0);
         }
 
         // Desired state timeouts if the TS and RTD actual states don't latch within the grace period.
         if (ts_activation_desired &&
             xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(k_activation_grace_period) &&
-            (!s_rear_status || s_rear_status->ts_prevention_flags.any_set())) {
+            (!rear_status || rear_status->ts_prevention_flags.any_set())) {
             ts_activation_desired.reset();
         }
         if (rtd_activation_desired &&
             xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(k_activation_grace_period) &&
-            (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
+            (!rear_status || rear_status->rtd_prevention_flags.any_set())) {
             rtd_activation_desired.reset();
         }
 
         // Keep track of RTD activation time.
         if (rtd_activation_desired) {
-            if (!rtd_activation_time && s_rear_status && s_rear_status->rtd_prevention_flags.none_set()) {
+            if (!rtd_activation_time && rear_status && rear_status->rtd_prevention_flags.none_set()) {
                 rtd_activation_time.emplace(xTaskGetTickCount());
             }
         } else {
@@ -376,19 +377,23 @@ void led_task(void *) {
         // Wait for a state change.
         freertos::notify_take(0, true, portMAX_DELAY);
 
+        // Retrieve expiry tracked data.
+        const auto precharge_state = s_precharge_state.get();
+        const auto rear_status = s_rear_status.get();
+
         // Set TS button LED.
         DMA1_Channel6->CCR &= ~DMA_CCR_EN;
-        if (!s_precharge_state) {
+        if (!precharge_state) {
             // Off.
             ts_buffer[0] = 1u << (k_ts_button_led.pin + 16);
             DMA1_Channel6->CNDTR = 1;
-        } else if (s_precharge_state == precharge::State::Active) {
+        } else if (*precharge_state == precharge::State::Active) {
             // Solid.
             ts_buffer[0] = 1u << k_ts_button_led.pin;
             DMA1_Channel6->CNDTR = 1;
         } else {
             // Slow flash for standby and fast for everything else.
-            const auto count = s_precharge_state == precharge::State::Standby ? 5 : 1;
+            const auto count = *precharge_state == precharge::State::Standby ? 5 : 1;
             for (std::uint32_t i = 0; i < count; i++) {
                 ts_buffer[i] = 1u << k_ts_button_led.pin;
                 ts_buffer[count + i] = 1u << (k_ts_button_led.pin + 16);
@@ -399,20 +404,19 @@ void led_task(void *) {
 
         // Set RTD button LED.
         DMA1_Channel2->CCR &= ~DMA_CCR_EN;
-        if (!s_precharge_state || *s_precharge_state != precharge::State::Active) {
+        if (precharge_state != precharge::State::Active) {
             // Off.
             rtd_buffer[0] = 1u << (k_rtd_button_led.pin + 16);
             DMA1_Channel2->CNDTR = 1;
-        } else if (s_rear_status && s_rear_status->rtd_prevention_flags.none_set()) {
+        } else if (rear_status && rear_status->rtd_prevention_flags.none_set()) {
             // Solid.
             rtd_buffer[0] = 1u << k_rtd_button_led.pin;
             DMA1_Channel2->CNDTR = 1;
         } else {
             // Slow flash to indicate ready to activate, fast for any additional errors set.
             const auto count =
-                (s_rear_status && s_rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested))
-                    ? 5
-                    : 1;
+                (rear_status && rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested)) ? 5
+                                                                                                                   : 1;
             for (std::uint32_t i = 0; i < count; i++) {
                 rtd_buffer[i] = 1u << k_rtd_button_led.pin;
                 rtd_buffer[count + i] = 1u << (k_rtd_button_led.pin + 16);

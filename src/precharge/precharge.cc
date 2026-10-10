@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <variant>
 
 using namespace precharge;
 
@@ -154,7 +155,7 @@ using OutputBits = util::FlagBitset<OutputBit>;
 using SwdData = StatusMessage;
 
 // CAN heartbeat.
-TimeTracked<std::monostate> s_heartbeat(k_heartbeat_timeout);
+TimeTracked<std::monostate, k_heartbeat_timeout> s_heartbeat;
 
 // Tasks.
 freertos::Task<256> s_sm_task;
@@ -207,7 +208,7 @@ std::pair<State, ErrorFlags> precheck_standby(std::uint32_t elapsed_ms, std::uin
     if (error_flags.any_set()) {
         return std::make_pair(State::Precheck, error_flags);
     }
-    if (!s_heartbeat) {
+    if (!s_heartbeat.get()) {
         return std::make_pair(State::Standby, ErrorFlags(Error::WaitingActivation));
     }
     return std::make_pair(State::Precharge, ErrorFlags());
@@ -243,7 +244,7 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t p
                                        std::uint16_t precharge_voltage, std::uint16_t tractive_voltage,
                                        RelayStates relay_states) {
     ErrorFlags error_flags;
-    if (!s_heartbeat) {
+    if (!s_heartbeat.get()) {
         error_flags.set(Error::Deactivation);
     }
     if (relay_states.is_set(RelayState::DischargeClosed)) {
@@ -299,7 +300,7 @@ std::pair<State, ErrorFlags> precharge(std::uint32_t elapsed_ms, std::uint32_t p
 
 std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayStates relay_states) {
     ErrorFlags error_flags;
-    if (!s_heartbeat) {
+    if (!s_heartbeat.get()) {
         error_flags.set(Error::Deactivation);
     }
     if (relay_states.is_set(RelayState::DischargeClosed)) {
@@ -326,7 +327,7 @@ std::pair<State, ErrorFlags> precharge_hold(std::uint32_t elapsed_ms, RelayState
 
 std::pair<State, ErrorFlags> active(std::uint32_t elapsed_ms, RelayStates relay_states) {
     ErrorFlags error_flags;
-    if (!s_heartbeat) {
+    if (!s_heartbeat.get()) {
         error_flags.set(Error::Deactivation);
     }
     if (relay_states.is_set(RelayState::DischargeClosed)) {
@@ -369,7 +370,7 @@ void sm_task(void *) {
     // Initialise CAN on port B.
     hal::can::init(hal::can::Port::B, config::k_can_speed, 1);
     hal::can::listen<HeartbeatMessage, [](const HeartbeatMessage &) {
-        s_heartbeat.receive({});
+        s_heartbeat.receive_isr({});
     }>(config::k_precharge_can_id, 0);
 
     // Configure analog inputs.
@@ -421,9 +422,6 @@ void sm_task(void *) {
         // Calculate HV sample inputs.
         const auto precharge_voltage = convert_voltage(adc_buffer[0]);
         const auto tractive_voltage = convert_voltage(adc_buffer[1]);
-
-        // Update heartbeat expiry.
-        s_heartbeat.update();
 
         // Build a flag bitset of relay actual states.
         RelayStates relay_states;
