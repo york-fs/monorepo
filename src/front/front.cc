@@ -84,7 +84,7 @@ constexpr hal::gpio::Descriptor k_rtd_button_led(hal::gpio::Port::C, 13);
 
 TimeTracked<precharge::State, 75> s_precharge_state;
 TimeTracked<rear::StatusMessage, 75> s_rear_status;
-std::array<volatile std::uint16_t, 9> s_adc_buffer;
+std::array<volatile std::uint16_t, 10> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
 freertos::Task<2048> s_throttle_task;
@@ -146,7 +146,7 @@ void main_task(void *) {
     hal::irq_enable(CAN1_SCE_IRQn, 5);
 
     // Sequence the fuse, APPS, and temperature sensor sampling.
-    hal::adc_init(ADC1, 9);
+    hal::adc_init(ADC1, s_adc_buffer.size());
     hal::adc_init_dma(s_adc_buffer);
     for (std::uint32_t i = 0; i < 9; i++) {
         hal::adc_sequence_channel(ADC1, i + 1, i, 0b111u);
@@ -245,9 +245,10 @@ void main_task(void *) {
 
         // Calculate LVS voltages by reversing the 5.7x divider on each.
         std::array<std::uint16_t, 7> fuse_voltages{};
-        std::transform(s_adc_buffer.begin(), s_adc_buffer.end(), fuse_voltages.begin(), [](std::uint16_t adc_value) {
-            return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
-        });
+        std::transform(s_adc_buffer.begin(), std::next(s_adc_buffer.begin(), fuse_voltages.size()),
+                       fuse_voltages.begin(), [](std::uint16_t adc_value) {
+                           return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
+                       });
 
         LvsSampleMessage1 lvs_sample_message_1{
             .rtd_voltage = fuse_voltages[0],
