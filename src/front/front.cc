@@ -204,8 +204,8 @@ void main_task(void *) {
         }
 
         // Keep track of RTD activation time.
-        if (s_rear_status && s_rear_status->rtd_prevention_flags.none_set() && rtd_activation_desired) {
-            if (!rtd_activation_time) {
+        if (rtd_activation_desired) {
+            if (!rtd_activation_time && s_rear_status && s_rear_status->rtd_prevention_flags.none_set()) {
                 rtd_activation_time.emplace(xTaskGetTickCount());
             }
         } else {
