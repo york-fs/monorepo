@@ -574,7 +574,7 @@ void swd_task(void *) {
 
 extern "C" void DMA1_Channel1_IRQHandler() {
     freertos::InterruptYielder interrupt_yielder;
-    DMA1->IFCR |= DMA_IFCR_CTCIF1;
+    DMA1->IFCR = DMA_IFCR_CTCIF1;
     s_sm_task.notify_give_isr(0, interrupt_yielder);
 }
 

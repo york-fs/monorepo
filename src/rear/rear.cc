@@ -773,13 +773,13 @@ void swd_task(void *) {
 
 extern "C" void DMA1_Channel1_IRQHandler() {
     freertos::InterruptYielder interrupt_yielder;
-    DMA1->IFCR |= DMA_IFCR_CTCIF1;
+    DMA1->IFCR = DMA_IFCR_CTCIF1;
     s_control_task.notify_give_isr(0, interrupt_yielder);
 }
 
 extern "C" void DMA1_Channel4_IRQHandler() {
     // Clear the pending flag and disable the channel.
-    DMA1->IFCR |= DMA_IFCR_CTCIF4;
+    DMA1->IFCR = DMA_IFCR_CTCIF4;
     DMA1_Channel4->CCR &= ~DMA_CCR_EN;
 }
 
