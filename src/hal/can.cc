@@ -139,7 +139,7 @@ void tx_task(void *) {
 
         // Check that there are the correct amount of free mailboxes.
         [[maybe_unused]] const auto hw_free_count = std::popcount((CAN1->TSR & CAN_TSR_TME_Msk) >> CAN_TSR_TME_Pos);
-        assert(hw_free_count == free_count);
+        assert(free_count == static_cast<std::uint32_t>(hw_free_count));
 
         // Fill in a free mailbox.
         auto &mailbox = CAN1->sTxMailBox[(CAN1->TSR & CAN_TSR_CODE_Msk) >> CAN_TSR_CODE_Pos];
