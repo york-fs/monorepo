@@ -26,7 +26,7 @@ enum class InputMode {
      */
     Analog,
 
-    /*
+    /**
      * @brief The default high-impedance pin mode with no pull-up or pull-down resistors enabled.
      */
     Floating,
