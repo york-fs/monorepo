@@ -16,6 +16,7 @@
             },
             "environment": {
                 "CFLAGS": "-Wall -Wextra",
+                "CXXFLAGS": "-Wall -Wextra -Wno-format -Wno-switch",
                 "LDFLAGS": "-Wl,--no-warn-rwx-segment"
             }
         },
