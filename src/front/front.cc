@@ -24,10 +24,10 @@ using namespace front;
 namespace {
 
 /**
- * @brief The timeout to use for the TS and RTD actual activation state latching in milliseconds. This should be kept
- * well below the precharge's rate limit time.
+ * @brief The period for which to latch the TS and RTD activation states unconditionally to allow the rear distribution
+ * and precharge to work in milliseconds. This value should be kept well below the precharge's rate limit time.
  */
-constexpr std::uint32_t k_activation_desired_timeout = 500;
+constexpr std::uint32_t k_activation_grace_period = 500;
 
 /**
  * @brief The minimum duration a dashboard button must be held to register a press in milliseconds.
@@ -36,7 +36,7 @@ constexpr std::uint32_t k_button_hold_duration = 100;
 
 /**
  * @brief The duration to ignore subsequent button presses after a successful button press in milliseconds. This should
- * be kept longer than the activation desired timeout and the hold duration.
+ * be kept longer than the activation grace period and the hold duration.
  */
 constexpr std::uint32_t k_button_lockout_duration = 1000;
 
@@ -190,14 +190,14 @@ void main_task(void *) {
             s_led_task.notify_give(0);
         }
 
-        // Desired state timeouts if the TS and RTD actual states don't activate in time.
+        // Desired state timeouts if the TS and RTD actual states don't latch within the grace period.
         if (ts_activation_desired &&
-            xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(k_activation_desired_timeout) &&
+            xTaskGetTickCount() - *ts_activation_desired >= pdMS_TO_TICKS(k_activation_grace_period) &&
             (!s_rear_status || s_rear_status->ts_prevention_flags.any_set())) {
             ts_activation_desired.reset();
         }
         if (rtd_activation_desired &&
-            xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(k_activation_desired_timeout) &&
+            xTaskGetTickCount() - *rtd_activation_desired >= pdMS_TO_TICKS(k_activation_grace_period) &&
             (!s_rear_status || s_rear_status->rtd_prevention_flags.any_set())) {
             rtd_activation_desired.reset();
         }
