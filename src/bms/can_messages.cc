@@ -51,7 +51,7 @@ std::optional<MasterSummaryMessage> MasterSummaryMessage::decode(util::Stream &s
     const auto max_voltage = stream.read_be<std::uint16_t>();
     const auto min_temperature = stream.read_be<std::int8_t>();
     const auto max_temperature = stream.read_be<std::int8_t>();
-    if (!min_voltage || !max_temperature || !min_temperature || !max_temperature) {
+    if (!min_voltage || !max_voltage || !min_temperature || !max_temperature) {
         return std::nullopt;
     }
     return MasterSummaryMessage{
@@ -89,7 +89,7 @@ bool StartFullDischargeMessage::encode(util::Stream &stream) const {
     return stream.write_be(target_voltage);
 }
 
-std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &stream) {
+std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &) {
     return WriteConfigMessage{};
 }
 

@@ -1,4 +1,4 @@
-#pragma one
+#pragma once
 
 #include <bms/error.hh>
 #include <util/stream.hh>

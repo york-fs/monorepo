@@ -99,8 +99,8 @@ using Identifier = std::variant<std::monostate, StandardIdentifier, ExtendedIden
  */
 struct Frame {
     Identifier identifier;
-    std::array<std::uint8_t, 8> data;
-    std::uint8_t length;
+    std::array<std::uint8_t, 8> data{};
+    std::uint8_t length{};
 
     bool operator==(const Frame &) const = default;
 

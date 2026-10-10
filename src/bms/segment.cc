@@ -504,7 +504,7 @@ void cmd_task(void *) {
     for (const auto &pin : k_address_pins) {
         hal::gpio::configure(pin, hal::gpio::InputMode::PullUp);
     }
-    s_i2c_address = k_i2c_address_base | util::bit_reverse<std::uint8_t>(~GPIOA->IDR >> 4) & 0xfu;
+    s_i2c_address = k_i2c_address_base | (util::bit_reverse<std::uint8_t>(~GPIOA->IDR >> 4) & 0xfu);
     for (const auto &pin : k_address_pins) {
         hal::gpio::configure(pin, hal::gpio::InputMode::PullDown);
     }

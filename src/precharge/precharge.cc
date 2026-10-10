@@ -229,7 +229,7 @@ template <CurveModel>
 float model_curve(float y);
 
 template <>
-float model_curve<CurveModel::Test>(float y) {
+[[maybe_unused]] float model_curve<CurveModel::Test>(float y) {
     // Model with 3300 uF capacitor and no resistance to ground used during testing.
     return rc_curve(y, 3300e-6f, 1e3f, 1e9f);
 }

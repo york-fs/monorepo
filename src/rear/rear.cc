@@ -649,10 +649,10 @@ void radio_task(void *) {
     std::uint8_t missed_tx_count = 0;
 
     // Keep track of latest valid messages received.
-    front::ThrottleMessage front_throttle;
-    dti::GeneralData3 inverter_gd3;
-    precharge::StatusMessage precharge_status;
-    bms::MasterStatusMessage bms_status;
+    front::ThrottleMessage front_throttle{};
+    dti::GeneralData3 inverter_gd3{};
+    precharge::StatusMessage precharge_status{};
+    bms::MasterStatusMessage bms_status{};
 
     freertos::PeriodScheduler scheduler;
     while (true) {

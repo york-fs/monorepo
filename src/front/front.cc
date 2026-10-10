@@ -394,7 +394,7 @@ void led_task(void *) {
             DMA1_Channel6->CNDTR = 1;
         } else {
             // Slow flash for standby and fast for everything else.
-            const auto count = *precharge_state == precharge::State::Standby ? 5 : 1;
+            const auto count = *precharge_state == precharge::State::Standby ? 5u : 1u;
             for (std::uint32_t i = 0; i < count; i++) {
                 ts_buffer[i] = 1u << k_ts_button_led.pin;
                 ts_buffer[count + i] = 1u << (k_ts_button_led.pin + 16);
@@ -416,8 +416,8 @@ void led_task(void *) {
         } else {
             // Slow flash to indicate ready to activate, fast for any additional errors set.
             const auto count =
-                (rear_status && rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested)) ? 5
-                                                                                                                   : 1;
+                (rear_status && rear_status->rtd_prevention_flags.only_set(rear::RtdPreventionFlag::NotRequested)) ? 5u
+                                                                                                                   : 1u;
             for (std::uint32_t i = 0; i < count; i++) {
                 rtd_buffer[i] = 1u << k_rtd_button_led.pin;
                 rtd_buffer[count + i] = 1u << (k_rtd_button_led.pin + 16);

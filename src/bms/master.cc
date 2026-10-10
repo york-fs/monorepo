@@ -315,7 +315,7 @@ struct StatusData {
 
 struct SwdData {
     MasterErrorFlags master_flags;
-    std::optional<std::uint32_t> shutdown_duration;
+    std::optional<std::uint32_t> shutdown_duration{};
 };
 
 // Active config and control mode.
