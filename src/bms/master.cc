@@ -1126,7 +1126,8 @@ extern "C" void TIM1_CC_IRQHandler() {
 extern "C" void SPI2_IRQHandler() {
     if ((SPI2->SR & SPI_SR_RXNE) != 0) {
         // Convert to floating point volts.
-        const auto voltage = static_cast<float>((SPI2->DR * k_adc_vref) >> 16) * 0.0001f;
+        constexpr auto factor = static_cast<float>(k_adc_vref) / 10000.0f / 65536.0f;
+        const auto voltage = static_cast<float>(SPI2->DR) * factor;
         if (s_selected_sensor) {
             s_positive_sensor.update(voltage);
         } else {
