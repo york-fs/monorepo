@@ -402,16 +402,10 @@ void supervisor_task(void *) {
     hal::irq_enable(I2C1_ER_IRQn, 7);
     hal::irq_enable(CAN1_TX_IRQn, 8);
     hal::irq_enable(CAN1_RX0_IRQn, 8);
-    hal::irq_enable(I2C2_EV_IRQn, 9);
-    hal::irq_enable(I2C2_ER_IRQn, 9);
-
-    // The current sensing interrupts don't use RTOS functions, so can have a priority below
-    // configMAX_SYSCALL_INTERRUPT_PRIORITY (5), which we do for the external interrupt on MISO and the RXNE handler to
-    // ensure the fairly strict SPI timing. However, the timer interrupt which drives the current sensing is kept at a
-    // low priority to make current sensing in general lower priority than CAN and segment I2C.
-    hal::irq_enable(TIM3_IRQn, 10);
-    hal::irq_enable(EXTI15_10_IRQn, 0);
-    hal::irq_enable(SPI2_IRQn, 1);
+    hal::irq_enable(SPI2_IRQn, 9);
+    hal::irq_enable(TIM1_CC_IRQn, 10);
+    hal::irq_enable(I2C2_EV_IRQn, 11);
+    hal::irq_enable(I2C2_ER_IRQn, 11);
 
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -715,8 +709,9 @@ void control_task(void *) {
 }
 
 void CurrentSensor::update(float voltage) {
+    // Delta time between incoming data. This is half of the timer period since we flip between sensors each capture.
     // TODO: Don't hardcode the delta time, it should be kept in sync with the timer period.
-    constexpr float dt = 1.0f / 1000.0f;
+    constexpr float dt = 1.0f / 500.0f;
 
     // Update voltage filter.
     constexpr float alpha = dt / (dt + k_current_sense_tau);
@@ -1119,33 +1114,13 @@ void swd_task(void *) {
 
 } // namespace
 
-extern "C" void TIM3_IRQHandler() {
-    // Clear update pending flag.
-    TIM3->SR = ~TIM_SR_UIF;
+extern "C" void TIM1_CC_IRQHandler() {
+    if ((TIM1->SR & TIM_SR_CC1IF) != 0u) {
+        TIM1->SR = ~TIM_SR_CC1IF;
 
-    // Enable the external interrupt on MISO to capture the busy bit.
-    EXTI->IMR |= EXTI_IMR_MR14;
-
-    // Initiate an ADC conversion.
-    hal::gpio::set(k_adc_cs);
-    hal::gpio::reset(k_adc_cs);
-}
-
-extern "C" void EXTI15_10_IRQHandler() {
-    // Clear pending flag.
-    EXTI->PR = EXTI_PR_PR14;
-
-    // Skip over the MAX11163's busy bit by clocking once manually.
-    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_10M);
-    hal::gpio::set(k_sck);
-    hal::gpio::reset(k_sck);
-    hal::gpio::configure(k_sck, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
-
-    // Disable the external interrupt so that it doesn't false trigger when doing the real SPI transfer.
-    EXTI->IMR &= ~EXTI_IMR_MR14;
-
-    // Transfer to the ADC.
-    SPI2->DR = 0u;
+        // Clock 16-bits to the ADC.
+        SPI2->DR = 0u;
+    }
 }
 
 extern "C" void SPI2_IRQHandler() {
@@ -1244,9 +1219,9 @@ void app_main() {
     hal::gpio::configure(k_sda_2, hal::gpio::OutputMode::AlternateOpenDrain, hal::gpio::SlewRate::_2M);
 
     // Configure current sensing and SPI pins. Drive SCK to avoid the ADC going into sleep.
-    hal::gpio::configure(k_current_switch, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_2M);
-    hal::gpio::configure(k_adc_cs, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
-    hal::gpio::configure(k_sck, hal::gpio::OutputMode::PushPull, hal::gpio::SlewRate::_2M);
+    hal::gpio::configure(k_current_switch, hal::gpio::OutputMode::OpenDrain, hal::gpio::SlewRate::_10M);
+    hal::gpio::configure(k_adc_cs, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_50M);
+    hal::gpio::configure(k_sck, hal::gpio::OutputMode::AlternatePushPull, hal::gpio::SlewRate::_10M);
     hal::gpio::configure(k_miso, hal::gpio::InputMode::PullUp);
 
     // Enable the backup domain and disable write protection.
@@ -1273,16 +1248,19 @@ void app_main() {
     SPI2->CR2 = SPI_CR2_RXNEIE;
     SPI2->CR1 = SPI_CR1_DFF | SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_SPE | SPI_CR1_BR_1 | SPI_CR1_MSTR;
 
-    // Setup a falling edge external interrupt on MISO for triggering on ADC completion.
-    AFIO->EXTICR[3] |= AFIO_EXTICR4_EXTI14_PB;
-    EXTI->FTSR |= EXTI_FTSR_TR14;
-
-    // Setup a 1 kHz timer to trigger current sampling.
-    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
-    TIM3->DIER |= TIM_DIER_UIE;
-    TIM3->PSC = 111;
-    TIM3->ARR = 499;
-    TIM3->CR1 |= TIM_CR1_CEN;
+    // Setup a 1 kHz timer on the ADC's CS (CNVST) pin to trigger current sampling. Use no prescale divider so that the
+    // pulse width has the highest resolution, which is configured to 3.5 us, just above the ADC's maximum conversion
+    // time. Enable the channel capture interrupt to trigger the SPI communication once conversion is complete.
+    RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
+    TIM1->PSC = 0;
+    TIM1->ARR = 56000 - 1;
+    TIM1->CCR1 = 196;
+    TIM1->CCMR1 = TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1PE;
+    TIM1->DIER = TIM_DIER_CC1IE;
+    TIM1->CCER = TIM_CCER_CC1E;
+    TIM1->BDTR = TIM_BDTR_MOE;
+    TIM1->EGR = TIM_EGR_UG;
+    TIM1->CR1 = TIM_CR1_CEN;
 
     s_segments_mutex.init();
     s_status_queue.init();
