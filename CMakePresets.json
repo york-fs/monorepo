@@ -37,7 +37,8 @@
             "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
             "cacheVariables": {
                 "BUILD_TARGET": "stm32",
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
             }
         },
         {
