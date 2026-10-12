@@ -145,7 +145,8 @@ export function packCurrentSeverity(amps: number): Severity {
  * A debugging aid rather than a fault condition: any i2c error at all means
  * the bus to the segments is unhappy and is worth knowing about, but it isn't
  * critical on its own — a real communication failure surfaces as
- * `SEGMENT_ERROR`/`BAD_SEGMENT_COUNT` above.
+ * `DEADLINE_OVERRUN` above, once a segment's data goes stale. The count is
+ * cumulative since the BMS booted, and a few errors at boot are normal.
  */
 export function i2cErrorCountSeverity(count: number): Severity {
     return count === 0 ? 'good' : 'warning'
