@@ -37,6 +37,11 @@ namespace {
 constexpr std::uint32_t k_control_period = 10;
 
 /**
+ * @brief The period for which to keep TS activation latched when a prevention flag is set in milliseconds.
+ */
+constexpr std::uint32_t k_prevention_grace_period = 50;
+
+/**
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
  */
 constexpr std::uint16_t k_fuse_threshold = 2000;
@@ -398,6 +403,9 @@ void control_task(void *) {
     expander_write(ExpanderRegister::ConfigurationPort0, 0xff);
     expander_write(ExpanderRegister::ConfigurationPort1, 0xee);
 
+    // Keep track of when any TS prevention flag is first seen so that a debounce period can be implemented.
+    std::optional<TickType_t> ts_prevention_flag_time;
+
     // Keep track of whether the ready-to-drive state has been latched on. This is needed because, whilst most of the
     // RTD prevention flags are continuously checked, some, like the brake being pressed are only needed for initial
     // activation.
@@ -505,6 +513,24 @@ void control_task(void *) {
         }
         if (!bms_status || bms_status->master_flags.any_set()) {
             ts_prevention_flags.set(TsPreventionFlag::BmsFault);
+        }
+
+        // Keep track of first set flag time.
+        if (ts_prevention_flags.none_set()) {
+            ts_prevention_flag_time.reset();
+        } else if (!ts_prevention_flag_time) {
+            ts_prevention_flag_time.emplace(xTaskGetTickCount());
+        }
+
+        // Hold TS activation latched unless it has not been requested yet or the grace period has expired. Alter the
+        // flags so that the latched flags get broadcast.
+        // TODO: Potentially exempt more things from the grace period here.
+        bool should_prevent_ts_activation = false;
+        should_prevent_ts_activation |= ts_prevention_flag_time && xTaskGetTickCount() - *ts_prevention_flag_time >=
+                                                                       pdMS_TO_TICKS(k_prevention_grace_period);
+        should_prevent_ts_activation |= ts_prevention_flags.is_set(TsPreventionFlag::NotRequested);
+        if (!should_prevent_ts_activation) {
+            ts_prevention_flags = TsPreventionFlags();
         }
 
         // Compute RTD prevention flags.
