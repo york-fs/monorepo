@@ -116,7 +116,7 @@ constexpr std::uint32_t k_supervisor_period = 10;
 /**
  * @brief CAN status message sending task period in milliseconds.
  */
-constexpr std::uint32_t k_status_period = 100;
+constexpr std::uint32_t k_status_period = 50;
 
 /**
  * @brief Control task scheduling period in milliseconds.
@@ -610,7 +610,6 @@ void status_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         hal::adc_start(ADC1);
-        const auto data = *s_status_queue.receive(portMAX_DELAY);
         scheduler.delay_until_ms(k_status_period);
 
         // Calculate LVS input voltage. The input has a 5.3x divider.
@@ -654,6 +653,7 @@ void status_task(void *) {
             }
         });
 
+        const auto data = *s_status_queue.receive(portMAX_DELAY);
         MasterStatusMessage master_status_message{
             .master_flags = data.master_flags,
             .i2c_error_count = i2c_error_count,
