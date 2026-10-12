@@ -675,8 +675,6 @@ void status_task(void *) {
             .max_temperature = max_temperature,
         };
         hal::can::transmit(config::k_bms_can_id, master_summary_message);
-
-        scheduler.delay_until_ms(k_status_period);
     }
 }
 
