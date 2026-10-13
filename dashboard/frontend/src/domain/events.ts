@@ -179,10 +179,9 @@ export function codeLabel(category: EventCategory, code: string): string {
 
 export function codeDescription(category: EventCategory, code: string): string | undefined {
     if (code === EXPANDER_READ_CODE) {
-        // The rear retries a failed read and briefly holds the last good one,
-        // so a failure only opens anything if a brief shutdown open is logged
-        // alongside it.
-        return "The rear GPIO expander's I2C read failed. It only affected the car if a brief shutdown open was logged at the same time"
+        // A failed read makes every rear shutdown input read as open for that
+        // control cycle, which the rear's TS grace period normally rides out.
+        return "The rear GPIO expander's I2C read failed, so the rear shutdown inputs read as open for one cycle. The TS grace period normally rides this out"
     }
     switch (category) {
         case 'shutdown':
@@ -204,7 +203,7 @@ export function codeDescription(category: EventCategory, code: string): string |
         case 'online':
             return 'The rear distribution stopped receiving its CAN messages'
         case 'fuse':
-            return 'Fuse output is more than 1 V below the highest LV fuse voltage'
+            return 'Fuse output is more than 2 V below the highest LV fuse voltage'
         default:
             return undefined
     }
