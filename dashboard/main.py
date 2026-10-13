@@ -202,6 +202,29 @@ class TelemetryFrame:
 
     crc: int
 
+    # Everything the rear distribution saw since its previous frame, so that flags set
+    # for less than a radio period still show up. None for older rear firmware.
+    ts_prevention_flags_seen: TsPreventionFlags | None = attrs.field(
+        default=None, converter=attrs.converters.optional(TsPreventionFlags)
+    )
+    rtd_prevention_flags_seen: RtdPreventionFlags | None = attrs.field(
+        default=None, converter=attrs.converters.optional(RtdPreventionFlags)
+    )
+    shutdown_open_causes_seen: list[str] | None = attrs.field(
+        default=None,
+        converter=attrs.converters.optional(
+            lambda bits: [
+                cause.name
+                for cause in ShutdownOpenCause
+                if cause is not ShutdownOpenCause.NONE and bits & (1 << cause.value)
+            ]
+        ),
+    )
+    blown_fuses_seen: FuseFlags | None = attrs.field(
+        default=None, converter=attrs.converters.optional(FuseFlags)
+    )
+    expander_error_count: int | None = None
+
     def serialize(self, inst, field, value):
         if isinstance(value, Flag):
             return [flag.name for flag in type(value) if flag in value]
@@ -213,8 +236,20 @@ class TelemetryFrame:
         return attrs.asdict(self, value_serializer=self.serialize)
 
 
+# Frame fields before the CRC. Newer rear firmware appends the flags it saw since its
+# previous frame, also before the CRC.
+FRAME_FORMAT = ">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbb"
+FRAME_FORMAT_SEEN = "HBHII"
+
+
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbI", data))
+    # Accept frames with and without the seen fields, so the dashboard keeps working
+    # with a rear distribution that hasn't been reflashed.
+    if len(data) == struct.calcsize(FRAME_FORMAT + FRAME_FORMAT_SEEN + "I"):
+        *fields, crc = struct.unpack(FRAME_FORMAT + FRAME_FORMAT_SEEN + "I", data)
+        split = len(fields) - len(FRAME_FORMAT_SEEN)
+        return TelemetryFrame(*fields[:split], crc, *fields[split:])
+    return TelemetryFrame(*struct.unpack(FRAME_FORMAT + "I", data))
 
 
 def cobs_unstuff(b: bytes) -> bytearray:

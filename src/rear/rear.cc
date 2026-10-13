@@ -22,6 +22,7 @@
 #include <util/type_traits.hh>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -147,6 +148,17 @@ struct RadioData {
 
 // Single-entry queue for consistent radio data.
 freertos::Queue<RadioData, 1> s_radio_data;
+
+// Everything the control task has seen since the radio task last sent a frame. The control task runs every 10 ms but
+// the radio only sends every 100 ms, so without these a flag set for less than a radio period would never be seen in
+// telemetry. Purely diagnostic - nothing reads these to make decisions.
+std::atomic<TsPreventionFlags::type_t> s_ts_prevention_seen;
+std::atomic<RtdPreventionFlags::type_t> s_rtd_prevention_seen;
+std::atomic<std::uint16_t> s_shutdown_causes_seen;
+std::atomic<FuseBitset::type_t> s_blown_fuses_seen;
+
+// Total number of failed GPIO expander reads.
+std::atomic<std::uint32_t> s_expander_error_count;
 
 // I2C state machine for GPIO expander.
 i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
@@ -466,8 +478,11 @@ void control_task(void *) {
         }
 
         // Sample rear-local shutdown pins.
-        const auto expander_port_0 = expander_read(ExpanderRegister::InputPort0).value_or(0);
-        const auto expander_port_1 = expander_read(ExpanderRegister::InputPort1).value_or(0);
+        const auto expander_port_0_read = expander_read(ExpanderRegister::InputPort0);
+        const auto expander_port_1_read = expander_read(ExpanderRegister::InputPort1);
+        s_expander_error_count += static_cast<std::uint32_t>(!expander_port_0_read) + !expander_port_1_read;
+        const auto expander_port_0 = expander_port_0_read.value_or(0);
+        const auto expander_port_1 = expander_port_1_read.value_or(0);
         auto rear_shutdown_samples = static_cast<RearShutdownSamples>(expander_port_0);
         if ((expander_port_1 & (1u << 2)) != 0) {
             rear_shutdown_samples.set(RearShutdownSample::BmsOk);
@@ -515,6 +530,15 @@ void control_task(void *) {
             ts_prevention_flags.set(TsPreventionFlag::BmsFault);
         }
 
+        // Accumulate everything seen this cycle for the next telemetry frame. The TS flags are taken before the grace
+        // period below clears them, so transients that are ridden out still show up in telemetry.
+        s_ts_prevention_seen.fetch_or(ts_prevention_flags.value());
+        if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
+            s_shutdown_causes_seen.fetch_or(1u << util::to_underlying(shutdown_open_cause));
+        }
+        const FuseBitset::type_t all_fuses_mask = (1u << fuse_voltages.size()) - 1u;
+        s_blown_fuses_seen.fetch_or(~fuse_bitset.value() & all_fuses_mask);
+
         // Keep track of first set flag time.
         if (ts_prevention_flags.none_set()) {
             ts_prevention_flag_time.reset();
@@ -559,6 +583,7 @@ void control_task(void *) {
         if (rtd_prevention_flags.none_set()) {
             rtd_latched = true;
         }
+        s_rtd_prevention_seen.fetch_or(rtd_prevention_flags.value());
 
         // Always set zero max brake current since no regen support for now.
         dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
@@ -751,6 +776,13 @@ void radio_task(void *) {
         stream.write_be(data.max_cell_voltage);
         stream.write_be(data.min_cell_temperature);
         stream.write_be(data.max_cell_temperature);
+
+        // Append everything seen since the previous frame, including flags which were set and cleared in between.
+        stream.write_be(s_ts_prevention_seen.exchange(0));
+        stream.write_be(s_rtd_prevention_seen.exchange(0));
+        stream.write_be(s_shutdown_causes_seen.exchange(0));
+        stream.write_be(s_blown_fuses_seen.exchange(0));
+        stream.write_be(s_expander_error_count.load());
 
         // Append a checksum.
         stream.write_be(freertos::in_critical_section([&] {
