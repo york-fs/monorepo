@@ -1,14 +1,19 @@
 from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
 from enum import Enum, Flag
-from fastapi import FastAPI, Request, Depends
+from events import EventLog, EventTracker, FrameRecorder
+from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi.responses import FileResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
+from pathlib import Path
 import asyncio
 import attrs
 import crcmod
 import enum
+import os
 import serial_asyncio
 import struct
+import time
 
 
 ERPM_FACTOR = 10
@@ -279,9 +284,15 @@ def pad_data(data: bytes) -> bytes:
 
 class SerialManager:
     subscribers: set[asyncio.Queue]
+    event_log: EventLog
+    event_tracker: EventTracker
+    frame_recorder: FrameRecorder
 
-    def __init__(self):
+    def __init__(self, log_directory: Path):
         self.subscribers = set()
+        self.event_log = EventLog(log_directory)
+        self.event_tracker = EventTracker(self.event_log)
+        self.frame_recorder = FrameRecorder(log_directory)
 
     def subscribe(self) -> asyncio.Queue:
         queue = asyncio.Queue()
@@ -292,8 +303,14 @@ class SerialManager:
         self.subscribers.discard(queue)
 
     def publish(self, frame: TelemetryFrame):
+        now = time.time()
+        data = frame.to_dict()
+        self.frame_recorder.record(data, now)
+        events = self.event_tracker.process(data, now)
         for queue in self.subscribers:
-            queue.put_nowait(frame.to_dict())
+            queue.put_nowait(data)
+            for event in events:
+                queue.put_nowait(ServerSentEvent(data=event, event="log"))
 
 
 class SerialReaderProtocol(asyncio.Protocol):
@@ -326,7 +343,7 @@ class SerialReaderProtocol(asyncio.Protocol):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    manager = SerialManager()
+    manager = SerialManager(Path(os.environ.get("DASHBOARD_LOG_DIR", "logs")))
     app.state.serial_manager = manager
 
     loop = asyncio.get_running_loop()
@@ -338,6 +355,7 @@ async def lifespan(app: FastAPI):
     )
     yield
     transport.close()
+    manager.frame_recorder.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -358,3 +376,22 @@ async def stream(
             yield await queue.get()
     finally:
         manager.unsubscribe(queue)
+
+
+@app.get("/api/events")
+async def get_events(
+    manager: SerialManager = Depends(get_serial_manager),
+) -> list[dict]:
+    return list(manager.event_log.events)
+
+
+@app.post("/api/events/clear")
+async def clear_events(manager: SerialManager = Depends(get_serial_manager)):
+    manager.event_log.clear()
+
+
+@app.get("/api/events/download")
+async def download_events(manager: SerialManager = Depends(get_serial_manager)):
+    if not manager.event_log.path.exists():
+        raise HTTPException(status_code=404, detail="No events logged yet")
+    return FileResponse(manager.event_log.path, filename="events.jsonl")

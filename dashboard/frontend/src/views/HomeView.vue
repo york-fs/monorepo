@@ -5,6 +5,7 @@ import DistributionSection from '@/components/distribution/DistributionSection.v
 import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
 import BmsSection from '@/components/bms/BmsSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
+import EventLogSection from '@/components/events/EventLogSection.vue'
 import { isDemoMode } from '@/demo'
 
 const demoMode = isDemoMode()
@@ -17,6 +18,7 @@ const demoMode = isDemoMode()
             <Badge v-if="demoMode">Demo mode — synthetic data</Badge>
         </div>
         <StatusBar />
+        <EventLogSection />
         <DistributionSection />
         <PowertrainSection />
         <BmsSection />

@@ -1,5 +1,6 @@
 import { computed, reactive, readonly, ref } from 'vue'
 import type { LinkState, TelemetryFrame, TelemetryStatus } from '@/telemetry'
+import type { LogEvent } from '@/domain/events'
 import { isDemoMode, startDemoTelemetry } from '@/demo'
 
 // No frame in this long means treat the data as stale even though the
@@ -14,6 +15,9 @@ const stale = ref(true)
 
 type FrameListener = (frame: TelemetryFrame, receivedAt: number) => void
 const listeners = new Set<FrameListener>()
+
+type LogEventListener = (event: LogEvent) => void
+const logListeners = new Set<LogEventListener>()
 
 let source: EventSource | null = null
 let staleTimer: ReturnType<typeof setTimeout> | undefined
@@ -64,6 +68,13 @@ function connect() {
     source.onmessage = (event) => {
         applyFrame(JSON.parse(event.data) as TelemetryFrame)
     }
+
+    // Event log entries share the stream as a named SSE event so they arrive
+    // in order with the frames that caused them.
+    source.addEventListener('log', (event) => {
+        const parsed = JSON.parse(event.data) as LogEvent
+        for (const listener of logListeners) listener(parsed)
+    })
 }
 
 const status = computed<TelemetryStatus>(() => (stale.value ? 'offline' : 'online'))
@@ -78,6 +89,17 @@ export function onTelemetryFrame(listener: FrameListener) {
     connect()
     listeners.add(listener)
     return () => listeners.delete(listener)
+}
+
+/**
+ * Subscribe to event log entries pushed live by the backend (see
+ * `useEventLog`). Never fires in demo mode, which has no backend. Returns an
+ * unsubscribe function.
+ */
+export function onLogEvent(listener: LogEventListener) {
+    connect()
+    logListeners.add(listener)
+    return () => logListeners.delete(listener)
 }
 
 export function useTelemetry() {
