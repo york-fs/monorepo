@@ -155,6 +155,14 @@ State handle_error(I2C_TypeDef *i2c) {
     return State::Error;
 }
 
+void wait_hw_clear(I2C_TypeDef *i2c) {
+    for (std::uint32_t i = 1000; i > 0; i--) {
+        if ((i2c->CR1 & (I2C_CR1_PEC | I2C_CR1_STOP | I2C_CR1_START)) == 0u) {
+            return;
+        }
+    }
+}
+
 } // namespace
 
 void StateMachine::init() {
@@ -235,11 +243,13 @@ void StateMachine::start(std::uint8_t address, std::span<std::uint8_t> buffer, b
 }
 
 void StateMachine::start_read(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
+    wait_hw_clear(i2c_for(m_bus));
     i2c_for(m_bus)->CR1 |= I2C_CR1_ACK;
     start((address << 1) | 1u, buffer, emit_stop);
 }
 
 void StateMachine::start_write(std::uint8_t address, std::span<std::uint8_t> buffer, bool emit_stop) {
+    wait_hw_clear(i2c_for(m_bus));
     start(address << 1, buffer, emit_stop);
 }
 
