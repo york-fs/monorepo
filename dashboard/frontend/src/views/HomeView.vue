@@ -6,9 +6,12 @@ import PowertrainSection from '@/components/powertrain/PowertrainSection.vue'
 import BmsSection from '@/components/bms/BmsSection.vue'
 import PrechargeSection from '@/components/precharge/PrechargeSection.vue'
 import EventLogSection from '@/components/events/EventLogSection.vue'
+import DebugToggle from '@/components/DebugToggle.vue'
+import { useDebugMode } from '@/composables/useDebugMode'
 import { isDemoMode } from '@/demo'
 
 const demoMode = isDemoMode()
+const { debugMode } = useDebugMode()
 </script>
 
 <template>
@@ -16,9 +19,10 @@ const demoMode = isDemoMode()
         <div class="title-row">
             <h1>YFS-03 Telemetry</h1>
             <Badge v-if="demoMode">Demo mode — synthetic data</Badge>
+            <DebugToggle class="debug-toggle" />
         </div>
         <StatusBar />
-        <EventLogSection />
+        <EventLogSection v-if="debugMode" />
         <DistributionSection />
         <PowertrainSection />
         <BmsSection />
@@ -39,5 +43,9 @@ const demoMode = isDemoMode()
     display: flex;
     align-items: center;
     gap: var(--gap-inline);
+}
+
+.debug-toggle {
+    margin-left: auto;
 }
 </style>
