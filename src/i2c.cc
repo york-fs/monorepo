@@ -249,7 +249,11 @@ bool StateMachine::event() {
 }
 
 void StateMachine::error() {
-    m_state.store(handle_error(i2c_for(m_bus)));
+    const auto state = handle_error(i2c_for(m_bus));
+    if (state == State::NoAck) {
+        m_emit_stop.store(true);
+    }
+    m_state.store(state);
 }
 
 std::uint8_t &StateMachine::next_byte() {
