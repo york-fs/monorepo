@@ -60,6 +60,11 @@ enum class MasterError : std::uint16_t {
      * dropout or segment power failure.
      */
     BadSegmentCount,
+
+    /**
+     * @brief Specifies that the onboard EEPROM is not communicating correctly.
+     */
+    BadEeprom,
 };
 
 using MasterErrorFlags = util::FlagBitset<MasterError>;

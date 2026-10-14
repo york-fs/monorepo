@@ -321,6 +321,7 @@ struct SwdData {
 // Active config management. The pending config is written by CAN messages.
 Config s_config{};
 Config s_pending_config{};
+std::atomic<bool> s_is_eeprom_bad{false};
 
 // Active control mode.
 std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
@@ -420,9 +421,12 @@ void supervisor_task(void *) {
             master_flags.set(MasterError::CanOffline);
         }
 
-        // Check that we have a valid config.
+        // Check that we have a valid config and working EEPROM.
         if (s_config.magic != k_config_magic) {
             master_flags.set(MasterError::NoConfig);
+        }
+        if (s_is_eeprom_bad.load()) {
+            master_flags.set(MasterError::BadEeprom);
         }
 
         // Check for missed deadlines for all of the other tasks.
@@ -1001,8 +1005,10 @@ void config_task(void *) {
         }
 
         // Write the new config to EEPROM.
-        // TODO: Don't ignore failures here.
-        eeprom_write(k_config_offsets[config_index], new_config);
+        if (!eeprom_write(k_config_offsets[config_index], new_config)) {
+            s_is_eeprom_bad.store(true);
+            continue;
+        }
 
         // Copy the new config to the active slot in RAM.
         freertos::in_critical_section([&] {
