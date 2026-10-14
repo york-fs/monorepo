@@ -128,6 +128,7 @@ export const BMS_MASTER_ERROR_FLAGS = [
     'OVERCURRENT_MEASURED',
     'SEGMENT_ERROR',
     'BAD_SEGMENT_COUNT',
+    'BAD_EEPROM',
 ] as const
 export type BmsMasterErrorFlag = (typeof BMS_MASTER_ERROR_FLAGS)[number]
 

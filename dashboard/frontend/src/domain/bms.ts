@@ -58,6 +58,10 @@ export const BMS_ERROR_META: Record<BmsMasterErrorFlag, BmsErrorMeta> = {
         label: 'Bad Segment Count',
         description: 'The number of responding segments does not match the configured count',
     },
+    BAD_EEPROM: {
+        label: 'Bad EEPROM',
+        description: 'The onboard EEPROM is not communicating correctly',
+    },
 }
 
 export const BMS_ERROR_ORDER = Object.keys(BMS_ERROR_META) as BmsMasterErrorFlag[]

@@ -140,6 +140,7 @@ class BmsMasterErrorFlags(Flag):
     OVERCURRENT_MEASURED = enum.auto()
     SEGMENT_ERROR = enum.auto()
     BAD_SEGMENT_COUNT = enum.auto()
+    BAD_EEPROM = enum.auto()
 
 
 @attrs.define
