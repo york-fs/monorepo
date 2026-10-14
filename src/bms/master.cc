@@ -318,8 +318,11 @@ struct SwdData {
     std::optional<std::uint32_t> shutdown_duration{};
 };
 
-// Active config and control mode.
+// Active config management. The pending config is written by CAN messages.
 Config s_config{};
+Config s_pending_config{};
+
+// Active control mode.
 std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
 
 // Global array of segments with associated mutex.
@@ -934,10 +937,11 @@ void config_task(void *) {
         }
     }
 
-    // Copy config to global config.
+    // Copy EEPROM config to the active and pending configs.
     if (newest_config) {
         freertos::in_critical_section([&] {
             s_config = *newest_config;
+            s_pending_config = *newest_config;
         });
     }
 
@@ -962,37 +966,48 @@ void config_task(void *) {
         s_config_task.notify_give_isr(1, interrupt_yielder);
     }>(config::k_bms_can_id, 1);
     hal::can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
-        s_config.segment_start_address = new_config.start_address;
-        s_config.segment_count = new_config.segment_count;
-        s_config.cell_count = new_config.cell_count;
-        s_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
+        s_pending_config.segment_start_address = new_config.start_address;
+        s_pending_config.segment_count = new_config.segment_count;
+        s_pending_config.cell_count = new_config.cell_count;
+        s_pending_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
     }>(config::k_bms_can_id, 2);
     hal::can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
-        s_config.undervoltage_threshold = new_config.undervoltage_threshold;
-        s_config.overvoltage_threshold = new_config.overvoltage_threshold;
-        s_config.overcurrent_threshold = new_config.overcurrent_threshold;
-        s_config.undertemperature_threshold = new_config.undertemperature_threshold;
-        s_config.overtemperature_threshold = new_config.overtemperature_threshold;
+        s_pending_config.undervoltage_threshold = new_config.undervoltage_threshold;
+        s_pending_config.overvoltage_threshold = new_config.overvoltage_threshold;
+        s_pending_config.overcurrent_threshold = new_config.overcurrent_threshold;
+        s_pending_config.undertemperature_threshold = new_config.undertemperature_threshold;
+        s_pending_config.overtemperature_threshold = new_config.overtemperature_threshold;
     }>(config::k_bms_can_id, 3);
 
     while (true) {
         // Wait for a config write request.
         freertos::notify_take(1, true, portMAX_DELAY);
 
-        // Use the next slot not currently in use.
-        config_index = (config_index + 1) % k_config_offsets.size();
-        s_config.magic = k_config_magic;
-        s_config.counter++;
-        if constexpr (config::enable_debug_logs()) {
-            hal::swd_printf("Saving config version %u to slot %u\n", s_config.counter, config_index);
-        }
+        // Copy a consistent view of the pending config.
+        auto new_config = freertos::in_critical_section([] {
+            return s_pending_config;
+        });
+        new_config.magic = k_config_magic;
+        new_config.counter = s_config.counter + 1;
 
         // Compute new CRC.
-        const auto *bytes = std::bit_cast<const std::uint8_t *>(&s_config);
-        s_config.crc = compute_crc(std::span(bytes, sizeof(Config) - 4));
+        const auto *bytes = std::bit_cast<const std::uint8_t *>(&new_config);
+        new_config.crc = compute_crc(std::span(bytes, sizeof(Config) - 4));
 
-        // TODO: Don't ignore failure here.
-        eeprom_write(k_config_offsets[config_index], s_config);
+        // Use the next EEPROM slot not currently in use.
+        config_index = (config_index + 1) % k_config_offsets.size();
+        if constexpr (config::enable_debug_logs()) {
+            hal::swd_printf("Saving config version %u to slot %u\n", new_config.counter, config_index);
+        }
+
+        // Write the new config to EEPROM.
+        // TODO: Don't ignore failures here.
+        eeprom_write(k_config_offsets[config_index], new_config);
+
+        // Copy the new config to the active slot in RAM.
+        freertos::in_critical_section([&] {
+            s_config = new_config;
+        });
     }
 }
 
