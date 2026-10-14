@@ -15,7 +15,7 @@ namespace hal::can {
 template <typename T>
 concept HasId = requires {
     { T::packet_id() } -> std::same_as<std::uint32_t>;
-} && T::packet_id() < 0x3ffff;
+} && T::packet_id() <= 0x3ff;
 
 template <typename T>
 concept Decodable = HasId<T> && requires(util::Stream &stream) {
@@ -246,7 +246,7 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
     if ((ext_id & 0xff) != node_id) {
         return std::nullopt;
     }
-    const auto packet_id = (ext_id >> 8) & 0x3ffff;
+    const auto packet_id = (ext_id >> 8) & 0x3ff;
     if (packet_id != T::packet_id()) {
         return std::nullopt;
     }
@@ -256,7 +256,7 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
 /**
  * @brief Builds a CAN frame from the given encodable data object and queues it for placement into a transmission
  * mailbox. The transmitted frame has a 29-bit extended identifier with the following format:
- *   PRIO[2:0] | PACKET_ID[17:0] | NODE_ID[7:0]
+ *   PRIO[2:0] | RESV[7:0] | PACKET_ID[9:0] | NODE_ID[7:0]
  *
  * Priority is descending, meaning 7 has the lowest arbitration priority, and 0 has the highest priority.
  *
@@ -266,7 +266,7 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
  */
 template <Encodable T>
 void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::default_priority()) {
-    // Build extended identifier with 3 bits of priority, 18 bits of packet ID, and 8 bits of source node ID.
+    // Build extended identifier with 3 bits of priority, 10 bits of packet ID, and 8 bits of source node ID.
     const auto ext_id =
         (static_cast<std::uint32_t>(priority) << 26) | (static_cast<std::uint32_t>(T::packet_id()) << 8) | node_id;
     Frame frame{
