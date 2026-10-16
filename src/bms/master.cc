@@ -297,6 +297,8 @@ class Segment {
     TickType_t m_last_update_time{};
 
 public:
+    void and_balance_bitset(std::uint16_t bitset);
+    void or_balance_bitset(std::uint16_t bitset);
     void update(std::span<std::uint8_t> bytes);
 
     const auto &cell_voltages() const { return m_cell_voltages; }
@@ -304,7 +306,7 @@ public:
     std::uint32_t master_error_count() const { return m_master_error_count; }
     std::uint32_t slave_error_count() const { return m_slave_error_count; }
     std::uint16_t degraded_bitset() const { return m_degraded_bitset; }
-    std::uint16_t &balance_bitset() { return m_balance_bitset; }
+    std::uint16_t balance_bitset() const { return m_balance_bitset; }
     SegmentErrorFlags error_flags() const { return m_error_flags; }
     TickType_t last_update_time() const { return m_last_update_time; }
 };
@@ -571,7 +573,7 @@ void supervisor_task(void *) {
             // Make sure all balancers are off.
             std::lock_guard segments_lock(s_segments_mutex);
             for (auto &segment : s_segments) {
-                segment.balance_bitset() = 0;
+                segment.and_balance_bitset(0u);
             }
         }
 
@@ -702,9 +704,9 @@ void control_task(void *) {
                 for (std::size_t cell = 0; cell < segment.cell_voltages().size(); cell++) {
                     if (const auto voltage = segment.cell_voltages()[cell]) {
                         if (*voltage > full_discharge->target_voltage + 100) {
-                            segment.balance_bitset() |= 1u << cell;
+                            segment.or_balance_bitset(1u << cell);
                         } else if (*voltage < full_discharge->target_voltage + 50) {
-                            segment.balance_bitset() &= ~(1u << cell);
+                            segment.and_balance_bitset(~(1u << cell));
                         }
                     }
                 }
@@ -739,6 +741,14 @@ void CurrentSensor::update(float voltage) {
     if (std::abs(m_current) < k_current_sense_zero_threshold) {
         m_zero_voltage += beta * (m_filtered_voltage - m_zero_voltage);
     }
+}
+
+void Segment::and_balance_bitset(std::uint16_t bitset) {
+    m_balance_bitset &= bitset;
+}
+
+void Segment::or_balance_bitset(std::uint16_t bitset) {
+    m_balance_bitset |= bitset;
 }
 
 void Segment::update(std::span<std::uint8_t> bytes) {
