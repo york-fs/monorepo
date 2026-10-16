@@ -14,7 +14,7 @@ struct StatusMessage {
     bool apps_calibrated;
 
     static constexpr std::uint32_t packet_id() { return 0x200; }
-    static constexpr std::uint32_t default_priority() { return 1; }
+    static constexpr std::uint32_t default_priority() { return 2; }
     static std::optional<StatusMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -26,7 +26,7 @@ struct LvsSampleMessage1 {
     std::uint16_t front_voltage;
 
     static constexpr std::uint32_t packet_id() { return 0x201; }
-    static constexpr std::uint32_t default_priority() { return 5; }
+    static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<LvsSampleMessage1> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -37,7 +37,7 @@ struct LvsSampleMessage2 {
     std::uint16_t aux_2_voltage;
 
     static constexpr std::uint32_t packet_id() { return 0x202; }
-    static constexpr std::uint32_t default_priority() { return 5; }
+    static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<LvsSampleMessage2> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -49,7 +49,7 @@ struct ThrottleMessage {
     std::uint16_t raw_2;
 
     static constexpr std::uint32_t packet_id() { return 0x203; }
-    static constexpr std::uint32_t default_priority() { return 2; }
+    static constexpr std::uint32_t default_priority() { return 1; }
     static std::optional<ThrottleMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };

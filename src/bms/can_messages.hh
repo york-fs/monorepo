@@ -14,7 +14,7 @@ struct MasterStatusMessage {
     std::uint32_t i2c_error_count;
 
     static constexpr std::uint32_t packet_id() { return 0x200; }
-    static constexpr std::uint32_t default_priority() { return 1; }
+    static constexpr std::uint32_t default_priority() { return 2; }
     static std::optional<MasterStatusMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -24,7 +24,7 @@ struct MasterCurrentMessage {
     std::int32_t negative_current;
 
     static constexpr std::uint32_t packet_id() { return 0x201; }
-    static constexpr std::uint32_t default_priority() { return 2; }
+    static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<MasterCurrentMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -36,7 +36,7 @@ struct MasterSummaryMessage {
     std::int8_t max_temperature;
 
     static constexpr std::uint32_t packet_id() { return 0x202; }
-    static constexpr std::uint32_t default_priority() { return 3; }
+    static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<MasterSummaryMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
@@ -54,7 +54,7 @@ struct SegmentSummaryMessage : SegmentMessage {
     std::uint16_t balance_bitset;
 
     static constexpr std::uint32_t packet_id() { return 0x250; }
-    static constexpr std::uint32_t default_priority() { return 4; }
+    static constexpr std::uint32_t default_priority() { return 5; }
     static std::optional<SegmentSummaryMessage> decode(util::Stream &stream, std::uint8_t sub_id);
     bool encode(util::Stream &stream) const;
 };
@@ -63,7 +63,7 @@ struct SegmentVoltageMessage : SegmentMessage {
     std::array<std::uint16_t, 4> voltages;
 
     static constexpr std::uint32_t packet_id() { return 0x251; }
-    static constexpr std::uint32_t default_priority() { return 4; }
+    static constexpr std::uint32_t default_priority() { return 5; }
     static std::optional<SegmentVoltageMessage> decode(util::Stream &stream, std::uint8_t sub_id);
     bool encode(util::Stream &stream) const;
 };
@@ -72,7 +72,7 @@ struct SegmentTemperatureMessage : SegmentMessage {
     std::array<std::int8_t, 8> temperatures;
 
     static constexpr std::uint32_t packet_id() { return 0x252; }
-    static constexpr std::uint32_t default_priority() { return 4; }
+    static constexpr std::uint32_t default_priority() { return 5; }
     static std::optional<SegmentTemperatureMessage> decode(util::Stream &stream, std::uint8_t sub_id);
     bool encode(util::Stream &stream) const;
 };
@@ -81,7 +81,7 @@ struct StartFullDischargeMessage {
     std::uint16_t target_voltage;
 
     static constexpr std::uint32_t packet_id() { return 0x300; }
-    static constexpr std::uint32_t default_priority() { return 5; }
+    static constexpr std::uint32_t default_priority() { return 6; }
     static std::optional<StartFullDischargeMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
