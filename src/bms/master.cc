@@ -350,7 +350,7 @@ i2c::StateMachine s_i2c2_sm(i2c::Bus::_2, i2c::Speed::_100);
 // Tasks.
 // TODO: Think about stack sizes more.
 freertos::Task<128> s_supervisor_task;
-freertos::Task<128> s_status_task;
+freertos::Task<256> s_status_task;
 freertos::Task<256> s_sample_segments_task;
 freertos::Task<128> s_control_task;
 freertos::Task<256> s_config_task;
@@ -616,6 +616,9 @@ void status_task(void *) {
     std::array<volatile std::uint16_t, 3> adc_buffer{};
     hal::adc_init_dma(adc_buffer);
 
+    // Current segment counter.
+    std::size_t segment_id = 0;
+
     freertos::PeriodScheduler scheduler;
     while (true) {
         hal::adc_start(ADC1);
@@ -684,6 +687,52 @@ void status_task(void *) {
             .max_temperature = max_temperature,
         };
         hal::can::transmit(config::k_bms_can_id, master_summary_message);
+
+        // Build up segment data message headers.
+        SegmentSummaryMessage segment_summary_message{};
+        std::array<SegmentVoltageMessage, 4> segment_voltage_messages{};
+        std::array<SegmentTemperatureMessage, 3> segment_temperature_messages{};
+        segment_summary_message.segment_id = segment_id;
+        for (std::uint8_t i = 0; i < segment_voltage_messages.size(); i++) {
+            segment_voltage_messages[i].segment_id = segment_id;
+            segment_voltage_messages[i].group_id = i;
+        }
+        for (std::uint8_t i = 0; i < segment_temperature_messages.size(); i++) {
+            segment_temperature_messages[i].segment_id = segment_id;
+            segment_temperature_messages[i].group_id = i;
+        }
+
+        // Copy current segment data.
+        s_segments_mutex.with_locked([&] {
+            const auto &segment = s_segments[segment_id];
+            segment_summary_message.segment_flags = segment.error_flags();
+            segment_summary_message.degraded_bitset = segment.degraded_bitset();
+            segment_summary_message.balance_bitset = segment.balance_bitset();
+
+            // Copy voltages.
+            for (std::size_t i = 0; i < k_max_cell_count; i++) {
+                const auto value = segment.cell_voltages()[i].value_or(std::numeric_limits<std::uint16_t>::max());
+                segment_voltage_messages[i / 4].voltages[i % 4] = value;
+            }
+
+            // Copy temperatures.
+            for (std::size_t i = 0; i < k_max_temperature_count; i++) {
+                const auto value = segment.temperatures()[i].value_or(std::numeric_limits<std::int8_t>::min());
+                segment_temperature_messages[i / 8].temperatures[i % 8] = value;
+            }
+        });
+
+        // Transmit segment messages.
+        hal::can::transmit(config::k_bms_can_id, segment_summary_message);
+        for (const auto &message : segment_voltage_messages) {
+            hal::can::transmit(config::k_bms_can_id, message);
+        }
+        for (const auto &message : segment_temperature_messages) {
+            hal::can::transmit(config::k_bms_can_id, message);
+        }
+
+        // Advance segment counter.
+        segment_id = (segment_id + 1) % k_max_segment_count;
     }
 }
 

@@ -3,6 +3,8 @@
 #include <bms/error.hh>
 #include <util/stream.hh>
 
+#include <array>
+#include <concepts>
 #include <cstdint>
 #include <optional>
 
@@ -73,6 +75,86 @@ bool MasterSummaryMessage::encode(util::Stream &stream) const {
         return false;
     }
     return stream.write_be(max_temperature);
+}
+
+static SegmentMessage decode_segment_sub_id(std::uint8_t sub_id) {
+    return SegmentMessage{
+        .segment_id = static_cast<std::uint8_t>((sub_id >> 2) & 0x3fu),
+        .group_id = static_cast<std::uint8_t>(sub_id & 0b11u),
+    };
+}
+
+std::optional<SegmentSummaryMessage> SegmentSummaryMessage::decode(util::Stream &stream, std::uint8_t sub_id) {
+    const auto segment_flags = stream.read_be<SegmentErrorFlags::type_t>();
+    const auto degraded_bitset = stream.read_be<std::uint16_t>();
+    const auto balance_bitset = stream.read_be<std::uint16_t>();
+    if (!segment_flags || !degraded_bitset || !balance_bitset) {
+        return std::nullopt;
+    }
+    return SegmentSummaryMessage{
+        decode_segment_sub_id(sub_id),
+        SegmentErrorFlags(*segment_flags),
+        *degraded_bitset,
+        *balance_bitset,
+    };
+}
+
+bool SegmentSummaryMessage::encode(util::Stream &stream) const {
+    if (!stream.write_be(segment_flags.value())) {
+        return false;
+    }
+    if (!stream.write_be(degraded_bitset)) {
+        return false;
+    }
+    return stream.write_be(balance_bitset);
+}
+
+std::optional<SegmentVoltageMessage> SegmentVoltageMessage::decode(util::Stream &stream, std::uint8_t sub_id) {
+    std::array<std::uint16_t, 4> voltages;
+    for (auto &out : voltages) {
+        const auto voltage = stream.read_be<std::uint16_t>();
+        if (!voltage) {
+            return std::nullopt;
+        }
+        out = *voltage;
+    }
+    return SegmentVoltageMessage{
+        decode_segment_sub_id(sub_id),
+        voltages,
+    };
+}
+
+bool SegmentVoltageMessage::encode(util::Stream &stream) const {
+    for (const auto voltage : voltages) {
+        if (!stream.write_be(voltage)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<SegmentTemperatureMessage> SegmentTemperatureMessage::decode(util::Stream &stream, std::uint8_t sub_id) {
+    std::array<std::int8_t, 8> temperatures;
+    for (auto &out : temperatures) {
+        const auto temperature = stream.read_be<std::int8_t>();
+        if (!temperature) {
+            return std::nullopt;
+        }
+        out = *temperature;
+    }
+    return SegmentTemperatureMessage{
+        decode_segment_sub_id(sub_id),
+        temperatures,
+    };
+}
+
+bool SegmentTemperatureMessage::encode(util::Stream &stream) const {
+    for (const auto temperature : temperatures) {
+        if (!stream.write_be(temperature)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::optional<StartFullDischargeMessage> StartFullDischargeMessage::decode(util::Stream &stream) {

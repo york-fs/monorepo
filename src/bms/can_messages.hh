@@ -3,6 +3,7 @@
 #include <bms/error.hh>
 #include <util/stream.hh>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -37,6 +38,42 @@ struct MasterSummaryMessage {
     static constexpr std::uint32_t packet_id() { return 0x202; }
     static constexpr std::uint32_t default_priority() { return 3; }
     static std::optional<MasterSummaryMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
+struct SegmentMessage {
+    std::uint8_t segment_id;
+    std::uint8_t group_id;
+
+    std::uint8_t sub_id() const { return (segment_id << 2) | (group_id & 0b11u); }
+};
+
+struct SegmentSummaryMessage : SegmentMessage {
+    SegmentErrorFlags segment_flags;
+    std::uint16_t degraded_bitset;
+    std::uint16_t balance_bitset;
+
+    static constexpr std::uint32_t packet_id() { return 0x250; }
+    static constexpr std::uint32_t default_priority() { return 4; }
+    static std::optional<SegmentSummaryMessage> decode(util::Stream &stream, std::uint8_t sub_id);
+    bool encode(util::Stream &stream) const;
+};
+
+struct SegmentVoltageMessage : SegmentMessage {
+    std::array<std::uint16_t, 4> voltages;
+
+    static constexpr std::uint32_t packet_id() { return 0x251; }
+    static constexpr std::uint32_t default_priority() { return 4; }
+    static std::optional<SegmentVoltageMessage> decode(util::Stream &stream, std::uint8_t sub_id);
+    bool encode(util::Stream &stream) const;
+};
+
+struct SegmentTemperatureMessage : SegmentMessage {
+    std::array<std::int8_t, 8> temperatures;
+
+    static constexpr std::uint32_t packet_id() { return 0x252; }
+    static constexpr std::uint32_t default_priority() { return 4; }
+    static std::optional<SegmentTemperatureMessage> decode(util::Stream &stream, std::uint8_t sub_id);
     bool encode(util::Stream &stream) const;
 };
 
