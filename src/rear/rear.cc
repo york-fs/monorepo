@@ -406,6 +406,10 @@ void control_task(void *) {
     // Keep track of when any TS prevention flag is first seen so that a debounce period can be implemented.
     std::optional<TickType_t> ts_prevention_flag_time;
 
+    // Keep track of whether TS activation is currently allowed. The grace period only applies once it has been allowed.
+    // This prevents TS from being activated if any flags are currently set.
+    bool ts_allowed = false;
+
     // Keep track of whether the ready-to-drive state has been latched on. This is needed because, whilst most of the
     // RTD prevention flags are continuously checked, some, like the brake being pressed are only needed for initial
     // activation.
@@ -522,16 +526,18 @@ void control_task(void *) {
             ts_prevention_flag_time.emplace(xTaskGetTickCount());
         }
 
-        // Hold TS activation latched unless it has not been requested yet or the grace period has expired. Alter the
-        // flags so that the latched flags get broadcast.
+        // Hold TS activation latched unless it has not been allowed yet, it is no longer requested, or the grace period
+        // has expired. Activation requires no flags to be set. Alter the flags so that the latched flags get broadcast.
         // TODO: Potentially exempt more things from the grace period here.
         bool should_prevent_ts_activation = false;
+        should_prevent_ts_activation |= !ts_allowed && ts_prevention_flags.any_set();
         should_prevent_ts_activation |= ts_prevention_flag_time && xTaskGetTickCount() - *ts_prevention_flag_time >=
                                                                        pdMS_TO_TICKS(k_prevention_grace_period);
         should_prevent_ts_activation |= ts_prevention_flags.is_set(TsPreventionFlag::NotRequested);
         if (!should_prevent_ts_activation) {
             ts_prevention_flags = TsPreventionFlags();
         }
+        ts_allowed = !should_prevent_ts_activation;
 
         // Compute RTD prevention flags.
         RtdPreventionFlags rtd_prevention_flags;
