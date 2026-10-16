@@ -34,3 +34,6 @@
 #define INCLUDE_vTaskDelay 1
 #define INCLUDE_xTaskDelayUntil 1
 #define INCLUDE_vTaskSuspend 1
+
+// Increase CAN TX queue size since we send a lot of per-segment data.
+#define configCAN_TX_QUEUE_SIZE 16
