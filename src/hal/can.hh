@@ -18,9 +18,16 @@ concept HasId = requires {
 } && T::packet_id() <= 0x3ff;
 
 template <typename T>
-concept Decodable = HasId<T> && requires(util::Stream &stream) {
-    { T::decode(stream) } -> std::same_as<std::optional<T>>;
+concept HasSubId = requires(T message) {
+    { message.sub_id() } -> std::same_as<std::uint8_t>;
 };
+
+template <typename T>
+concept Decodable = HasId<T> && (requires(util::Stream &stream) {
+    { T::decode(stream) } -> std::same_as<std::optional<T>>;
+} || requires(util::Stream &stream, std::uint8_t sub_id) {
+    { T::decode(stream, sub_id) } -> std::same_as<std::optional<T>>;
+});
 
 template <typename T>
 concept Encodable = HasId<T> && requires(T message, util::Stream &stream) {
@@ -219,7 +226,7 @@ inline Frame build_extended(ExtendedIdentifier identifier, std::span<const std::
 }
 
 /**
- * @brief Decodes a without checking node or packet IDs.
+ * @brief Decodes an extended frame without checking node or packet IDs.
  *
  * @param frame the frame to decode
  * @return a T if successful; otherwise std::nullopt if the stream decoding failed
@@ -227,7 +234,12 @@ inline Frame build_extended(ExtendedIdentifier identifier, std::span<const std::
 template <Decodable T>
 std::optional<T> decode_fast(const Frame &frame) {
     util::Stream stream(std::span(const_cast<Frame &>(frame).data.data(), frame.length));
-    return T::decode(stream);
+    if constexpr (HasSubId<T>) {
+        const auto sub_id = (frame.extended_id() >> 18) & 0xffu;
+        return T::decode(stream, sub_id);
+    } else {
+        return T::decode(stream);
+    }
 }
 
 /**
@@ -243,10 +255,10 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
         return std::nullopt;
     }
     const auto ext_id = frame.extended_id();
-    if ((ext_id & 0xff) != node_id) {
+    if ((ext_id & 0xffu) != node_id) {
         return std::nullopt;
     }
-    const auto packet_id = (ext_id >> 8) & 0x3ff;
+    const auto packet_id = (ext_id >> 8) & 0x3ffu;
     if (packet_id != T::packet_id()) {
         return std::nullopt;
     }
@@ -256,7 +268,7 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
 /**
  * @brief Builds a CAN frame from the given encodable data object and queues it for placement into a transmission
  * mailbox. The transmitted frame has a 29-bit extended identifier with the following format:
- *   PRIO[2:0] | RESV[7:0] | PACKET_ID[9:0] | NODE_ID[7:0]
+ *   PRIO[2:0] | SUB_ID[7:0] | PACKET_ID[9:0] | NODE_ID[7:0]
  *
  * Priority is descending, meaning 7 has the lowest arbitration priority, and 0 has the highest priority.
  *
@@ -266,9 +278,16 @@ std::optional<T> decode(std::uint8_t node_id, const Frame &frame) {
  */
 template <Encodable T>
 void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::default_priority()) {
-    // Build extended identifier with 3 bits of priority, 10 bits of packet ID, and 8 bits of source node ID.
-    const auto ext_id =
-        (static_cast<std::uint32_t>(priority) << 26) | (static_cast<std::uint32_t>(T::packet_id()) << 8) | node_id;
+    // Build 29-bit extended identifier with 3 bits of priority, 8 bits of sub ID, 10 bits of packet ID, and 8 bits of
+    // source node ID.
+    std::uint32_t ext_id = 0;
+    ext_id |= static_cast<std::uint32_t>(priority) << 26;
+    if constexpr (HasSubId<T>) {
+        ext_id |= static_cast<std::uint32_t>(data.sub_id()) << 18;
+    }
+    ext_id |= static_cast<std::uint32_t>(T::packet_id()) << 8;
+    ext_id |= node_id;
+
     Frame frame{
         .identifier{ExtendedIdentifier(ext_id)},
     };
@@ -284,7 +303,8 @@ void transmit(std::uint8_t node_id, const T &data, std::uint8_t priority = T::de
 }
 
 /**
- * @brief Sets up a reception filter to listen for the given packet in a frame with the given node ID.
+ * @brief Sets up a reception filter to listen for the given packet in a frame with the given node ID. The filter allows
+ * any value of sub ID and priority to pass.
  *
  * @param node_id the node ID to listen for
  * @param filter the filter index; must be in the range [0, 13]
@@ -293,7 +313,7 @@ template <HasId T, void (*Callback)(const T &)>
 void listen(std::uint8_t node_id, std::uint8_t filter) {
     const auto expected =
         (static_cast<std::uint32_t>(T::packet_id()) << 11) | (static_cast<std::uint32_t>(node_id) << 3) | 0b100u;
-    configure_filter(filter, 0x1fffffff, expected);
+    configure_filter(filter, 0x1fffffu, expected);
     set_rx_callback(
         filter, +[](const Frame &frame) {
             if (const auto decoded = decode_fast<T>(frame)) {
