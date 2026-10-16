@@ -160,6 +160,8 @@ void main_task(void *) {
     std::optional<TickType_t> ts_activation_desired;
     std::optional<TickType_t> rtd_activation_desired;
     std::optional<TickType_t> rtd_activation_time;
+    bool precharge_was_online = false;
+    bool rear_was_online = false;
     bool apps_calibrated = false;
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -180,10 +182,12 @@ void main_task(void *) {
         const auto precharge_state = s_precharge_state.get();
         const auto rear_status = s_rear_status.get();
 
-        // Update LED task if CAN messages are not being received.
-        if (!precharge_state || !rear_status) {
+        // Update LED task if CAN messages stop being received. Messages being received again notify from the ISR.
+        if ((precharge_was_online && !precharge_state) || (rear_was_online && !rear_status)) {
             s_led_task.notify_give(0);
         }
+        precharge_was_online = precharge_state.has_value();
+        rear_was_online = rear_status.has_value();
 
         // Desired state timeouts if the TS and RTD actual states don't latch within the grace period.
         if (ts_activation_desired &&
