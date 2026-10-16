@@ -16,6 +16,10 @@
 #include <cstdint>
 #include <utility>
 
+#ifndef configCAN_TX_QUEUE_SIZE
+#define configCAN_TX_QUEUE_SIZE 8
+#endif
+
 namespace hal::can {
 namespace {
 
@@ -23,7 +27,7 @@ namespace {
 constexpr std::uint32_t k_init_timeout = 10;
 
 freertos::Task<configMINIMAL_STACK_SIZE> s_task;
-freertos::Queue<Frame, 8> s_tx_queue;
+freertos::Queue<Frame, configCAN_TX_QUEUE_SIZE> s_tx_queue;
 Speed s_speed;
 std::array<rx_callback_t, 14> s_rx_callbacks{};
 std::atomic<std::uint32_t> s_rx_count = 0;
