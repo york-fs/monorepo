@@ -164,24 +164,24 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause(const std::optional<front::
         return ShutdownCircuitOpenCause::RearInput;
     }
 
-    // Front.
-    if (!front_status) {
-        return ShutdownCircuitOpenCause::FrontOutput;
-    }
-    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::EmergencyStop)) {
-        return ShutdownCircuitOpenCause::FrontEstop;
-    }
-    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::BrakeOverTravel)) {
-        return ShutdownCircuitOpenCause::BrakeOverTravel;
-    }
-    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::InertiaSwitch)) {
-        return ShutdownCircuitOpenCause::InertiaSwitch;
-    }
-    if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
-        return ShutdownCircuitOpenCause::FrontAuxiliary;
+    // Front. If the front is offline, then we ignore its individual samples and only look at its overall output which
+    // is sampled at the rear.
+    if (front_status) {
+        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::EmergencyStop)) {
+            return ShutdownCircuitOpenCause::FrontEstop;
+        }
+        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::BrakeOverTravel)) {
+            return ShutdownCircuitOpenCause::BrakeOverTravel;
+        }
+        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::InertiaSwitch)) {
+            return ShutdownCircuitOpenCause::InertiaSwitch;
+        }
+        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
+            return ShutdownCircuitOpenCause::FrontAuxiliary;
+        }
     }
     if (rear_samples.is_clear(RearShutdownSample::FrontOutput)) {
-        // Signal not getting from front even though over CAN, front is reporting all ok.
+        // Signal not getting from front even though over CAN, front is reporting all ok, or is offline.
         return ShutdownCircuitOpenCause::FrontOutput;
     }
 
