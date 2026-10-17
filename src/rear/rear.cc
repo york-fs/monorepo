@@ -552,12 +552,14 @@ void control_task(void *) {
 
         // Hold TS activation latched unless it has not been allowed yet, it is no longer requested, or the grace period
         // has expired. Activation requires no flags to be set. Alter the flags so that the latched flags get broadcast.
-        // TODO: Potentially exempt more things from the grace period here.
+        // Also exempt the PrechargeState flag as, if it's present, TS has already been deactivated by the precharge
+        // anyway, so we should cut inverter power ASAP.
         bool should_prevent_ts_activation = false;
         should_prevent_ts_activation |= !ts_allowed && ts_prevention_flags.any_set();
         should_prevent_ts_activation |= ts_prevention_flag_time && xTaskGetTickCount() - *ts_prevention_flag_time >=
                                                                        pdMS_TO_TICKS(k_prevention_grace_period);
         should_prevent_ts_activation |= ts_prevention_flags.is_set(TsPreventionFlag::NotRequested);
+        should_prevent_ts_activation |= ts_prevention_flags.is_set(TsPreventionFlag::PrechargeState);
         if (!should_prevent_ts_activation) {
             ts_prevention_flags = TsPreventionFlags();
         }
