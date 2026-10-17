@@ -512,25 +512,25 @@ void control_task(void *) {
         if (online_flags.is_clear(OnlineFlag::FrontOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
         }
-        if (!front_status || !front_status->ts_activation_desired) {
+        if (front_status && !front_status->ts_activation_desired) {
             ts_prevention_flags.set(TsPreventionFlag::NotRequested);
         }
         if (online_flags.is_clear(OnlineFlag::PrechargeOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeOffline);
         }
-        if (!precharge_status || !is_precharge_state_good(precharge_status->state)) {
+        if (precharge_status && !is_precharge_state_good(precharge_status->state)) {
             ts_prevention_flags.set(TsPreventionFlag::PrechargeState);
         }
         if (online_flags.is_clear(OnlineFlag::InverterOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::InverterOffline);
         }
-        if (!inverter_gd3 || !is_inverter_fault_good(inverter_gd3->fault_code)) {
+        if (inverter_gd3 && !is_inverter_fault_good(inverter_gd3->fault_code)) {
             ts_prevention_flags.set(TsPreventionFlag::InverterFault);
         }
         if (online_flags.is_clear(OnlineFlag::BmsOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::BmsOffline);
         }
-        if (!bms_status || bms_status->master_flags.any_set()) {
+        if (bms_status && bms_status->master_flags.any_set()) {
             ts_prevention_flags.set(TsPreventionFlag::BmsFault);
         }
 
@@ -568,13 +568,13 @@ void control_task(void *) {
         if (ts_prevention_flags.any_set()) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
-        if (!precharge_status || precharge_status->state != precharge::State::Active) {
+        if (precharge_status && precharge_status->state != precharge::State::Active) {
             rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
         }
-        if (!front_status || !front_status->rtd_activation_desired) {
+        if (front_status && !front_status->rtd_activation_desired) {
             rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
         }
-        if (!front_status || !front_status->apps_calibrated) {
+        if (front_status && !front_status->apps_calibrated) {
             rtd_prevention_flags.set(RtdPreventionFlag::AppsNotCalibrated);
         }
         rtd_latched &= rtd_prevention_flags.none_set();
