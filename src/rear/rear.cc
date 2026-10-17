@@ -587,8 +587,16 @@ void control_task(void *) {
 
         // Brake switch RTD flag is latched since it's only required when activating RTD.
         const bool brake_pressed = hal::gpio::read(k_brake_switch);
-        if (!rtd_latched && !brake_pressed) {
-            rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
+        if (!rtd_latched) {
+            if (!brake_pressed) {
+                rtd_prevention_flags.set(RtdPreventionFlag::BrakeNotPressed);
+            }
+            if (!front_status) {
+                rtd_prevention_flags.set(RtdPreventionFlag::NotRequested);
+            }
+            if (!precharge_status) {
+                rtd_prevention_flags.set(RtdPreventionFlag::TsNotActive);
+            }
         }
 
         // Latch RTD active if no prevention flags set.
