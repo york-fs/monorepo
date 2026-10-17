@@ -52,7 +52,7 @@ ROUTINE_FLAGS = {
 }
 
 # Fields listing every flag the rear distribution saw since its previous frame,
-# which catch flags set and cleared in between. Only sent by newer rear firmware.
+# which catch flags set and cleared in between.
 SEEN_FLAG_FIELDS = {
     "ts_prevention_flags": "ts_prevention_flags_seen",
     "rtd_prevention_flags": "rtd_prevention_flags_seen",
@@ -209,7 +209,7 @@ class EventTracker:
     ) -> dict:
         event = {
             "time": int(now * 1000),
-            "uptime": frame.get("uptime"),
+            "uptime": frame["uptime"],
             "category": category,
             "kind": kind,
             "severity": severity,
@@ -242,7 +242,8 @@ class EventTracker:
         for field, category in PROBLEM_FLAG_FIELDS.items():
             before, after = set(previous[field]), set(frame[field])
             # A blip is a flag which was set and cleared again between two frames.
-            seen = set(frame.get(SEEN_FLAG_FIELDS.get(field)) or ()) if blips else set()
+            seen_field = SEEN_FLAG_FIELDS.get(field)
+            seen = set(frame[seen_field]) if blips and seen_field else set()
             for code in sorted(seen - before - after):
                 event = self._flag_event(
                     frame, now, field, category, code, "blip", active=not before
@@ -270,7 +271,7 @@ class EventTracker:
 
         if blips:
             # Fuses which read as blown between two frames where they read fine.
-            blown_seen = set(frame.get("blown_fuses_seen") or ())
+            blown_seen = set(frame["blown_fuses_seen"])
             dipped = blown_seen & set(previous["fuses"]) & set(frame["fuses"])
             for code in sorted(dipped):
                 events.append(
@@ -280,7 +281,7 @@ class EventTracker:
         for field, category in ENUM_FIELDS.items():
             before, after = previous[field], frame[field]
             if blips and field == "shutdown_open_cause":
-                seen = set(frame.get("shutdown_open_causes_seen") or ())
+                seen = set(frame["shutdown_open_causes_seen"])
                 for code in sorted(seen - {before, after}):
                     events.append(
                         self._flag_event(frame, now, field, category, code, "blip")
@@ -297,22 +298,21 @@ class EventTracker:
                 )
 
         # The count resets when the rear reboots, so only an increase is a failure.
-        expander_before = previous.get("expander_error_count")
-        expander_after = frame.get("expander_error_count")
-        if expander_before is not None and expander_after is not None:
-            if expander_after > expander_before:
-                failures = str(expander_after - expander_before)
-                events.append(
-                    self._log(
-                        frame,
-                        now,
-                        "shutdown",
-                        "blip",
-                        "fault",
-                        code=EXPANDER_READ_CODE,
-                        detail=failures,
-                    )
+        expander_before = previous["expander_error_count"]
+        expander_after = frame["expander_error_count"]
+        if expander_after > expander_before:
+            failures = str(expander_after - expander_before)
+            events.append(
+                self._log(
+                    frame,
+                    now,
+                    "shutdown",
+                    "blip",
+                    "fault",
+                    code=EXPANDER_READ_CODE,
+                    detail=failures,
                 )
+            )
 
         before, after = previous["precharge_state"], frame["precharge_state"]
         if before != after:
@@ -378,6 +378,6 @@ class EventTracker:
                     }
                 )
         return {
-            "frame": {field: frame.get(field) for field in SNAPSHOT_FIELDS},
+            "frame": {field: frame[field] for field in SNAPSHOT_FIELDS},
             "lead_up": lead_up,
         }

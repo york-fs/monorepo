@@ -79,7 +79,7 @@ async function clear() {
                     <div class="line">
                         <span
                             class="time"
-                            :title="`Car uptime ${formatUptimeWithMs(event.uptime === undefined ? undefined : event.uptime / 1000)}`"
+                            :title="`Car uptime ${formatUptimeWithMs(event.uptime / 1000)}`"
                         >
                             {{ formatEventTime(event.time) }}
                         </span>

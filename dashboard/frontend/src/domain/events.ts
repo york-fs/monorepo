@@ -73,35 +73,35 @@ export type EventSeverity = 'fault' | 'ok' | 'info'
 
 /** The subset of a frame the backend captures alongside deactivations. */
 export interface SnapshotFrame {
-    shutdown_open_cause?: ShutdownOpenCause
-    ts_prevention_flags?: TsPreventionFlag[]
-    rtd_prevention_flags?: RtdPreventionFlag[]
-    online_flags?: OnlineFlag[]
-    fuses?: FuseFlag[]
-    precharge_state?: PrechargeState
-    precharge_error_flags?: PrechargeErrorFlag[]
-    precharge_relay_states?: PrechargeRelay[]
-    precharge_prchg_voltage?: number
-    precharge_ts_voltage?: number
-    bms_master_error_flags?: BmsMasterErrorFlag[]
-    bms_i2c_error_count?: number
-    inverter_fault?: InverterFaultCode
-    inverter_input_voltage?: number
-    motor_current?: number
-    motor_rpm?: number
-    positive_current?: number
-    negative_current?: number
-    min_cell_voltage?: number
-    max_cell_voltage?: number
-    max_cell_temperature?: number
-    lvs_min_voltage?: number
-    // Everything seen since the previous frame — only sent by newer rear
-    // firmware, which samples at 100 Hz but transmits at 10 Hz.
-    ts_prevention_flags_seen?: TsPreventionFlag[]
-    rtd_prevention_flags_seen?: RtdPreventionFlag[]
-    shutdown_open_causes_seen?: ShutdownOpenCause[]
-    blown_fuses_seen?: FuseFlag[]
-    expander_error_count?: number
+    shutdown_open_cause: ShutdownOpenCause
+    ts_prevention_flags: TsPreventionFlag[]
+    rtd_prevention_flags: RtdPreventionFlag[]
+    online_flags: OnlineFlag[]
+    fuses: FuseFlag[]
+    precharge_state: PrechargeState
+    precharge_error_flags: PrechargeErrorFlag[]
+    precharge_relay_states: PrechargeRelay[]
+    precharge_prchg_voltage: number
+    precharge_ts_voltage: number
+    bms_master_error_flags: BmsMasterErrorFlag[]
+    bms_i2c_error_count: number
+    inverter_fault: InverterFaultCode
+    inverter_input_voltage: number
+    motor_current: number
+    motor_rpm: number
+    positive_current: number
+    negative_current: number
+    min_cell_voltage: number
+    max_cell_voltage: number
+    max_cell_temperature: number
+    lvs_min_voltage: number
+    // Everything seen since the previous frame, as the rear samples at 100 Hz
+    // but transmits at 10 Hz.
+    ts_prevention_flags_seen: TsPreventionFlag[]
+    rtd_prevention_flags_seen: RtdPreventionFlag[]
+    shutdown_open_causes_seen: ShutdownOpenCause[]
+    blown_fuses_seen: FuseFlag[]
+    expander_error_count: number
 }
 
 export interface LeadUpEntry {
@@ -123,7 +123,7 @@ export interface LogEvent {
     /** Wall-clock time the frame was received, in ms since the epoch. */
     time: number
     /** Rear distribution uptime in ms at the time. */
-    uptime?: number
+    uptime: number
     category: EventCategory
     kind: EventKind
     severity: EventSeverity
@@ -279,63 +279,59 @@ export function snapshotProblems(frame: SnapshotFrame): SnapshotGroup[] {
         {
             label: 'Shutdown open',
             items:
-                frame.shutdown_open_cause && frame.shutdown_open_cause !== 'NONE'
+                frame.shutdown_open_cause !== 'NONE'
                     ? [shutdownOpenCauseLabel(frame.shutdown_open_cause)]
                     : [],
         },
         {
             label: 'Blocking TS',
-            items: (frame.ts_prevention_flags ?? []).map((code) => codeLabel('ts', code)),
+            items: frame.ts_prevention_flags.map((code) => codeLabel('ts', code)),
         },
         {
             label: 'Blocking RTD',
-            items: (frame.rtd_prevention_flags ?? []).map((code) => codeLabel('rtd', code)),
+            items: frame.rtd_prevention_flags.map((code) => codeLabel('rtd', code)),
         },
         {
             label: 'BMS errors',
-            items: (frame.bms_master_error_flags ?? []).map((code) => codeLabel('bms', code)),
+            items: frame.bms_master_error_flags.map((code) => codeLabel('bms', code)),
         },
         {
             label: `Precharge flags (${stateLabel(frame.precharge_state)})`,
-            items: (frame.precharge_error_flags ?? []).map((code) => codeLabel('precharge', code)),
+            items: frame.precharge_error_flags.map((code) => codeLabel('precharge', code)),
         },
         {
             label: 'Inverter fault',
             items:
-                frame.inverter_fault && frame.inverter_fault !== 'NONE'
-                    ? [inverterFaultLabel(frame.inverter_fault)]
-                    : [],
+                frame.inverter_fault !== 'NONE' ? [inverterFaultLabel(frame.inverter_fault)] : [],
         },
         {
             label: 'Offline',
-            items: frame.online_flags
-                ? ONLINE_FLAGS.filter((flag) => !frame.online_flags!.includes(flag)).map(onlineName)
-                : [],
+            items: ONLINE_FLAGS.filter((flag) => !frame.online_flags.includes(flag)).map(
+                onlineName,
+            ),
         },
         {
             label: 'Blown fuses',
-            items: frame.fuses
-                ? FUSE_FLAGS.filter((flag) => !frame.fuses!.includes(flag)).map((flag) =>
-                      titleCaseEnum(flag, ACRONYMS),
-                  )
-                : [],
+            items: FUSE_FLAGS.filter((flag) => !frame.fuses.includes(flag)).map((flag) =>
+                titleCaseEnum(flag, ACRONYMS),
+            ),
         },
         {
             // Set at some point since the previous frame but not any more — the
             // likeliest culprits for a deactivation nothing else explains.
             label: 'Seen briefly',
             items: [
-                ...(frame.shutdown_open_causes_seen ?? [])
+                ...frame.shutdown_open_causes_seen
                     .filter((code) => code !== frame.shutdown_open_cause)
                     .map((code) => `Shutdown ${shutdownOpenCauseLabel(code)}`),
-                ...(frame.ts_prevention_flags_seen ?? [])
-                    .filter((code) => !frame.ts_prevention_flags?.includes(code))
+                ...frame.ts_prevention_flags_seen
+                    .filter((code) => !frame.ts_prevention_flags.includes(code))
                     .map((code) => `TS ${codeLabel('ts', code)}`),
-                ...(frame.rtd_prevention_flags_seen ?? [])
-                    .filter((code) => !frame.rtd_prevention_flags?.includes(code))
+                ...frame.rtd_prevention_flags_seen
+                    .filter((code) => !frame.rtd_prevention_flags.includes(code))
                     .map((code) => `RTD ${codeLabel('rtd', code)}`),
-                ...(frame.blown_fuses_seen ?? [])
-                    .filter((code) => frame.fuses?.includes(code))
+                ...frame.blown_fuses_seen
+                    .filter((code) => frame.fuses.includes(code))
                     .map((code) => `${titleCaseEnum(code, ACRONYMS)} fuse dipped`),
             ],
         },
@@ -348,8 +344,8 @@ export interface SnapshotReading {
     value: string
 }
 
-function reading(label: string, value: number | undefined, unit: string, digits = 0) {
-    return value === undefined ? undefined : { label, value: `${value.toFixed(digits)} ${unit}` }
+function reading(label: string, value: number, unit: string, digits = 0): SnapshotReading {
+    return { label, value: `${value.toFixed(digits)} ${unit}` }
 }
 
 /** Key measurements at the time of a snapshot. */
@@ -367,7 +363,7 @@ export function snapshotReadings(frame: SnapshotFrame): SnapshotReading[] {
         reading('LV min', frame.lvs_min_voltage, 'V', 2),
         reading('I2C errors', frame.bms_i2c_error_count, ''),
         reading('Expander read failures', frame.expander_error_count, ''),
-    ].filter((r): r is SnapshotReading => r !== undefined)
+    ]
 }
 
 export function formatEventTime(time: number): string {
