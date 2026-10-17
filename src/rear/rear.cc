@@ -87,6 +87,9 @@ constexpr hal::gpio::Descriptor k_radio_rx(hal::gpio::Port::A, 10);
 constexpr hal::gpio::Descriptor k_radio_cts(hal::gpio::Port::A, 11);
 constexpr hal::gpio::Descriptor k_radio_rts(hal::gpio::Port::A, 12);
 
+// Ensure that the status message can be sent at the correct rate.
+static_assert(config::k_status_period % k_control_period == 0);
+
 enum class ExpanderRegister : std::uint8_t {
     InputPort0 = 0x00,
     InputPort1 = 0x01,
@@ -308,21 +311,22 @@ void control_task(void *) {
     hal::can::init(hal::can::Port::B, config::k_can_speed, 2);
 
     // Data from the front distribution.
-    static TimeTracked<front::StatusMessage, 250> front_status_tracked;
-    static TimeTracked<front::ThrottleMessage, 25> front_throttle_tracked;
+    static TimeTracked<front::StatusMessage> front_status_tracked;
+    static TimeTracked<front::ThrottleMessage, config::can_timeout(config::k_throttle_period)> front_throttle_tracked;
     static std::array<std::uint16_t, 7> front_lvs_voltages{};
 
     // Data from the precharge board.
-    static TimeTracked<precharge::StatusMessage, 25> precharge_status_tracked;
+    static TimeTracked<precharge::StatusMessage> precharge_status_tracked;
 
-    // Data from the inverter.
+    // Data from the inverter. We assume that the inverter GD3 message is correctly configured to the same
+    // k_status_period as every other message.
     static std::atomic<std::int16_t> inverter_input_voltage;
     static std::atomic<std::int16_t> motor_current;
     static std::atomic<std::int32_t> motor_erpm;
-    static TimeTracked<dti::GeneralData3, 250> inverter_gd3_tracked;
+    static TimeTracked<dti::GeneralData3> inverter_gd3_tracked;
 
     // Data from the BMS.
-    static TimeTracked<bms::MasterStatusMessage, 250> bms_status_tracked;
+    static TimeTracked<bms::MasterStatusMessage> bms_status_tracked;
     static std::atomic<std::int32_t> positive_current;
     static std::atomic<std::int32_t> negative_current;
     static std::atomic<std::uint16_t> min_cell_voltage;
@@ -634,12 +638,14 @@ void control_task(void *) {
         }
 
         // Broadcast status message.
-        StatusMessage status_message{
-            .shutdown_open_cause = shutdown_open_cause,
-            .ts_prevention_flags = ts_prevention_flags,
-            .rtd_prevention_flags = rtd_prevention_flags,
-        };
-        hal::can::transmit(config::k_rear_can_id, status_message);
+        if (scheduler.ticks() % (config::k_status_period / k_control_period) == 0) {
+            StatusMessage status_message{
+                .shutdown_open_cause = shutdown_open_cause,
+                .ts_prevention_flags = ts_prevention_flags,
+                .rtd_prevention_flags = rtd_prevention_flags,
+            };
+            hal::can::transmit(config::k_rear_can_id, status_message);
+        }
 
         // Write to GPIO expander outputs.
         std::uint8_t expander_out = 0;

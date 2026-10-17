@@ -154,6 +154,9 @@ using OutputBits = util::FlagBitset<OutputBit>;
 // We want to print the same information over SWD as the status message sent out over CAN.
 using SwdData = StatusMessage;
 
+// Ensure that the status message can be sent at the correct rate.
+static_assert(config::k_status_period % k_sm_period == 0);
+
 // CAN heartbeat.
 TimeTracked<std::monostate, k_heartbeat_timeout> s_heartbeat;
 
@@ -538,7 +541,9 @@ void sm_task(void *) {
             .relay_states = relay_states,
             .state = state,
         };
-        hal::can::transmit(config::k_precharge_can_id, status_message);
+        if (scheduler.ticks() % (config::k_status_period / k_sm_period) == 0) {
+            hal::can::transmit(config::k_precharge_can_id, status_message);
+        }
 
         // Update node status temperature.
         const auto mcu_temp_voltage = (k_mcu_vref * adc_buffer[2]) >> 12;

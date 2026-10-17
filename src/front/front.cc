@@ -46,14 +46,14 @@ constexpr std::uint32_t k_button_lockout_duration = 1000;
 constexpr std::uint32_t k_rtd_horn_duration = 1000;
 
 /**
- * @brief Status sending period in milliseconds.
+ * @brief Main task scheduling period in milliseconds.
  */
-constexpr std::uint32_t k_status_period = 100;
+constexpr std::uint32_t k_main_period = 10;
 
 /**
- * @brief Throttle sensing period in milliseconds.
+ * @brief LVS telemetry period milliseconds.
  */
-constexpr std::uint32_t k_throttle_period = 10;
+constexpr std::uint32_t k_lvs_period = 100;
 
 /**
  * @brief Hard-coded value of the 3V3 rail powering the STM's ADC in 1 mV resolution.
@@ -82,8 +82,12 @@ constexpr hal::gpio::Descriptor k_ts_button_led(hal::gpio::Port::B, 2);
 constexpr hal::gpio::Descriptor k_rtd_button(hal::gpio::Port::C, 14);
 constexpr hal::gpio::Descriptor k_rtd_button_led(hal::gpio::Port::C, 13);
 
-TimeTracked<precharge::State, 75> s_precharge_state;
-TimeTracked<rear::StatusMessage, 75> s_rear_status;
+// Ensure that the messages can be sent at the correct rate.
+static_assert(config::k_status_period % k_main_period == 0);
+static_assert(k_lvs_period % k_main_period == 0);
+
+TimeTracked<precharge::State> s_precharge_state;
+TimeTracked<rear::StatusMessage, config::can_timeout(config::k_status_period) * 2> s_rear_status;
 std::array<volatile std::uint16_t, 10> s_adc_buffer;
 
 freertos::Task<128> s_main_task;
@@ -232,40 +236,46 @@ void main_task(void *) {
             shutdown_samples.set(ShutdownSample::Auxiliary);
         }
 
-        StatusMessage status_message{
-            .shutdown_samples = shutdown_samples,
-            .ts_activation_desired = ts_activation_desired.has_value(),
-            .rtd_activation_desired = rtd_activation_desired.has_value(),
-            .apps_calibrated = apps_calibrated,
-        };
-        hal::can::transmit(config::k_front_can_id, status_message);
+        // Send main status message.
+        if (scheduler.ticks() % (config::k_status_period / k_main_period) == 0) {
+            StatusMessage status_message{
+                .shutdown_samples = shutdown_samples,
+                .ts_activation_desired = ts_activation_desired.has_value(),
+                .rtd_activation_desired = rtd_activation_desired.has_value(),
+                .apps_calibrated = apps_calibrated,
+            };
+            hal::can::transmit(config::k_front_can_id, status_message);
+        }
 
-        // Calculate LVS voltages by reversing the 5.7x divider on each.
-        std::array<std::uint16_t, 7> fuse_voltages{};
-        std::transform(s_adc_buffer.begin(), std::next(s_adc_buffer.begin(), fuse_voltages.size()),
-                       fuse_voltages.begin(), [](std::uint16_t adc_value) {
-                           return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
-                       });
+        // Send LVS messages.
+        if (scheduler.ticks() % (k_lvs_period / k_main_period) == 0) {
+            // Calculate LVS voltages by reversing the 5.7x divider on each.
+            std::array<std::uint16_t, 7> fuse_voltages{};
+            std::transform(s_adc_buffer.begin(), std::next(s_adc_buffer.begin(), fuse_voltages.size()),
+                           fuse_voltages.begin(), [](std::uint16_t adc_value) {
+                               return (((k_mcu_vref * adc_value) >> 12) * 57) / 10;
+                           });
 
-        LvsSampleMessage1 lvs_sample_message_1{
-            .rtd_voltage = fuse_voltages[0],
-            .apps_1_voltage = fuse_voltages[1],
-            .apps_2_voltage = fuse_voltages[2],
-            .front_voltage = fuse_voltages[3],
-        };
-        hal::can::transmit(config::k_front_can_id, lvs_sample_message_1);
+            LvsSampleMessage1 lvs_sample_message_1{
+                .rtd_voltage = fuse_voltages[0],
+                .apps_1_voltage = fuse_voltages[1],
+                .apps_2_voltage = fuse_voltages[2],
+                .front_voltage = fuse_voltages[3],
+            };
+            hal::can::transmit(config::k_front_can_id, lvs_sample_message_1);
 
-        LvsSampleMessage2 lvs_sample_message_2{
-            .dwin_voltage = fuse_voltages[4],
-            .aux_1_voltage = fuse_voltages[5],
-            .aux_2_voltage = fuse_voltages[6],
-        };
-        hal::can::transmit(config::k_front_can_id, lvs_sample_message_2);
+            LvsSampleMessage2 lvs_sample_message_2{
+                .dwin_voltage = fuse_voltages[4],
+                .aux_1_voltage = fuse_voltages[5],
+                .aux_2_voltage = fuse_voltages[6],
+            };
+            hal::can::transmit(config::k_front_can_id, lvs_sample_message_2);
+        }
 
         // Update node status temperature.
         node_status::update((k_mcu_vref * s_adc_buffer[9]) >> 12);
 
-        scheduler.delay_until_ms(k_status_period);
+        scheduler.delay_until_ms(k_main_period);
     }
 }
 
@@ -279,7 +289,7 @@ void throttle_task(void *) {
     while (!calibrator.update(s_adc_buffer[7])) {
         sensors[0].update_limits(s_adc_buffer[7]);
         sensors[1].update_limits(s_adc_buffer[8]);
-        scheduler.delay_until_ms(k_throttle_period);
+        scheduler.delay_until_ms(config::k_throttle_period);
     }
 
     // Notify main task of completed calibration.
@@ -307,7 +317,7 @@ void throttle_task(void *) {
         };
         hal::can::transmit(config::k_front_can_id, throttle_message);
 
-        scheduler.delay_until_ms(k_throttle_period);
+        scheduler.delay_until_ms(config::k_throttle_period);
     }
 }
 

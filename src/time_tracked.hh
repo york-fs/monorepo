@@ -1,5 +1,6 @@
 #pragma once
 
+#include <config.hh>
 #include <freertos.hh>
 
 #include <atomic>
@@ -8,8 +9,10 @@
 
 /**
  * @brief A class to track incoming data which goes stale and expires after a set period.
+ *
+ * The ExpirationMs parameter defaults to a regular status message on the CAN network.
  */
-template <typename T, std::uint32_t ExpirationMs>
+template <typename T, std::uint32_t ExpirationMs = config::can_timeout(config::k_status_period)>
 class TimeTracked {
     std::optional<T> m_value;
     std::atomic<TickType_t> m_last_ticks{0};

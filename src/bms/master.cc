@@ -114,9 +114,9 @@ constexpr std::uint32_t k_config_magic = 0x6c72d132;
 constexpr std::uint32_t k_supervisor_period = 10;
 
 /**
- * @brief CAN status message sending task period in milliseconds.
+ * @brief CAN telemetry message sending task period in milliseconds.
  */
-constexpr std::uint32_t k_status_period = 50;
+constexpr std::uint32_t k_telemetry_period = 50;
 
 /**
  * @brief Control task scheduling period in milliseconds.
@@ -248,6 +248,9 @@ constexpr hal::gpio::Descriptor k_miso(hal::gpio::Port::B, 14);
 constexpr hal::gpio::Descriptor k_oc_n(hal::gpio::Port::A, 11);
 constexpr hal::gpio::Descriptor k_oc_p(hal::gpio::Port::A, 12);
 
+// Ensure that the status message can be sent at the correct rate.
+static_assert(config::k_status_period % k_supervisor_period == 0);
+
 struct Config {
     // Segment config.
     std::uint8_t segment_start_address;
@@ -311,10 +314,6 @@ public:
     TickType_t last_update_time() const { return m_last_update_time; }
 };
 
-struct StatusData {
-    MasterErrorFlags master_flags;
-};
-
 struct SwdData {
     MasterErrorFlags master_flags;
     std::optional<std::uint32_t> shutdown_duration{};
@@ -350,12 +349,11 @@ i2c::StateMachine s_i2c2_sm(i2c::Bus::_2, i2c::Speed::_100);
 // Tasks.
 // TODO: Think about stack sizes more.
 freertos::Task<128> s_supervisor_task;
-freertos::Task<256> s_status_task;
+freertos::Task<256> s_telemetry_task;
 freertos::Task<256> s_sample_segments_task;
 freertos::Task<128> s_control_task;
 freertos::Task<256> s_config_task;
 freertos::Task<128> s_swd_task;
-freertos::Queue<StatusData, 1> s_status_queue;
 freertos::Queue<SwdData, 1> s_swd_queue;
 
 // Task timing.
@@ -472,8 +470,10 @@ void supervisor_task(void *) {
 
         // Check segment data.
         std::size_t ready_segment_count = 0;
+        std::uint32_t i2c_error_count = 0;
         s_segments_mutex.with_locked([&] {
             for (const auto &segment : s_segments) {
+                i2c_error_count += segment.master_error_count() + segment.slave_error_count();
                 if (!segment.error_flags().is_set(SegmentError::Disconnected)) {
                     ready_segment_count++;
 
@@ -577,11 +577,14 @@ void supervisor_task(void *) {
             }
         }
 
-        // Update status data.
-        StatusData status_data{
-            .master_flags = master_flags,
-        };
-        s_status_queue.overwrite(status_data);
+        // Send the master status message.
+        if (scheduler.ticks() % (config::k_status_period / k_supervisor_period) == 0) {
+            MasterStatusMessage master_status_message{
+                .master_flags = master_flags,
+                .i2c_error_count = i2c_error_count,
+            };
+            hal::can::transmit(config::k_bms_can_id, master_status_message);
+        }
 
         // Update SWD data.
         if constexpr (config::enable_debug_logs()) {
@@ -603,7 +606,7 @@ void supervisor_task(void *) {
     }
 }
 
-void status_task(void *) {
+void telemetry_task(void *) {
     // Initialise periodic node status transmission.
     node_status::init(config::k_bms_can_id);
 
@@ -622,7 +625,7 @@ void status_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
         hal::adc_start(ADC1);
-        scheduler.delay_until_ms(k_status_period);
+        scheduler.delay_until_ms(k_telemetry_period);
 
         // Calculate LVS input voltage. The input has a 5.3x divider.
         const auto lvs_voltage = (((k_mcu_vref * adc_buffer[0]) >> 12) * 53) / 10;
@@ -646,7 +649,6 @@ void status_task(void *) {
         auto max_voltage = std::numeric_limits<std::uint16_t>::min();
         auto min_temperature = std::numeric_limits<std::int8_t>::max();
         auto max_temperature = std::numeric_limits<std::int8_t>::min();
-        std::uint32_t i2c_error_count = 0;
         s_segments_mutex.with_locked([&] {
             for (const auto &segment : s_segments) {
                 for (const auto voltage : segment.cell_voltages()) {
@@ -661,16 +663,8 @@ void status_task(void *) {
                         max_temperature = std::max(max_temperature, *temperature);
                     }
                 }
-                i2c_error_count += segment.master_error_count() + segment.slave_error_count();
             }
         });
-
-        const auto data = *s_status_queue.receive(portMAX_DELAY);
-        MasterStatusMessage master_status_message{
-            .master_flags = data.master_flags,
-            .i2c_error_count = i2c_error_count,
-        };
-        hal::can::transmit(config::k_bms_can_id, master_status_message);
 
         const auto positive_current = static_cast<std::int32_t>(s_positive_sensor.current() * 1000.0f);
         const auto negative_current = static_cast<std::int32_t>(s_negative_sensor.current() * 1000.0f);
@@ -1342,11 +1336,10 @@ void app_main() {
     TIM1->CR1 = TIM_CR1_CEN;
 
     s_segments_mutex.init();
-    s_status_queue.init();
 
     // Initialise all tasks.
     s_supervisor_task.init(&supervisor_task, "supervisor", 5);
-    s_status_task.init(&status_task, "status", 4);
+    s_telemetry_task.init(&telemetry_task, "telemetry", 4);
     s_sample_segments_task.init(&sample_segments_task, "sample_segs", 3);
     s_control_task.init(&control_task, "control", 2);
     s_config_task.init(&config_task, "config", 1);
