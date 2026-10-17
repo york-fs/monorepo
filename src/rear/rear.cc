@@ -557,7 +557,8 @@ void control_task(void *) {
         // Hold TS activation latched unless it has not been allowed yet, it is no longer requested, or the grace period
         // has expired. Activation requires no flags to be set. Alter the flags so that the latched flags get broadcast.
         // Also exempt the PrechargeState flag as, if it's present, TS has already been deactivated by the precharge
-        // anyway, so we should cut inverter power ASAP.
+        // anyway, so we should cut inverter power ASAP. In the same vein, ShutdownOpen could be excluded however we
+        // want to ignore any noise on the shutdown circuit measurements.
         bool should_prevent_ts_activation = false;
         should_prevent_ts_activation |= !ts_allowed && ts_prevention_flags.any_set();
         should_prevent_ts_activation |= ts_prevention_flag_time && xTaskGetTickCount() - *ts_prevention_flag_time >=
