@@ -138,6 +138,7 @@ public:
 
 class PeriodScheduler {
     TickType_t m_last_schedule_time;
+    std::uint32_t m_ticks{0};
 
 public:
     PeriodScheduler();
@@ -148,6 +149,7 @@ public:
     PeriodScheduler &operator=(PeriodScheduler &&) = delete;
 
     bool delay_until_ms(std::uint32_t period_ms);
+    std::uint32_t ticks() const { return m_ticks; }
 };
 
 template <typename Func>

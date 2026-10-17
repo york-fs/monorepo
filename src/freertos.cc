@@ -85,6 +85,7 @@ PeriodScheduler::PeriodScheduler() {
 }
 
 bool PeriodScheduler::delay_until_ms(std::uint32_t period_ms) {
+    ++m_ticks;
     return xTaskDelayUntil(&m_last_schedule_time, pdMS_TO_TICKS(period_ms)) == pdTRUE;
 }
 
