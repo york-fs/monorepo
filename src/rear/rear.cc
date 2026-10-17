@@ -265,8 +265,12 @@ bool expander_wait() {
     const bool timeout = freertos::notify_take(1, true, pdMS_TO_TICKS(2)) == 0;
     const auto state = s_i2c_sm.state();
     if (!timeout && (state == i2c::State::Idle || state == i2c::State::NoAck)) {
+        if (state == i2c::State::NoAck) {
+            ++s_expander_error_count;
+        }
         return state == i2c::State::Idle;
     }
+    ++s_expander_error_count;
     // Reset the I2C peripheral.
     s_i2c_sm.init();
     return false;
@@ -486,11 +490,8 @@ void control_task(void *) {
         }
 
         // Sample rear-local shutdown pins.
-        const auto expander_port_0_read = expander_read(ExpanderRegister::InputPort0);
-        const auto expander_port_1_read = expander_read(ExpanderRegister::InputPort1);
-        s_expander_error_count += static_cast<std::uint32_t>(!expander_port_0_read) + !expander_port_1_read;
-        const auto expander_port_0 = expander_port_0_read.value_or(0);
-        const auto expander_port_1 = expander_port_1_read.value_or(0);
+        const auto expander_port_0 = expander_read(ExpanderRegister::InputPort0).value_or(0);
+        const auto expander_port_1 = expander_read(ExpanderRegister::InputPort1).value_or(0);
         auto rear_shutdown_samples = static_cast<RearShutdownSamples>(expander_port_0);
         if ((expander_port_1 & (1u << 2)) != 0) {
             rear_shutdown_samples.set(RearShutdownSample::BmsOk);
