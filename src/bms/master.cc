@@ -126,7 +126,7 @@ constexpr std::uint32_t k_control_period = 1000;
 /**
  * @brief Segment sampling task scheduling period in milliseconds.
  */
-constexpr std::uint32_t k_segment_sample_period = 50;
+constexpr std::uint32_t k_segment_sample_period = 100;
 
 /**
  * @brief Current sensing voltage low pass filter time period in seconds.
