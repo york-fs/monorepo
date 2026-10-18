@@ -155,6 +155,7 @@ std::atomic<std::uint16_t> s_balance_bitset{0};
 std::array<std::uint16_t, k_cell_count> s_correction_table{};
 std::array<std::uint16_t, k_cell_count> s_voltages{};
 std::array<std::int8_t, k_thermistor_count> s_temperatures{};
+std::uint16_t s_max_correction = 0;
 std::uint16_t s_cell_tap_bitset = 0;
 std::uint16_t s_degraded_bitset = 0;
 std::uint16_t s_rail_voltage = 0;
@@ -556,6 +557,12 @@ void cmd_task(void *) {
         }
     }
 
+    // Record the highest calibration correction factor.
+    s_max_correction = 0;
+    for (const auto correction : s_correction_table) {
+        s_max_correction = std::max(s_max_correction, correction);
+    }
+
     // Start the sampling tasks.
     s_sample_voltages_task.init(&sample_voltages_task, "voltages", 2);
     s_sample_temperatures_task.init(&sample_temperatures_task, "temperatures", 1);
@@ -667,6 +674,7 @@ extern "C" void I2C1_EV_IRQHandler() {
         stream.write_be(s_thermistor_bitset);
         stream.write_be(s_cell_tap_bitset);
         stream.write_be(s_degraded_bitset);
+        stream.write_be(s_max_correction);
         for (std::uint16_t voltage : s_voltages) {
             stream.write_be(voltage);
         }

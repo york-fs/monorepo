@@ -51,7 +51,7 @@ constexpr std::uint16_t k_eeprom_page_size = 32;
 /**
  * @brief I2C message size received from a segment in bytes.
  */
-constexpr std::size_t k_segment_response_size = 72;
+constexpr std::size_t k_segment_response_size = 74;
 
 /**
  * @brief The maximum number of connected segments.
@@ -296,6 +296,7 @@ class Segment {
     std::uint32_t m_slave_error_count{};
     std::uint16_t m_degraded_bitset{};
     std::uint16_t m_balance_bitset{};
+    std::uint16_t m_max_correction{};
     SegmentErrorFlags m_error_flags{SegmentError::Disconnected};
     TickType_t m_last_update_time{};
 
@@ -310,6 +311,7 @@ public:
     std::uint32_t slave_error_count() const { return m_slave_error_count; }
     std::uint16_t degraded_bitset() const { return m_degraded_bitset; }
     std::uint16_t balance_bitset() const { return m_balance_bitset; }
+    std::uint16_t max_correction() const { return m_max_correction; }
     SegmentErrorFlags error_flags() const { return m_error_flags; }
     TickType_t last_update_time() const { return m_last_update_time; }
 };
@@ -702,6 +704,7 @@ void telemetry_task(void *) {
             segment_summary_message.segment_flags = segment.error_flags();
             segment_summary_message.degraded_bitset = segment.degraded_bitset();
             segment_summary_message.balance_bitset = segment.balance_bitset();
+            segment_summary_message.max_correction = segment.max_correction();
 
             // Copy voltages.
             for (std::size_t i = 0; i < k_max_cell_count; i++) {
@@ -801,6 +804,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     const auto thermistor_bitset = *stream.read_be<std::uint32_t>();
     const auto cell_tap_bitset = *stream.read_be<std::uint16_t>();
     const auto degraded_bitset = *stream.read_be<std::uint16_t>();
+    const auto max_correction = *stream.read_be<std::uint16_t>();
 
     std::array<std::uint16_t, k_max_cell_count> cell_voltages{};
     for (auto &voltage : cell_voltages) {
@@ -839,6 +843,7 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     }
     m_slave_error_count = i2c_error_count;
     m_degraded_bitset = degraded_bitset;
+    m_max_correction = max_correction;
 
     // TODO: This should take into account when the data was actually sampled by the segment which should be sent over
     // I2C.

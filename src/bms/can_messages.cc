@@ -88,7 +88,8 @@ std::optional<SegmentSummaryMessage> SegmentSummaryMessage::decode(util::Stream 
     const auto segment_flags = stream.read_be<SegmentErrorFlags::type_t>();
     const auto degraded_bitset = stream.read_be<std::uint16_t>();
     const auto balance_bitset = stream.read_be<std::uint16_t>();
-    if (!segment_flags || !degraded_bitset || !balance_bitset) {
+    const auto max_correction = stream.read_be<std::uint16_t>();
+    if (!segment_flags || !degraded_bitset || !balance_bitset || !max_correction) {
         return std::nullopt;
     }
     return SegmentSummaryMessage{
@@ -96,6 +97,7 @@ std::optional<SegmentSummaryMessage> SegmentSummaryMessage::decode(util::Stream 
         SegmentErrorFlags(*segment_flags),
         *degraded_bitset,
         *balance_bitset,
+        *max_correction,
     };
 }
 
@@ -106,7 +108,10 @@ bool SegmentSummaryMessage::encode(util::Stream &stream) const {
     if (!stream.write_be(degraded_bitset)) {
         return false;
     }
-    return stream.write_be(balance_bitset);
+    if (!stream.write_be(balance_bitset)) {
+        return false;
+    }
+    return stream.write_be(max_correction);
 }
 
 std::optional<SegmentVoltageMessage> SegmentVoltageMessage::decode(util::Stream &stream, std::uint8_t sub_id) {

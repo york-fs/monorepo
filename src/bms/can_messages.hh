@@ -52,6 +52,7 @@ struct SegmentSummaryMessage : SegmentMessage {
     SegmentErrorFlags segment_flags;
     std::uint16_t degraded_bitset;
     std::uint16_t balance_bitset;
+    std::uint16_t max_correction;
 
     static constexpr std::uint32_t packet_id() { return 0x250; }
     static constexpr std::uint32_t default_priority() { return 5; }
