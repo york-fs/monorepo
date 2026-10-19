@@ -622,10 +622,10 @@ void control_task(void *) {
             };
             hal::can::transmit(config::k_dti_can_id, set_max_discharge);
         } else {
-            // Good to set 50 amp discharge limit.
+            // Good to set 125 amp discharge limit. This must stay below the BMS overcurrent threshold.
             // TODO: Get this from the BMS.
             dti::SetMaxDirectCurrentMessage set_max_discharge{
-                .current = 500,
+                .current = 1250,
             };
             hal::can::transmit(config::k_dti_can_id, set_max_discharge);
 
