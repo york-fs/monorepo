@@ -9,7 +9,6 @@ import AutoGrid from '@/components/AutoGrid.vue'
 import MetricTile from '@/components/MetricTile.vue'
 import FuseGrid from '@/components/distribution/FuseGrid.vue'
 import ShutdownCauseTile from '@/components/distribution/ShutdownCauseTile.vue'
-import ActivationChecklists from '@/components/distribution/ActivationChecklists.vue'
 
 const { frame } = useTelemetry()
 
@@ -40,9 +39,5 @@ const selectLvMax = (f: TelemetryFrame) => f.lvs_max_voltage
             <ShutdownCauseTile :cause="frame.shutdown_open_cause" />
         </AutoGrid>
         <FuseGrid :fuses="frame.fuses" />
-        <ActivationChecklists
-            :ts-prevention-flags="frame.ts_prevention_flags"
-            :rtd-prevention-flags="frame.rtd_prevention_flags"
-        />
     </Section>
 </template>

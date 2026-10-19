@@ -108,6 +108,49 @@ export function cellVoltageSeverity(volts: number): Severity {
 }
 
 /**
+ * Rough rest-voltage to state-of-charge curve for the pack's Molicel
+ * INR-21700-P45B cells, from the 3.0V floor above (empty) to 4.2V (full
+ * charge). The shape is a typical NMC curve rather than one measured for this
+ * cell, and it only holds at rest: cells sag under load, hence
+ * `STATE_OF_CHARGE_MAX_CURRENT`.
+ */
+const CELL_CHARGE_CURVE: [volts: number, percent: number][] = [
+    [3.0, 0],
+    [3.3, 3],
+    [3.45, 8],
+    [3.55, 15],
+    [3.65, 30],
+    [3.75, 45],
+    [3.85, 58],
+    [3.95, 70],
+    [4.05, 83],
+    [4.15, 94],
+    [4.2, 100],
+]
+
+/**
+ * Pack current above which the cells sag too far below their resting voltage
+ * for `estimateStateOfCharge` to mean anything, so the last estimate is held.
+ */
+export const STATE_OF_CHARGE_MAX_CURRENT = 10
+
+/** Estimated state of charge in percent, interpolated along `CELL_CHARGE_CURVE`. */
+export function estimateStateOfCharge(volts: number): number {
+    const upper = CELL_CHARGE_CURVE.findIndex(([curveVolts]) => curveVolts >= volts)
+    if (upper === -1) return 100
+    if (upper === 0) return 0
+    const [lowVolts, lowPercent] = CELL_CHARGE_CURVE[upper - 1]!
+    const [highVolts, highPercent] = CELL_CHARGE_CURVE[upper]!
+    return lowPercent + ((volts - lowVolts) / (highVolts - lowVolts)) * (highPercent - lowPercent)
+}
+
+export function stateOfChargeSeverity(percent: number): Severity {
+    if (percent <= 10) return 'critical'
+    if (percent <= 25) return 'warning'
+    return 'good'
+}
+
+/**
  * One-sided, unlike the powertrain temperatures: you gave an upper limit
  * only, and a cold pack isn't a fault the way a cold inverter notionally is.
  * Same 15°C/5°C margins as `domain/powertrain.ts` so the two temperature

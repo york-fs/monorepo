@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { useDebugMode } from '@/composables/useDebugMode'
-
-// A switch rather than a checkbox: it changes what the page shows straight
-// away, with nothing to submit.
-const { debugMode } = useDebugMode()
+// A switch rather than a checkbox: it changes what the dash does straight
+// away, with nothing to submit. The default slot is its label.
+const enabled = defineModel<boolean>({ required: true })
 </script>
 
 <template>
@@ -11,11 +9,11 @@ const { debugMode } = useDebugMode()
         type="button"
         role="switch"
         class="toggle"
-        :aria-checked="debugMode"
-        @click="debugMode = !debugMode"
+        :aria-checked="enabled"
+        @click="enabled = !enabled"
     >
         <span class="track"><span class="knob" /></span>
-        Debug
+        <slot />
     </button>
 </template>
 
@@ -24,25 +22,24 @@ const { debugMode } = useDebugMode()
     display: inline-flex;
     align-items: center;
     gap: var(--gap-items);
-    padding: 0.25rem 0.5rem;
+    padding: 0;
     font: inherit;
-    font-size: 0.8125rem;
-    color: var(--ink-secondary);
+    font-size: 0.75rem;
+    color: var(--ink-muted);
     background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-badge);
+    border: none;
     cursor: pointer;
 }
 
 .toggle[aria-checked='true'] {
-    color: var(--ink-primary);
+    color: var(--ink-secondary);
 }
 
 .track {
     position: relative;
-    width: 1.75rem;
-    height: 1rem;
-    border-radius: 0.5rem;
+    width: 1.375rem;
+    height: 0.75rem;
+    border-radius: 0.375rem;
     box-shadow: inset 0 0 0 1px var(--ink-muted);
     transition: background-color 0.15s;
 }
@@ -56,8 +53,8 @@ const { debugMode } = useDebugMode()
     position: absolute;
     top: 0.125rem;
     left: 0.125rem;
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 0.5rem;
+    height: 0.5rem;
     border-radius: 50%;
     background: var(--ink-muted);
     transition: transform 0.15s;
@@ -65,6 +62,6 @@ const { debugMode } = useDebugMode()
 
 .toggle[aria-checked='true'] .knob {
     background: var(--surface-tile);
-    transform: translateX(0.75rem);
+    transform: translateX(0.625rem);
 }
 </style>

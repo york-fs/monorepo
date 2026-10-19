@@ -15,6 +15,8 @@ import type {
     PrechargeRelay,
     PrechargeState,
     RtdPreventionFlag,
+    SegmentErrorFlag,
+    SegmentReadings,
     ShutdownOpenCause,
     TelemetryFrame,
     TsPreventionFlag,
@@ -326,6 +328,44 @@ function randomizeDiscreteState(state: DemoState) {
             : BMS_MASTER_ERROR_FLAGS.filter(() => Math.random() < 0.15).slice(0, 2)
 }
 
+// Ten BMS slots, six fitted like the real pack. While the master reports a
+// segment error, segment C has an open thermistor, so the BMS page has
+// something to show.
+const DEMO_SEGMENT_SLOTS = 10
+const DEMO_FITTED_SEGMENTS = 6
+const DEMO_FAULTY_SEGMENT = 2
+
+function demoSegmentFlags(state: DemoState): SegmentErrorFlag[][] {
+    return Array.from({ length: DEMO_SEGMENT_SLOTS }, (_, id): SegmentErrorFlag[] => {
+        if (id >= DEMO_FITTED_SEGMENTS) return ['DISCONNECTED']
+        const faulty = id === DEMO_FAULTY_SEGMENT && state.bmsErrorFlags.includes('SEGMENT_ERROR')
+        return faulty ? ['BAD_THERMISTOR_COUNT'] : []
+    })
+}
+
+// Each frame carries one segment, in turn, the same as the rear sends them.
+function demoSegment(state: DemoState, now: number): SegmentReadings {
+    const id = Math.floor(now / CONTINUOUS_TICK_MS) % DEMO_FITTED_SEGMENTS
+    const openThermistor =
+        id === DEMO_FAULTY_SEGMENT && state.bmsErrorFlags.includes('SEGMENT_ERROR') ? 3 : -1
+    return {
+        id,
+        cell_voltages: Array.from({ length: 16 }, (_, cell) =>
+            cell < 14
+                ? Number(randomBetween(state.minCellVoltage, state.maxCellVoltage).toFixed(4))
+                : null,
+        ),
+        temperatures: Array.from({ length: 24 }, (_, index) =>
+            index < 14 && index !== openThermistor
+                ? Math.round(randomBetween(state.minCellTemperature, state.maxCellTemperature))
+                : null,
+        ),
+        degraded_cells: [],
+        balancing_cells: [],
+        max_correction: 1000 + Math.round(randomBetween(0, 40)),
+    }
+}
+
 function buildFrame(state: DemoState, now: number): TelemetryFrame {
     const tsPreventionFlags = deriveTsPreventionFlags(state)
 
@@ -364,6 +404,8 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
         max_cell_voltage: Number(state.maxCellVoltage.toFixed(4)),
         min_cell_temperature: Number(state.minCellTemperature.toFixed(1)),
         max_cell_temperature: Number(state.maxCellTemperature.toFixed(1)),
+        segment_error_flags: demoSegmentFlags(state),
+        segment: demoSegment(state, now),
     }
 }
 

@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 from enum import Enum, Flag
 from events import EventLog, EventTracker, FrameRecorder
 from fastapi import FastAPI, HTTPException, Request, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pathlib import Path
+from sessions import export_session, list_sessions
 import asyncio
 import attrs
 import crcmod
@@ -17,7 +18,13 @@ import time
 
 
 ERPM_FACTOR = 10
-MAX_MOTOR_CURRENT = 200
+# BMS segment slots, and cells and thermistors per segment, as the rear forwards them.
+SEGMENT_COUNT = 10
+SEGMENT_CELL_COUNT = 16
+SEGMENT_TEMPERATURE_COUNT = 24
+# The inverter's max motor current, which the pedal's demand is relative to. Matches
+# the frontend's MOTOR_CURRENT_MAX.
+MAX_MOTOR_CURRENT = 360
 
 
 class OnlineFlags(Flag):
@@ -148,6 +155,19 @@ class BmsMasterErrorFlags(Flag):
     BAD_EEPROM = enum.auto()
 
 
+class SegmentErrorFlags(Flag):
+    DISCONNECTED = enum.auto()
+    BAD_CELL_COUNT = enum.auto()
+    BAD_THERMISTOR_COUNT = enum.auto()
+    BAD_RAIL_VOLTAGE = enum.auto()
+    UNRELIABLE_COMMUNICATION = enum.auto()
+    UNRELIABLE_MEASUREMENT = enum.auto()
+    UNDERVOLTAGE = enum.auto()
+    OVERVOLTAGE = enum.auto()
+    UNDERTEMPERATURE = enum.auto()
+    OVERTEMPERATURE = enum.auto()
+
+
 @attrs.define
 class TelemetryFrame:
     uptime: int
@@ -224,6 +244,11 @@ class TelemetryFrame:
     blown_fuses_seen: FuseFlags = attrs.field(converter=FuseFlags)
     expander_error_count: int
 
+    # Every BMS segment's error flags, and one segment's full readings. The rear sends
+    # the connected segments' readings in turn, one per frame.
+    segment_error_flags: list[SegmentErrorFlags]
+    segment: dict
+
     crc: int
 
     def serialize(self, inst, field, value):
@@ -237,8 +262,38 @@ class TelemetryFrame:
         return attrs.asdict(self, value_serializer=self.serialize)
 
 
+FRAME_BASE = struct.Struct(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHII")
+FRAME_SEGMENTS = struct.Struct(
+    f">{SEGMENT_COUNT}HBHHH{SEGMENT_CELL_COUNT}H{SEGMENT_TEMPERATURE_COUNT}b"
+)
+FRAME_CRC = struct.Struct(">I")
+
+
+def parse_segment(fields: tuple) -> tuple[list[SegmentErrorFlags], dict]:
+    flags = [SegmentErrorFlags(value) for value in fields[:SEGMENT_COUNT]]
+    segment_id, degraded, balancing, max_correction = fields[
+        SEGMENT_COUNT : SEGMENT_COUNT + 4
+    ]
+    voltages = fields[SEGMENT_COUNT + 4 : SEGMENT_COUNT + 4 + SEGMENT_CELL_COUNT]
+    temperatures = fields[SEGMENT_COUNT + 4 + SEGMENT_CELL_COUNT :]
+    cells = range(SEGMENT_CELL_COUNT)
+    # Readings the segment doesn't have are sent as 0xffff and -128.
+    return flags, {
+        "id": segment_id,
+        "cell_voltages": [None if v == 0xFFFF else v / 10000 for v in voltages],
+        "temperatures": [None if t == -128 else t for t in temperatures],
+        "degraded_cells": [i for i in cells if degraded >> i & 1],
+        "balancing_cells": [i for i in cells if balancing >> i & 1],
+        "max_correction": max_correction,
+    }
+
+
 def parse_frame(data: bytes):
-    return TelemetryFrame(*struct.unpack(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHIII", data))
+    base = FRAME_BASE.unpack_from(data)
+    segment_fields = FRAME_SEGMENTS.unpack_from(data, FRAME_BASE.size)
+    (crc,) = FRAME_CRC.unpack_from(data, FRAME_BASE.size + FRAME_SEGMENTS.size)
+    flags, segment = parse_segment(segment_fields)
+    return TelemetryFrame(*base, flags, segment, crc)
 
 
 def cobs_unstuff(b: bytes) -> bytearray:
@@ -379,3 +434,28 @@ async def download_events(manager: SerialManager = Depends(get_serial_manager)):
     if not manager.event_log.path.exists():
         raise HTTPException(status_code=404, detail="No events logged yet")
     return FileResponse(manager.event_log.path, filename="events.jsonl")
+
+
+@app.get("/api/sessions")
+async def get_sessions(
+    manager: SerialManager = Depends(get_serial_manager),
+) -> list[dict]:
+    recorder = manager.frame_recorder
+    return list_sessions(recorder.path.parent, recorder.path)
+
+
+# A plain function, so FastAPI runs the file reading and zipping in its threadpool
+# rather than blocking the telemetry stream.
+@app.get("/api/sessions/{session_id}/export")
+def export_session_zip(
+    session_id: str, manager: SerialManager = Depends(get_serial_manager)
+):
+    archive = export_session(manager.event_log.directory, session_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="No such session")
+    filename = f"yfs-session-{session_id}.zip"
+    return Response(
+        archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

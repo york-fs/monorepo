@@ -51,11 +51,8 @@ const rtdSeverity = computed(() => activationSeverity(props.rtdPreventionFlags))
 </script>
 
 <template>
-    <div>
-        <h3>Activation</h3>
-        <AutoGrid min="14rem">
-            <ChecklistTile title="TS activation" :rows="tsRows" :severity="tsSeverity" />
-            <ChecklistTile title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
-        </AutoGrid>
-    </div>
+    <AutoGrid min="14rem">
+        <ChecklistTile title="TS activation" :rows="tsRows" :severity="tsSeverity" />
+        <ChecklistTile title="RTD activation" :rows="rtdRows" :severity="rtdSeverity" />
+    </AutoGrid>
 </template>

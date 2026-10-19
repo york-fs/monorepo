@@ -1,0 +1,286 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 2058 886"><style>
+    .frame { fill: #121212; }
+    .busbar { fill: #c5c9ce; stroke: #8e949b; stroke-width: 1.5; }
+    .cell { fill: #8f8274; stroke: #4a433b; stroke-width: 1; }
+    .thermistor { fill: #2a3340; }
+    .tag-bg { fill: #ffffff; stroke: #4a4f57; stroke-width: 1; }
+    .pill-bg { fill: #ffffff; fill-opacity: 0.92; stroke: #4a4f57; stroke-width: 0.8; }
+    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .tag-label { font-size: 14px; font-weight: 600; fill: #1b1f24; }
+    .therm-value { font-size: 15px; font-weight: 600; fill: #ffffff; }
+    .pill-label { font-size: 9px; font-weight: 700; fill: #5a6068; }
+    .cell-value { font-size: 15px; font-weight: 600; fill: #1b1f24; }
+    .side-title { font-size: 28px; font-weight: 700; fill: #1b1f24; }
+    .side-sub { font-size: 15px; fill: #5a6068; }
+  </style>
+  <text class="side-title" x="0" y="30">SIDE A</text>
+  <text class="side-sub" x="0" y="54">A1–A8 · thermistors A-T1…A-T7 · A5 = segment − (GND)</text>
+  <text class="side-title" x="1054" y="30">SIDE B</text>
+  <text class="side-sub" x="1054" y="54">B1–B7 · thermistors B-T1…B-T7 · viewed from its own face</text>
+  <g id="seg0" data-segment="0">
+    <g id="seg0-side-a" transform="translate(0,66)">
+      <rect class="frame" x="0" y="0" width="984" height="760" rx="14"/>
+      <path id="seg0-bbA1" class="busbar" data-segment="0" data-busbar="A1" data-tap="0" d="M32.0,169.0 L32.0,169.7 L32.1,170.4 L32.3,171.0 L32.5,171.7 L32.8,172.3 L33.2,172.9 L33.6,173.4 L34.1,173.9 L34.6,174.4 L35.1,174.8 L35.7,175.2 L36.3,175.5 L37.0,175.7 L37.6,175.9 L38.3,176.0 L39.0,176.0 L473.0,176.0 L473.7,176.0 L474.4,175.9 L475.0,175.7 L475.7,175.5 L476.3,175.2 L476.9,174.8 L477.4,174.4 L477.9,173.9 L478.4,173.4 L478.8,172.9 L479.2,172.3 L479.5,171.7 L479.7,171.0 L479.9,170.4 L480.0,169.7 L480.0,169.0 L480.0,39.0 L480.0,38.3 L479.9,37.6 L479.7,37.0 L479.5,36.3 L479.2,35.7 L478.8,35.1 L478.4,34.6 L477.9,34.1 L477.4,33.6 L476.9,33.2 L476.3,32.8 L475.7,32.5 L475.0,32.3 L474.4,32.1 L473.7,32.0 L473.0,32.0 L39.0,32.0 L38.3,32.0 L37.6,32.1 L37.0,32.3 L36.3,32.5 L35.7,32.8 L35.1,33.2 L34.6,33.6 L34.1,34.1 L33.6,34.6 L33.2,35.1 L32.8,35.7 L32.5,36.3 L32.3,37.0 L32.1,37.6 L32.0,38.3 L32.0,39.0 Z"/>
+      <path id="seg0-bbA2" class="busbar" data-segment="0" data-busbar="A2" data-tap="2" d="M480.0,195.0 L480.0,194.3 L479.9,193.6 L479.7,193.0 L479.5,192.3 L479.2,191.7 L478.8,191.1 L478.4,190.6 L477.9,190.1 L477.4,189.6 L476.9,189.2 L476.3,188.8 L475.7,188.5 L475.0,188.3 L474.4,188.1 L473.7,188.0 L473.0,188.0 L39.0,188.0 L38.3,188.0 L37.6,188.1 L37.0,188.3 L36.3,188.5 L35.7,188.8 L35.1,189.2 L34.6,189.6 L34.1,190.1 L33.6,190.6 L33.2,191.1 L32.8,191.7 L32.5,192.3 L32.3,193.0 L32.1,193.6 L32.0,194.3 L32.0,195.0 L32.0,353.0 L32.0,353.7 L32.1,354.4 L32.3,355.0 L32.5,355.7 L32.8,356.3 L33.2,356.9 L33.6,357.4 L34.1,357.9 L34.6,358.4 L35.1,358.8 L35.7,359.2 L36.3,359.5 L37.0,359.7 L37.6,359.9 L38.3,360.0 L39.0,360.0 L473.0,360.0 L473.7,360.0 L474.4,359.9 L475.0,359.7 L475.7,359.5 L476.3,359.2 L476.9,358.8 L477.4,358.4 L477.9,357.9 L478.4,357.4 L478.8,356.9 L479.2,356.3 L479.5,355.7 L479.7,355.0 L479.9,354.4 L480.0,353.7 L480.0,353.0 Z"/>
+      <path id="seg0-bbA3" class="busbar" data-segment="0" data-busbar="A3" data-tap="4" d="M480.0,379.0 L480.0,378.3 L479.9,377.6 L479.7,377.0 L479.5,376.3 L479.2,375.7 L478.8,375.1 L478.4,374.6 L477.9,374.1 L477.4,373.6 L476.9,373.2 L476.3,372.8 L475.7,372.5 L475.0,372.3 L474.4,372.1 L473.7,372.0 L473.0,372.0 L39.0,372.0 L38.3,372.0 L37.6,372.1 L37.0,372.3 L36.3,372.5 L35.7,372.8 L35.1,373.2 L34.6,373.6 L34.1,374.1 L33.6,374.6 L33.2,375.1 L32.8,375.7 L32.5,376.3 L32.3,377.0 L32.1,377.6 L32.0,378.3 L32.0,379.0 L32.0,537.0 L32.0,537.7 L32.1,538.4 L32.3,539.0 L32.5,539.7 L32.8,540.3 L33.2,540.9 L33.6,541.4 L34.1,541.9 L34.6,542.4 L35.1,542.8 L35.7,543.2 L36.3,543.5 L37.0,543.7 L37.6,543.9 L38.3,544.0 L39.0,544.0 L473.0,544.0 L473.7,544.0 L474.4,543.9 L475.0,543.7 L475.7,543.5 L476.3,543.2 L476.9,542.8 L477.4,542.4 L477.9,541.9 L478.4,541.4 L478.8,540.9 L479.2,540.3 L479.5,539.7 L479.7,539.0 L479.9,538.4 L480.0,537.7 L480.0,537.0 Z"/>
+      <path id="seg0-bbA4" class="busbar" data-segment="0" data-busbar="A4" data-tap="6" d="M480.0,563.0 L480.0,562.3 L479.9,561.6 L479.7,561.0 L479.5,560.3 L479.2,559.7 L478.8,559.1 L478.4,558.6 L477.9,558.1 L477.4,557.6 L476.9,557.2 L476.3,556.8 L475.7,556.5 L475.0,556.3 L474.4,556.1 L473.7,556.0 L473.0,556.0 L39.0,556.0 L38.3,556.0 L37.6,556.1 L37.0,556.3 L36.3,556.5 L35.7,556.8 L35.1,557.2 L34.6,557.6 L34.1,558.1 L33.6,558.6 L33.2,559.1 L32.8,559.7 L32.5,560.3 L32.3,561.0 L32.1,561.6 L32.0,562.3 L32.0,563.0 L32.0,721.0 L32.0,721.7 L32.1,722.4 L32.3,723.0 L32.5,723.7 L32.8,724.3 L33.2,724.9 L33.6,725.4 L34.1,725.9 L34.6,726.4 L35.1,726.8 L35.7,727.2 L36.3,727.5 L37.0,727.7 L37.6,727.9 L38.3,728.0 L39.0,728.0 L473.0,728.0 L473.7,728.0 L474.4,727.9 L475.0,727.7 L475.7,727.5 L476.3,727.2 L476.9,726.8 L477.4,726.4 L477.9,725.9 L478.4,725.4 L478.8,724.9 L479.2,724.3 L479.5,723.7 L479.7,723.0 L479.9,722.4 L480.0,721.7 L480.0,721.0 Z"/>
+      <path id="seg0-bbA5" class="busbar" data-segment="0" data-busbar="A5" data-tap="14" d="M504.0,169.0 L504.0,169.7 L504.1,170.4 L504.3,171.0 L504.5,171.7 L504.8,172.3 L505.2,172.9 L505.6,173.4 L506.1,173.9 L506.6,174.4 L507.1,174.8 L507.7,175.2 L508.3,175.5 L509.0,175.7 L509.6,175.9 L510.3,176.0 L511.0,176.0 L945.0,176.0 L945.7,176.0 L946.4,175.9 L947.0,175.7 L947.7,175.5 L948.3,175.2 L948.9,174.8 L949.4,174.4 L949.9,173.9 L950.4,173.4 L950.8,172.9 L951.2,172.3 L951.5,171.7 L951.7,171.0 L951.9,170.4 L952.0,169.7 L952.0,169.0 L952.0,39.0 L952.0,38.3 L951.9,37.6 L951.7,37.0 L951.5,36.3 L951.2,35.7 L950.8,35.1 L950.4,34.6 L949.9,34.1 L949.4,33.6 L948.9,33.2 L948.3,32.8 L947.7,32.5 L947.0,32.3 L946.4,32.1 L945.7,32.0 L945.0,32.0 L511.0,32.0 L510.3,32.0 L509.6,32.1 L509.0,32.3 L508.3,32.5 L507.7,32.8 L507.1,33.2 L506.6,33.6 L506.1,34.1 L505.6,34.6 L505.2,35.1 L504.8,35.7 L504.5,36.3 L504.3,37.0 L504.1,37.6 L504.0,38.3 L504.0,39.0 Z"/>
+      <path id="seg0-bbA6" class="busbar" data-segment="0" data-busbar="A6" data-tap="12" d="M952.0,195.0 L952.0,194.3 L951.9,193.6 L951.7,193.0 L951.5,192.3 L951.2,191.7 L950.8,191.1 L950.4,190.6 L949.9,190.1 L949.4,189.6 L948.9,189.2 L948.3,188.8 L947.7,188.5 L947.0,188.3 L946.4,188.1 L945.7,188.0 L945.0,188.0 L511.0,188.0 L510.3,188.0 L509.6,188.1 L509.0,188.3 L508.3,188.5 L507.7,188.8 L507.1,189.2 L506.6,189.6 L506.1,190.1 L505.6,190.6 L505.2,191.1 L504.8,191.7 L504.5,192.3 L504.3,193.0 L504.1,193.6 L504.0,194.3 L504.0,195.0 L504.0,353.0 L504.0,353.7 L504.1,354.4 L504.3,355.0 L504.5,355.7 L504.8,356.3 L505.2,356.9 L505.6,357.4 L506.1,357.9 L506.6,358.4 L507.1,358.8 L507.7,359.2 L508.3,359.5 L509.0,359.7 L509.6,359.9 L510.3,360.0 L511.0,360.0 L945.0,360.0 L945.7,360.0 L946.4,359.9 L947.0,359.7 L947.7,359.5 L948.3,359.2 L948.9,358.8 L949.4,358.4 L949.9,357.9 L950.4,357.4 L950.8,356.9 L951.2,356.3 L951.5,355.7 L951.7,355.0 L951.9,354.4 L952.0,353.7 L952.0,353.0 Z"/>
+      <path id="seg0-bbA7" class="busbar" data-segment="0" data-busbar="A7" data-tap="10" d="M952.0,379.0 L952.0,378.3 L951.9,377.6 L951.7,377.0 L951.5,376.3 L951.2,375.7 L950.8,375.1 L950.4,374.6 L949.9,374.1 L949.4,373.6 L948.9,373.2 L948.3,372.8 L947.7,372.5 L947.0,372.3 L946.4,372.1 L945.7,372.0 L945.0,372.0 L511.0,372.0 L510.3,372.0 L509.6,372.1 L509.0,372.3 L508.3,372.5 L507.7,372.8 L507.1,373.2 L506.6,373.6 L506.1,374.1 L505.6,374.6 L505.2,375.1 L504.8,375.7 L504.5,376.3 L504.3,377.0 L504.1,377.6 L504.0,378.3 L504.0,379.0 L504.0,537.0 L504.0,537.7 L504.1,538.4 L504.3,539.0 L504.5,539.7 L504.8,540.3 L505.2,540.9 L505.6,541.4 L506.1,541.9 L506.6,542.4 L507.1,542.8 L507.7,543.2 L508.3,543.5 L509.0,543.7 L509.6,543.9 L510.3,544.0 L511.0,544.0 L945.0,544.0 L945.7,544.0 L946.4,543.9 L947.0,543.7 L947.7,543.5 L948.3,543.2 L948.9,542.8 L949.4,542.4 L949.9,541.9 L950.4,541.4 L950.8,540.9 L951.2,540.3 L951.5,539.7 L951.7,539.0 L951.9,538.4 L952.0,537.7 L952.0,537.0 Z"/>
+      <path id="seg0-bbA8" class="busbar" data-segment="0" data-busbar="A8" data-tap="8" d="M952.0,563.0 L952.0,562.3 L951.9,561.6 L951.7,561.0 L951.5,560.3 L951.2,559.7 L950.8,559.1 L950.4,558.6 L949.9,558.1 L949.4,557.6 L948.9,557.2 L948.3,556.8 L947.7,556.5 L947.0,556.3 L946.4,556.1 L945.7,556.0 L945.0,556.0 L511.0,556.0 L510.3,556.0 L509.6,556.1 L509.0,556.3 L508.3,556.5 L507.7,556.8 L507.1,557.2 L506.6,557.6 L506.1,558.1 L505.6,558.6 L505.2,559.1 L504.8,559.7 L504.5,560.3 L504.3,561.0 L504.1,561.6 L504.0,562.3 L504.0,563.0 L504.0,721.0 L504.0,721.7 L504.1,722.4 L504.3,723.0 L504.5,723.7 L504.8,724.3 L505.2,724.9 L505.6,725.4 L506.1,725.9 L506.6,726.4 L507.1,726.8 L507.7,727.2 L508.3,727.5 L509.0,727.7 L509.6,727.9 L510.3,728.0 L511.0,728.0 L945.0,728.0 L945.7,728.0 L946.4,727.9 L947.0,727.7 L947.7,727.5 L948.3,727.2 L948.9,726.8 L949.4,726.4 L949.9,725.9 L950.4,725.4 L950.8,724.9 L951.2,724.3 L951.5,723.7 L951.7,723.0 L951.9,722.4 L952.0,721.7 L952.0,721.0 Z"/>
+      <circle id="seg0-cell0-a0" class="cell" data-segment="0" data-cell="0" data-side="A" cx="72" cy="136" r="25"/>
+      <circle id="seg0-cell0-a1" class="cell" data-segment="0" data-cell="0" data-side="A" cx="164" cy="136" r="25"/>
+      <circle id="seg0-cell0-a2" class="cell" data-segment="0" data-cell="0" data-side="A" cx="256" cy="136" r="25"/>
+      <circle id="seg0-cell0-a3" class="cell" data-segment="0" data-cell="0" data-side="A" cx="348" cy="136" r="25"/>
+      <circle id="seg0-cell0-a4" class="cell" data-segment="0" data-cell="0" data-side="A" cx="440" cy="136" r="25"/>
+      <circle id="seg0-cell13-a0" class="cell" data-segment="0" data-cell="13" data-side="A" cx="544" cy="136" r="25"/>
+      <circle id="seg0-cell13-a1" class="cell" data-segment="0" data-cell="13" data-side="A" cx="636" cy="136" r="25"/>
+      <circle id="seg0-cell13-a2" class="cell" data-segment="0" data-cell="13" data-side="A" cx="728" cy="136" r="25"/>
+      <circle id="seg0-cell13-a3" class="cell" data-segment="0" data-cell="13" data-side="A" cx="820" cy="136" r="25"/>
+      <circle id="seg0-cell13-a4" class="cell" data-segment="0" data-cell="13" data-side="A" cx="912" cy="136" r="25"/>
+      <circle id="seg0-cell1-a0" class="cell" data-segment="0" data-cell="1" data-side="A" cx="72" cy="228" r="25"/>
+      <circle id="seg0-cell1-a1" class="cell" data-segment="0" data-cell="1" data-side="A" cx="164" cy="228" r="25"/>
+      <circle id="seg0-cell1-a2" class="cell" data-segment="0" data-cell="1" data-side="A" cx="256" cy="228" r="25"/>
+      <circle id="seg0-cell2-a0" class="cell" data-segment="0" data-cell="2" data-side="A" cx="348" cy="228" r="25"/>
+      <circle id="seg0-cell2-a1" class="cell" data-segment="0" data-cell="2" data-side="A" cx="440" cy="228" r="25"/>
+      <circle id="seg0-cell11-a0" class="cell" data-segment="0" data-cell="11" data-side="A" cx="544" cy="228" r="25"/>
+      <circle id="seg0-cell11-a1" class="cell" data-segment="0" data-cell="11" data-side="A" cx="636" cy="228" r="25"/>
+      <circle id="seg0-cell11-a2" class="cell" data-segment="0" data-cell="11" data-side="A" cx="728" cy="228" r="25"/>
+      <circle id="seg0-cell12-a0" class="cell" data-segment="0" data-cell="12" data-side="A" cx="820" cy="228" r="25"/>
+      <circle id="seg0-cell12-a1" class="cell" data-segment="0" data-cell="12" data-side="A" cx="912" cy="228" r="25"/>
+      <circle id="seg0-cell1-a3" class="cell" data-segment="0" data-cell="1" data-side="A" cx="72" cy="320" r="25"/>
+      <circle id="seg0-cell1-a4" class="cell" data-segment="0" data-cell="1" data-side="A" cx="164" cy="320" r="25"/>
+      <circle id="seg0-cell2-a2" class="cell" data-segment="0" data-cell="2" data-side="A" cx="256" cy="320" r="25"/>
+      <circle id="seg0-cell2-a3" class="cell" data-segment="0" data-cell="2" data-side="A" cx="348" cy="320" r="25"/>
+      <circle id="seg0-cell2-a4" class="cell" data-segment="0" data-cell="2" data-side="A" cx="440" cy="320" r="25"/>
+      <circle id="seg0-cell11-a3" class="cell" data-segment="0" data-cell="11" data-side="A" cx="544" cy="320" r="25"/>
+      <circle id="seg0-cell11-a4" class="cell" data-segment="0" data-cell="11" data-side="A" cx="636" cy="320" r="25"/>
+      <circle id="seg0-cell12-a2" class="cell" data-segment="0" data-cell="12" data-side="A" cx="728" cy="320" r="25"/>
+      <circle id="seg0-cell12-a3" class="cell" data-segment="0" data-cell="12" data-side="A" cx="820" cy="320" r="25"/>
+      <circle id="seg0-cell12-a4" class="cell" data-segment="0" data-cell="12" data-side="A" cx="912" cy="320" r="25"/>
+      <circle id="seg0-cell4-a0" class="cell" data-segment="0" data-cell="4" data-side="A" cx="72" cy="412" r="25"/>
+      <circle id="seg0-cell4-a1" class="cell" data-segment="0" data-cell="4" data-side="A" cx="164" cy="412" r="25"/>
+      <circle id="seg0-cell3-a0" class="cell" data-segment="0" data-cell="3" data-side="A" cx="256" cy="412" r="25"/>
+      <circle id="seg0-cell3-a1" class="cell" data-segment="0" data-cell="3" data-side="A" cx="348" cy="412" r="25"/>
+      <circle id="seg0-cell3-a2" class="cell" data-segment="0" data-cell="3" data-side="A" cx="440" cy="412" r="25"/>
+      <circle id="seg0-cell10-a0" class="cell" data-segment="0" data-cell="10" data-side="A" cx="544" cy="412" r="25"/>
+      <circle id="seg0-cell10-a1" class="cell" data-segment="0" data-cell="10" data-side="A" cx="636" cy="412" r="25"/>
+      <circle id="seg0-cell9-a0" class="cell" data-segment="0" data-cell="9" data-side="A" cx="728" cy="412" r="25"/>
+      <circle id="seg0-cell9-a1" class="cell" data-segment="0" data-cell="9" data-side="A" cx="820" cy="412" r="25"/>
+      <circle id="seg0-cell9-a2" class="cell" data-segment="0" data-cell="9" data-side="A" cx="912" cy="412" r="25"/>
+      <circle id="seg0-cell4-a2" class="cell" data-segment="0" data-cell="4" data-side="A" cx="72" cy="504" r="25"/>
+      <circle id="seg0-cell4-a3" class="cell" data-segment="0" data-cell="4" data-side="A" cx="164" cy="504" r="25"/>
+      <circle id="seg0-cell4-a4" class="cell" data-segment="0" data-cell="4" data-side="A" cx="256" cy="504" r="25"/>
+      <circle id="seg0-cell3-a3" class="cell" data-segment="0" data-cell="3" data-side="A" cx="348" cy="504" r="25"/>
+      <circle id="seg0-cell3-a4" class="cell" data-segment="0" data-cell="3" data-side="A" cx="440" cy="504" r="25"/>
+      <circle id="seg0-cell10-a2" class="cell" data-segment="0" data-cell="10" data-side="A" cx="544" cy="504" r="25"/>
+      <circle id="seg0-cell10-a3" class="cell" data-segment="0" data-cell="10" data-side="A" cx="636" cy="504" r="25"/>
+      <circle id="seg0-cell10-a4" class="cell" data-segment="0" data-cell="10" data-side="A" cx="728" cy="504" r="25"/>
+      <circle id="seg0-cell9-a3" class="cell" data-segment="0" data-cell="9" data-side="A" cx="820" cy="504" r="25"/>
+      <circle id="seg0-cell9-a4" class="cell" data-segment="0" data-cell="9" data-side="A" cx="912" cy="504" r="25"/>
+      <circle id="seg0-cell5-a0" class="cell" data-segment="0" data-cell="5" data-side="A" cx="72" cy="596" r="25"/>
+      <circle id="seg0-cell5-a1" class="cell" data-segment="0" data-cell="5" data-side="A" cx="164" cy="596" r="25"/>
+      <circle id="seg0-cell5-a2" class="cell" data-segment="0" data-cell="5" data-side="A" cx="256" cy="596" r="25"/>
+      <circle id="seg0-cell6-a0" class="cell" data-segment="0" data-cell="6" data-side="A" cx="348" cy="596" r="25"/>
+      <circle id="seg0-cell6-a1" class="cell" data-segment="0" data-cell="6" data-side="A" cx="440" cy="596" r="25"/>
+      <circle id="seg0-cell7-a0" class="cell" data-segment="0" data-cell="7" data-side="A" cx="544" cy="596" r="25"/>
+      <circle id="seg0-cell7-a1" class="cell" data-segment="0" data-cell="7" data-side="A" cx="636" cy="596" r="25"/>
+      <circle id="seg0-cell7-a2" class="cell" data-segment="0" data-cell="7" data-side="A" cx="728" cy="596" r="25"/>
+      <circle id="seg0-cell8-a0" class="cell" data-segment="0" data-cell="8" data-side="A" cx="820" cy="596" r="25"/>
+      <circle id="seg0-cell8-a1" class="cell" data-segment="0" data-cell="8" data-side="A" cx="912" cy="596" r="25"/>
+      <circle id="seg0-cell5-a3" class="cell" data-segment="0" data-cell="5" data-side="A" cx="72" cy="688" r="25"/>
+      <circle id="seg0-cell5-a4" class="cell" data-segment="0" data-cell="5" data-side="A" cx="164" cy="688" r="25"/>
+      <circle id="seg0-cell6-a2" class="cell" data-segment="0" data-cell="6" data-side="A" cx="256" cy="688" r="25"/>
+      <circle id="seg0-cell6-a3" class="cell" data-segment="0" data-cell="6" data-side="A" cx="348" cy="688" r="25"/>
+      <circle id="seg0-cell6-a4" class="cell" data-segment="0" data-cell="6" data-side="A" cx="440" cy="688" r="25"/>
+      <circle id="seg0-cell7-a3" class="cell" data-segment="0" data-cell="7" data-side="A" cx="544" cy="688" r="25"/>
+      <circle id="seg0-cell7-a4" class="cell" data-segment="0" data-cell="7" data-side="A" cx="636" cy="688" r="25"/>
+      <circle id="seg0-cell8-a2" class="cell" data-segment="0" data-cell="8" data-side="A" cx="728" cy="688" r="25"/>
+      <circle id="seg0-cell8-a3" class="cell" data-segment="0" data-cell="8" data-side="A" cx="820" cy="688" r="25"/>
+      <circle id="seg0-cell8-a4" class="cell" data-segment="0" data-cell="8" data-side="A" cx="912" cy="688" r="25"/>
+      <g id="seg0-bbA1-tag">
+        <rect class="tag-bg" x="178" y="37" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA1-label" class="tag-label" x="256" y="52.5" text-anchor="middle">A1 · C0 (+)</text>
+        <text id="seg0-cell0-value" class="cell-value" x="256" y="75" text-anchor="middle">-.--- V</text>
+      </g>
+      <g id="seg0-bbA5-tag">
+        <rect class="tag-bg" x="650" y="37" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA5-label" class="tag-label" x="728" y="52.5" text-anchor="middle">A5 · GND (−)</text>
+        <rect id="seg0-therm-A-T4" class="thermistor" data-segment="0" data-thermistor="A-T4" x="652" y="58" width="152" height="23" rx="3"/>
+        <text id="seg0-therm-A-T4-value" class="therm-value" x="728" y="75" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA2-tag">
+        <rect class="tag-bg" x="178" y="251" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA2-label" class="tag-label" x="256" y="266.5" text-anchor="middle">A2 · C2</text>
+        <text id="seg0-cell2-value" class="cell-value" x="217.5" y="289" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T1" class="thermistor" data-segment="0" data-thermistor="A-T1" x="257" y="272" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T1-value" class="therm-value" x="294.5" y="289" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA6-tag">
+        <rect class="tag-bg" x="650" y="251" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA6-label" class="tag-label" x="728" y="266.5" text-anchor="middle">A6 · C12</text>
+        <text id="seg0-cell12-value" class="cell-value" x="689.5" y="289" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T5" class="thermistor" data-segment="0" data-thermistor="A-T5" x="729" y="272" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T5-value" class="therm-value" x="766.5" y="289" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA3-tag">
+        <rect class="tag-bg" x="178" y="435" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA3-label" class="tag-label" x="256" y="450.5" text-anchor="middle">A3 · C4</text>
+        <text id="seg0-cell4-value" class="cell-value" x="217.5" y="473" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T2" class="thermistor" data-segment="0" data-thermistor="A-T2" x="257" y="456" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T2-value" class="therm-value" x="294.5" y="473" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA7-tag">
+        <rect class="tag-bg" x="650" y="435" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA7-label" class="tag-label" x="728" y="450.5" text-anchor="middle">A7 · C10</text>
+        <text id="seg0-cell10-value" class="cell-value" x="689.5" y="473" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T6" class="thermistor" data-segment="0" data-thermistor="A-T6" x="729" y="456" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T6-value" class="therm-value" x="766.5" y="473" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA4-tag">
+        <rect class="tag-bg" x="178" y="619" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA4-label" class="tag-label" x="256" y="634.5" text-anchor="middle">A4 · C6</text>
+        <text id="seg0-cell6-value" class="cell-value" x="217.5" y="657" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T3" class="thermistor" data-segment="0" data-thermistor="A-T3" x="257" y="640" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T3-value" class="therm-value" x="294.5" y="657" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbA8-tag">
+        <rect class="tag-bg" x="650" y="619" width="156" height="46" rx="4"/>
+        <text id="seg0-bbA8-label" class="tag-label" x="728" y="634.5" text-anchor="middle">A8 · C8</text>
+        <text id="seg0-cell8-value" class="cell-value" x="689.5" y="657" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-A-T7" class="thermistor" data-segment="0" data-thermistor="A-T7" x="729" y="640" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-A-T7-value" class="therm-value" x="766.5" y="657" text-anchor="middle">--.-°C</text>
+      </g>
+    </g>
+    <g id="seg0-side-b" transform="translate(1054,130)">
+      <rect class="frame" x="0" y="0" width="984" height="696" rx="14"/>
+      <path id="seg0-bbB1" class="busbar" data-segment="0" data-busbar="B1" data-tap="13" d="M473.0,112.0 L473.7,112.0 L474.4,111.9 L475.0,111.7 L475.7,111.5 L476.3,111.2 L476.9,110.8 L477.4,110.4 L477.9,109.9 L478.4,109.4 L478.8,108.9 L479.2,108.3 L479.5,107.7 L479.7,107.0 L479.9,106.4 L480.0,105.7 L480.0,105.0 L480.0,39.0 L480.0,38.3 L479.9,37.6 L479.7,37.0 L479.5,36.3 L479.2,35.7 L478.8,35.1 L478.4,34.6 L477.9,34.1 L477.4,33.6 L476.9,33.2 L476.3,32.8 L475.7,32.5 L475.0,32.3 L474.4,32.1 L473.7,32.0 L473.0,32.0 L39.0,32.0 L38.3,32.0 L37.6,32.1 L37.0,32.3 L36.3,32.5 L35.7,32.8 L35.1,33.2 L34.6,33.6 L34.1,34.1 L33.6,34.6 L33.2,35.1 L32.8,35.7 L32.5,36.3 L32.3,37.0 L32.1,37.6 L32.0,38.3 L32.0,39.0 L32.0,289.0 L32.0,289.7 L32.1,290.4 L32.3,291.0 L32.5,291.7 L32.8,292.3 L33.2,292.9 L33.6,293.4 L34.1,293.9 L34.6,294.4 L35.1,294.8 L35.7,295.2 L36.3,295.5 L37.0,295.7 L37.6,295.9 L38.3,296.0 L39.0,296.0 L289.0,296.0 L289.7,296.0 L290.4,295.9 L291.0,295.7 L291.7,295.5 L292.3,295.2 L292.9,294.8 L293.4,294.4 L293.9,293.9 L294.4,293.4 L294.8,292.9 L295.2,292.3 L295.5,291.7 L295.7,291.0 L295.9,290.4 L296.0,289.7 L296.0,289.0 L296.0,223.0 L296.0,222.3 L295.9,221.6 L295.7,221.0 L295.5,220.3 L295.2,219.7 L294.8,219.1 L294.4,218.6 L293.9,218.1 L293.4,217.6 L292.9,217.2 L292.3,216.8 L291.7,216.5 L291.0,216.3 L290.4,216.1 L289.7,216.0 L289.0,216.0 L204.0,216.0 L204.0,112.0 Z"/>
+      <path id="seg0-bbB2" class="busbar" data-segment="0" data-busbar="B2" data-tap="11" d="M308.0,204.0 L308.0,400.0 L223.0,400.0 L222.3,400.0 L221.6,400.1 L221.0,400.3 L220.3,400.5 L219.7,400.8 L219.1,401.2 L218.6,401.6 L218.1,402.1 L217.6,402.6 L217.2,403.1 L216.8,403.7 L216.5,404.3 L216.3,405.0 L216.1,405.6 L216.0,406.3 L216.0,407.0 L216.0,473.0 L216.0,473.7 L216.1,474.4 L216.3,475.0 L216.5,475.7 L216.8,476.3 L217.2,476.9 L217.6,477.4 L218.1,477.9 L218.6,478.4 L219.1,478.8 L219.7,479.2 L220.3,479.5 L221.0,479.7 L221.6,479.9 L222.3,480.0 L223.0,480.0 L473.0,480.0 L473.7,480.0 L474.4,479.9 L475.0,479.7 L475.7,479.5 L476.3,479.2 L476.9,478.8 L477.4,478.4 L477.9,477.9 L478.4,477.4 L478.8,476.9 L479.2,476.3 L479.5,475.7 L479.7,475.0 L479.9,474.4 L480.0,473.7 L480.0,473.0 L480.0,131.0 L480.0,130.3 L479.9,129.6 L479.7,129.0 L479.5,128.3 L479.2,127.7 L478.8,127.1 L478.4,126.6 L477.9,126.1 L477.4,125.6 L476.9,125.2 L476.3,124.8 L475.7,124.5 L475.0,124.3 L474.4,124.1 L473.7,124.0 L473.0,124.0 L223.0,124.0 L222.3,124.0 L221.6,124.1 L221.0,124.3 L220.3,124.5 L219.7,124.8 L219.1,125.2 L218.6,125.6 L218.1,126.1 L217.6,126.6 L217.2,127.1 L216.8,127.7 L216.5,128.3 L216.3,129.0 L216.1,129.6 L216.0,130.3 L216.0,131.0 L216.0,197.0 L216.0,197.7 L216.1,198.4 L216.3,199.0 L216.5,199.7 L216.8,200.3 L217.2,200.9 L217.6,201.4 L218.1,201.9 L218.6,202.4 L219.1,202.8 L219.7,203.2 L220.3,203.5 L221.0,203.7 L221.6,203.9 L222.3,204.0 L223.0,204.0 Z"/>
+      <path id="seg0-bbB3" class="busbar" data-segment="0" data-busbar="B3" data-tap="9" d="M32.0,657.0 L32.0,657.7 L32.1,658.4 L32.3,659.0 L32.5,659.7 L32.8,660.3 L33.2,660.9 L33.6,661.4 L34.1,661.9 L34.6,662.4 L35.1,662.8 L35.7,663.2 L36.3,663.5 L37.0,663.7 L37.6,663.9 L38.3,664.0 L39.0,664.0 L289.0,664.0 L289.7,664.0 L290.4,663.9 L291.0,663.7 L291.7,663.5 L292.3,663.2 L292.9,662.8 L293.4,662.4 L293.9,661.9 L294.4,661.4 L294.8,660.9 L295.2,660.3 L295.5,659.7 L295.7,659.0 L295.9,658.4 L296.0,657.7 L296.0,657.0 L296.0,591.0 L296.0,590.3 L295.9,589.6 L295.7,589.0 L295.5,588.3 L295.2,587.7 L294.8,587.1 L294.4,586.6 L293.9,586.1 L293.4,585.6 L292.9,585.2 L292.3,584.8 L291.7,584.5 L291.0,584.3 L290.4,584.1 L289.7,584.0 L289.0,584.0 L204.0,584.0 L204.0,388.0 L289.0,388.0 L289.7,388.0 L290.4,387.9 L291.0,387.7 L291.7,387.5 L292.3,387.2 L292.9,386.8 L293.4,386.4 L293.9,385.9 L294.4,385.4 L294.8,384.9 L295.2,384.3 L295.5,383.7 L295.7,383.0 L295.9,382.4 L296.0,381.7 L296.0,381.0 L296.0,315.0 L296.0,314.3 L295.9,313.6 L295.7,313.0 L295.5,312.3 L295.2,311.7 L294.8,311.1 L294.4,310.6 L293.9,310.1 L293.4,309.6 L292.9,309.2 L292.3,308.8 L291.7,308.5 L291.0,308.3 L290.4,308.1 L289.7,308.0 L289.0,308.0 L39.0,308.0 L38.3,308.0 L37.6,308.1 L37.0,308.3 L36.3,308.5 L35.7,308.8 L35.1,309.2 L34.6,309.6 L34.1,310.1 L33.6,310.6 L33.2,311.1 L32.8,311.7 L32.5,312.3 L32.3,313.0 L32.1,313.6 L32.0,314.3 L32.0,315.0 Z"/>
+      <path id="seg0-bbB4" class="busbar" data-segment="0" data-busbar="B4" data-tap="1" d="M688.0,112.0 L688.0,197.0 L688.0,197.7 L688.1,198.4 L688.3,199.0 L688.5,199.7 L688.8,200.3 L689.2,200.9 L689.6,201.4 L690.1,201.9 L690.6,202.4 L691.1,202.8 L691.7,203.2 L692.3,203.5 L693.0,203.7 L693.6,203.9 L694.3,204.0 L695.0,204.0 L780.0,204.0 L780.0,289.0 L780.0,289.7 L780.1,290.4 L780.3,291.0 L780.5,291.7 L780.8,292.3 L781.2,292.9 L781.6,293.4 L782.1,293.9 L782.6,294.4 L783.1,294.8 L783.7,295.2 L784.3,295.5 L785.0,295.7 L785.6,295.9 L786.3,296.0 L787.0,296.0 L945.0,296.0 L945.7,296.0 L946.4,295.9 L947.0,295.7 L947.7,295.5 L948.3,295.2 L948.9,294.8 L949.4,294.4 L949.9,293.9 L950.4,293.4 L950.8,292.9 L951.2,292.3 L951.5,291.7 L951.7,291.0 L951.9,290.4 L952.0,289.7 L952.0,289.0 L952.0,39.0 L952.0,38.3 L951.9,37.6 L951.7,37.0 L951.5,36.3 L951.2,35.7 L950.8,35.1 L950.4,34.6 L949.9,34.1 L949.4,33.6 L948.9,33.2 L948.3,32.8 L947.7,32.5 L947.0,32.3 L946.4,32.1 L945.7,32.0 L945.0,32.0 L511.0,32.0 L510.3,32.0 L509.6,32.1 L509.0,32.3 L508.3,32.5 L507.7,32.8 L507.1,33.2 L506.6,33.6 L506.1,34.1 L505.6,34.6 L505.2,35.1 L504.8,35.7 L504.5,36.3 L504.3,37.0 L504.1,37.6 L504.0,38.3 L504.0,39.0 L504.0,105.0 L504.0,105.7 L504.1,106.4 L504.3,107.0 L504.5,107.7 L504.8,108.3 L505.2,108.9 L505.6,109.4 L506.1,109.9 L506.6,110.4 L507.1,110.8 L507.7,111.2 L508.3,111.5 L509.0,111.7 L509.6,111.9 L510.3,112.0 L511.0,112.0 Z"/>
+      <path id="seg0-bbB5" class="busbar" data-segment="0" data-busbar="B5" data-tap="3" d="M504.0,473.0 L504.0,473.7 L504.1,474.4 L504.3,475.0 L504.5,475.7 L504.8,476.3 L505.2,476.9 L505.6,477.4 L506.1,477.9 L506.6,478.4 L507.1,478.8 L507.7,479.2 L508.3,479.5 L509.0,479.7 L509.6,479.9 L510.3,480.0 L511.0,480.0 L669.0,480.0 L669.7,480.0 L670.4,479.9 L671.0,479.7 L671.7,479.5 L672.3,479.2 L672.9,478.8 L673.4,478.4 L673.9,477.9 L674.4,477.4 L674.8,476.9 L675.2,476.3 L675.5,475.7 L675.7,475.0 L675.9,474.4 L676.0,473.7 L676.0,473.0 L676.0,388.0 L761.0,388.0 L761.7,388.0 L762.4,387.9 L763.0,387.7 L763.7,387.5 L764.3,387.2 L764.9,386.8 L765.4,386.4 L765.9,385.9 L766.4,385.4 L766.8,384.9 L767.2,384.3 L767.5,383.7 L767.7,383.0 L767.9,382.4 L768.0,381.7 L768.0,381.0 L768.0,223.0 L768.0,222.3 L767.9,221.6 L767.7,221.0 L767.5,220.3 L767.2,219.7 L766.8,219.1 L766.4,218.6 L765.9,218.1 L765.4,217.6 L764.9,217.2 L764.3,216.8 L763.7,216.5 L763.0,216.3 L762.4,216.1 L761.7,216.0 L761.0,216.0 L676.0,216.0 L676.0,131.0 L676.0,130.3 L675.9,129.6 L675.7,129.0 L675.5,128.3 L675.2,127.7 L674.8,127.1 L674.4,126.6 L673.9,126.1 L673.4,125.6 L672.9,125.2 L672.3,124.8 L671.7,124.5 L671.0,124.3 L670.4,124.1 L669.7,124.0 L669.0,124.0 L511.0,124.0 L510.3,124.0 L509.6,124.1 L509.0,124.3 L508.3,124.5 L507.7,124.8 L507.1,125.2 L506.6,125.6 L506.1,126.1 L505.6,126.6 L505.2,127.1 L504.8,127.7 L504.5,128.3 L504.3,129.0 L504.1,129.6 L504.0,130.3 L504.0,131.0 Z"/>
+      <path id="seg0-bbB6" class="busbar" data-segment="0" data-busbar="B6" data-tap="5" d="M695.0,400.0 L694.3,400.0 L693.6,400.1 L693.0,400.3 L692.3,400.5 L691.7,400.8 L691.1,401.2 L690.6,401.6 L690.1,402.1 L689.6,402.6 L689.2,403.1 L688.8,403.7 L688.5,404.3 L688.3,405.0 L688.1,405.6 L688.0,406.3 L688.0,407.0 L688.0,565.0 L688.0,565.7 L688.1,566.4 L688.3,567.0 L688.5,567.7 L688.8,568.3 L689.2,568.9 L689.6,569.4 L690.1,569.9 L690.6,570.4 L691.1,570.8 L691.7,571.2 L692.3,571.5 L693.0,571.7 L693.6,571.9 L694.3,572.0 L695.0,572.0 L780.0,572.0 L780.0,657.0 L780.0,657.7 L780.1,658.4 L780.3,659.0 L780.5,659.7 L780.8,660.3 L781.2,660.9 L781.6,661.4 L782.1,661.9 L782.6,662.4 L783.1,662.8 L783.7,663.2 L784.3,663.5 L785.0,663.7 L785.6,663.9 L786.3,664.0 L787.0,664.0 L945.0,664.0 L945.7,664.0 L946.4,663.9 L947.0,663.7 L947.7,663.5 L948.3,663.2 L948.9,662.8 L949.4,662.4 L949.9,661.9 L950.4,661.4 L950.8,660.9 L951.2,660.3 L951.5,659.7 L951.7,659.0 L951.9,658.4 L952.0,657.7 L952.0,657.0 L952.0,315.0 L952.0,314.3 L951.9,313.6 L951.7,313.0 L951.5,312.3 L951.2,311.7 L950.8,311.1 L950.4,310.6 L949.9,310.1 L949.4,309.6 L948.9,309.2 L948.3,308.8 L947.7,308.5 L947.0,308.3 L946.4,308.1 L945.7,308.0 L945.0,308.0 L787.0,308.0 L786.3,308.0 L785.6,308.1 L785.0,308.3 L784.3,308.5 L783.7,308.8 L783.1,309.2 L782.6,309.6 L782.1,310.1 L781.6,310.6 L781.2,311.1 L780.8,311.7 L780.5,312.3 L780.3,313.0 L780.1,313.6 L780.0,314.3 L780.0,315.0 L780.0,400.0 Z"/>
+      <path id="seg0-bbB7" class="busbar" data-segment="0" data-busbar="B7" data-tap="7" d="M308.0,572.0 L308.0,657.0 L308.0,657.7 L308.1,658.4 L308.3,659.0 L308.5,659.7 L308.8,660.3 L309.2,660.9 L309.6,661.4 L310.1,661.9 L310.6,662.4 L311.1,662.8 L311.7,663.2 L312.3,663.5 L313.0,663.7 L313.6,663.9 L314.3,664.0 L315.0,664.0 L761.0,664.0 L761.7,664.0 L762.4,663.9 L763.0,663.7 L763.7,663.5 L764.3,663.2 L764.9,662.8 L765.4,662.4 L765.9,661.9 L766.4,661.4 L766.8,660.9 L767.2,660.3 L767.5,659.7 L767.7,659.0 L767.9,658.4 L768.0,657.7 L768.0,657.0 L768.0,591.0 L768.0,590.3 L767.9,589.6 L767.7,589.0 L767.5,588.3 L767.2,587.7 L766.8,587.1 L766.4,586.6 L765.9,586.1 L765.4,585.6 L764.9,585.2 L764.3,584.8 L763.7,584.5 L763.0,584.3 L762.4,584.1 L761.7,584.0 L761.0,584.0 L676.0,584.0 L676.0,499.0 L676.0,498.3 L675.9,497.6 L675.7,497.0 L675.5,496.3 L675.2,495.7 L674.8,495.1 L674.4,494.6 L673.9,494.1 L673.4,493.6 L672.9,493.2 L672.3,492.8 L671.7,492.5 L671.0,492.3 L670.4,492.1 L669.7,492.0 L669.0,492.0 L223.0,492.0 L222.3,492.0 L221.6,492.1 L221.0,492.3 L220.3,492.5 L219.7,492.8 L219.1,493.2 L218.6,493.6 L218.1,494.1 L217.6,494.6 L217.2,495.1 L216.8,495.7 L216.5,496.3 L216.3,497.0 L216.1,497.6 L216.0,498.3 L216.0,499.0 L216.0,565.0 L216.0,565.7 L216.1,566.4 L216.3,567.0 L216.5,567.7 L216.8,568.3 L217.2,568.9 L217.6,569.4 L218.1,569.9 L218.6,570.4 L219.1,570.8 L219.7,571.2 L220.3,571.5 L221.0,571.7 L221.6,571.9 L222.3,572.0 L223.0,572.0 Z"/>
+      <circle id="seg0-cell13-b0" class="cell" data-segment="0" data-cell="13" data-side="B" cx="72" cy="72" r="25"/>
+      <circle id="seg0-cell13-b1" class="cell" data-segment="0" data-cell="13" data-side="B" cx="164" cy="72" r="25"/>
+      <circle id="seg0-cell13-b2" class="cell" data-segment="0" data-cell="13" data-side="B" cx="256" cy="72" r="25"/>
+      <circle id="seg0-cell13-b3" class="cell" data-segment="0" data-cell="13" data-side="B" cx="348" cy="72" r="25"/>
+      <circle id="seg0-cell13-b4" class="cell" data-segment="0" data-cell="13" data-side="B" cx="440" cy="72" r="25"/>
+      <circle id="seg0-cell0-b0" class="cell" data-segment="0" data-cell="0" data-side="B" cx="544" cy="72" r="25"/>
+      <circle id="seg0-cell0-b1" class="cell" data-segment="0" data-cell="0" data-side="B" cx="636" cy="72" r="25"/>
+      <circle id="seg0-cell0-b2" class="cell" data-segment="0" data-cell="0" data-side="B" cx="728" cy="72" r="25"/>
+      <circle id="seg0-cell0-b3" class="cell" data-segment="0" data-cell="0" data-side="B" cx="820" cy="72" r="25"/>
+      <circle id="seg0-cell0-b4" class="cell" data-segment="0" data-cell="0" data-side="B" cx="912" cy="72" r="25"/>
+      <circle id="seg0-cell12-b0" class="cell" data-segment="0" data-cell="12" data-side="B" cx="72" cy="164" r="25"/>
+      <circle id="seg0-cell12-b1" class="cell" data-segment="0" data-cell="12" data-side="B" cx="164" cy="164" r="25"/>
+      <circle id="seg0-cell11-b0" class="cell" data-segment="0" data-cell="11" data-side="B" cx="256" cy="164" r="25"/>
+      <circle id="seg0-cell11-b1" class="cell" data-segment="0" data-cell="11" data-side="B" cx="348" cy="164" r="25"/>
+      <circle id="seg0-cell11-b2" class="cell" data-segment="0" data-cell="11" data-side="B" cx="440" cy="164" r="25"/>
+      <circle id="seg0-cell2-b0" class="cell" data-segment="0" data-cell="2" data-side="B" cx="544" cy="164" r="25"/>
+      <circle id="seg0-cell2-b1" class="cell" data-segment="0" data-cell="2" data-side="B" cx="636" cy="164" r="25"/>
+      <circle id="seg0-cell1-b0" class="cell" data-segment="0" data-cell="1" data-side="B" cx="728" cy="164" r="25"/>
+      <circle id="seg0-cell1-b1" class="cell" data-segment="0" data-cell="1" data-side="B" cx="820" cy="164" r="25"/>
+      <circle id="seg0-cell1-b2" class="cell" data-segment="0" data-cell="1" data-side="B" cx="912" cy="164" r="25"/>
+      <circle id="seg0-cell12-b2" class="cell" data-segment="0" data-cell="12" data-side="B" cx="72" cy="256" r="25"/>
+      <circle id="seg0-cell12-b3" class="cell" data-segment="0" data-cell="12" data-side="B" cx="164" cy="256" r="25"/>
+      <circle id="seg0-cell12-b4" class="cell" data-segment="0" data-cell="12" data-side="B" cx="256" cy="256" r="25"/>
+      <circle id="seg0-cell11-b3" class="cell" data-segment="0" data-cell="11" data-side="B" cx="348" cy="256" r="25"/>
+      <circle id="seg0-cell11-b4" class="cell" data-segment="0" data-cell="11" data-side="B" cx="440" cy="256" r="25"/>
+      <circle id="seg0-cell2-b2" class="cell" data-segment="0" data-cell="2" data-side="B" cx="544" cy="256" r="25"/>
+      <circle id="seg0-cell2-b3" class="cell" data-segment="0" data-cell="2" data-side="B" cx="636" cy="256" r="25"/>
+      <circle id="seg0-cell2-b4" class="cell" data-segment="0" data-cell="2" data-side="B" cx="728" cy="256" r="25"/>
+      <circle id="seg0-cell1-b3" class="cell" data-segment="0" data-cell="1" data-side="B" cx="820" cy="256" r="25"/>
+      <circle id="seg0-cell1-b4" class="cell" data-segment="0" data-cell="1" data-side="B" cx="912" cy="256" r="25"/>
+      <circle id="seg0-cell9-b0" class="cell" data-segment="0" data-cell="9" data-side="B" cx="72" cy="348" r="25"/>
+      <circle id="seg0-cell9-b1" class="cell" data-segment="0" data-cell="9" data-side="B" cx="164" cy="348" r="25"/>
+      <circle id="seg0-cell9-b2" class="cell" data-segment="0" data-cell="9" data-side="B" cx="256" cy="348" r="25"/>
+      <circle id="seg0-cell10-b0" class="cell" data-segment="0" data-cell="10" data-side="B" cx="348" cy="348" r="25"/>
+      <circle id="seg0-cell10-b1" class="cell" data-segment="0" data-cell="10" data-side="B" cx="440" cy="348" r="25"/>
+      <circle id="seg0-cell3-b0" class="cell" data-segment="0" data-cell="3" data-side="B" cx="544" cy="348" r="25"/>
+      <circle id="seg0-cell3-b1" class="cell" data-segment="0" data-cell="3" data-side="B" cx="636" cy="348" r="25"/>
+      <circle id="seg0-cell3-b2" class="cell" data-segment="0" data-cell="3" data-side="B" cx="728" cy="348" r="25"/>
+      <circle id="seg0-cell4-b0" class="cell" data-segment="0" data-cell="4" data-side="B" cx="820" cy="348" r="25"/>
+      <circle id="seg0-cell4-b1" class="cell" data-segment="0" data-cell="4" data-side="B" cx="912" cy="348" r="25"/>
+      <circle id="seg0-cell9-b3" class="cell" data-segment="0" data-cell="9" data-side="B" cx="72" cy="440" r="25"/>
+      <circle id="seg0-cell9-b4" class="cell" data-segment="0" data-cell="9" data-side="B" cx="164" cy="440" r="25"/>
+      <circle id="seg0-cell10-b2" class="cell" data-segment="0" data-cell="10" data-side="B" cx="256" cy="440" r="25"/>
+      <circle id="seg0-cell10-b3" class="cell" data-segment="0" data-cell="10" data-side="B" cx="348" cy="440" r="25"/>
+      <circle id="seg0-cell10-b4" class="cell" data-segment="0" data-cell="10" data-side="B" cx="440" cy="440" r="25"/>
+      <circle id="seg0-cell3-b3" class="cell" data-segment="0" data-cell="3" data-side="B" cx="544" cy="440" r="25"/>
+      <circle id="seg0-cell3-b4" class="cell" data-segment="0" data-cell="3" data-side="B" cx="636" cy="440" r="25"/>
+      <circle id="seg0-cell4-b2" class="cell" data-segment="0" data-cell="4" data-side="B" cx="728" cy="440" r="25"/>
+      <circle id="seg0-cell4-b3" class="cell" data-segment="0" data-cell="4" data-side="B" cx="820" cy="440" r="25"/>
+      <circle id="seg0-cell4-b4" class="cell" data-segment="0" data-cell="4" data-side="B" cx="912" cy="440" r="25"/>
+      <circle id="seg0-cell8-b0" class="cell" data-segment="0" data-cell="8" data-side="B" cx="72" cy="532" r="25"/>
+      <circle id="seg0-cell8-b1" class="cell" data-segment="0" data-cell="8" data-side="B" cx="164" cy="532" r="25"/>
+      <circle id="seg0-cell7-b0" class="cell" data-segment="0" data-cell="7" data-side="B" cx="256" cy="532" r="25"/>
+      <circle id="seg0-cell7-b1" class="cell" data-segment="0" data-cell="7" data-side="B" cx="348" cy="532" r="25"/>
+      <circle id="seg0-cell7-b2" class="cell" data-segment="0" data-cell="7" data-side="B" cx="440" cy="532" r="25"/>
+      <circle id="seg0-cell6-b0" class="cell" data-segment="0" data-cell="6" data-side="B" cx="544" cy="532" r="25"/>
+      <circle id="seg0-cell6-b1" class="cell" data-segment="0" data-cell="6" data-side="B" cx="636" cy="532" r="25"/>
+      <circle id="seg0-cell5-b0" class="cell" data-segment="0" data-cell="5" data-side="B" cx="728" cy="532" r="25"/>
+      <circle id="seg0-cell5-b1" class="cell" data-segment="0" data-cell="5" data-side="B" cx="820" cy="532" r="25"/>
+      <circle id="seg0-cell5-b2" class="cell" data-segment="0" data-cell="5" data-side="B" cx="912" cy="532" r="25"/>
+      <circle id="seg0-cell8-b2" class="cell" data-segment="0" data-cell="8" data-side="B" cx="72" cy="624" r="25"/>
+      <circle id="seg0-cell8-b3" class="cell" data-segment="0" data-cell="8" data-side="B" cx="164" cy="624" r="25"/>
+      <circle id="seg0-cell8-b4" class="cell" data-segment="0" data-cell="8" data-side="B" cx="256" cy="624" r="25"/>
+      <circle id="seg0-cell7-b3" class="cell" data-segment="0" data-cell="7" data-side="B" cx="348" cy="624" r="25"/>
+      <circle id="seg0-cell7-b4" class="cell" data-segment="0" data-cell="7" data-side="B" cx="440" cy="624" r="25"/>
+      <circle id="seg0-cell6-b2" class="cell" data-segment="0" data-cell="6" data-side="B" cx="544" cy="624" r="25"/>
+      <circle id="seg0-cell6-b3" class="cell" data-segment="0" data-cell="6" data-side="B" cx="636" cy="624" r="25"/>
+      <circle id="seg0-cell6-b4" class="cell" data-segment="0" data-cell="6" data-side="B" cx="728" cy="624" r="25"/>
+      <circle id="seg0-cell5-b3" class="cell" data-segment="0" data-cell="5" data-side="B" cx="820" cy="624" r="25"/>
+      <circle id="seg0-cell5-b4" class="cell" data-segment="0" data-cell="5" data-side="B" cx="912" cy="624" r="25"/>
+      <g id="seg0-bbB1-tag">
+        <rect class="tag-bg" x="86" y="95" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB1-label" class="tag-label" x="164" y="110.5" text-anchor="middle">B1 · C13</text>
+        <text id="seg0-cell13-value" class="cell-value" x="125.5" y="133" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T1" class="thermistor" data-segment="0" data-thermistor="B-T1" x="165" y="116" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T1-value" class="therm-value" x="202.5" y="133" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB4-tag">
+        <rect class="tag-bg" x="742" y="95" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB4-label" class="tag-label" x="820" y="110.5" text-anchor="middle">B4 · C1</text>
+        <text id="seg0-cell1-value" class="cell-value" x="781.5" y="133" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T4" class="thermistor" data-segment="0" data-thermistor="B-T4" x="821" y="116" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T4-value" class="therm-value" x="858.5" y="133" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB2-tag">
+        <rect class="tag-bg" x="270" y="187" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB2-label" class="tag-label" x="348" y="202.5" text-anchor="middle">B2 · C11</text>
+        <text id="seg0-cell11-value" class="cell-value" x="309.5" y="225" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T2" class="thermistor" data-segment="0" data-thermistor="B-T2" x="349" y="208" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T2-value" class="therm-value" x="386.5" y="225" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB5-tag">
+        <rect class="tag-bg" x="558" y="279" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB5-label" class="tag-label" x="636" y="294.5" text-anchor="middle">B5 · C3</text>
+        <text id="seg0-cell3-value" class="cell-value" x="597.5" y="317" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T5" class="thermistor" data-segment="0" data-thermistor="B-T5" x="637" y="300" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T5-value" class="therm-value" x="674.5" y="317" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB3-tag">
+        <rect class="tag-bg" x="86" y="371" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB3-label" class="tag-label" x="164" y="386.5" text-anchor="middle">B3 · C9</text>
+        <text id="seg0-cell9-value" class="cell-value" x="125.5" y="409" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T3" class="thermistor" data-segment="0" data-thermistor="B-T3" x="165" y="392" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T3-value" class="therm-value" x="202.5" y="409" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB6-tag">
+        <rect class="tag-bg" x="742" y="463" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB6-label" class="tag-label" x="820" y="478.5" text-anchor="middle">B6 · C5</text>
+        <text id="seg0-cell5-value" class="cell-value" x="781.5" y="501" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T6" class="thermistor" data-segment="0" data-thermistor="B-T6" x="821" y="484" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T6-value" class="therm-value" x="858.5" y="501" text-anchor="middle">--.-°C</text>
+      </g>
+      <g id="seg0-bbB7-tag">
+        <rect class="tag-bg" x="466" y="555" width="156" height="46" rx="4"/>
+        <text id="seg0-bbB7-label" class="tag-label" x="544" y="570.5" text-anchor="middle">B7 · C7</text>
+        <text id="seg0-cell7-value" class="cell-value" x="505.5" y="593" text-anchor="middle">-.--- V</text>
+        <rect id="seg0-therm-B-T7" class="thermistor" data-segment="0" data-thermistor="B-T7" x="545" y="576" width="75" height="23" rx="3"/>
+        <text id="seg0-therm-B-T7-value" class="therm-value" x="582.5" y="593" text-anchor="middle">--.-°C</text>
+      </g>
+    </g>
+  </g>
+  <text class="side-sub" x="0" y="862">Each box: busbar · BMS cell voltage (left) · thermistor (right). Taps run V0 (A1, +) to V14 (A5, GND); Cn = Vn − Vn+1, shown on its more positive busbar.</text>
+</svg>

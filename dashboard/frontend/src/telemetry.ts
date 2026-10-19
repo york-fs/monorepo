@@ -132,6 +132,34 @@ export const BMS_MASTER_ERROR_FLAGS = [
 ] as const
 export type BmsMasterErrorFlag = (typeof BMS_MASTER_ERROR_FLAGS)[number]
 
+export const SEGMENT_ERROR_FLAGS = [
+    'DISCONNECTED',
+    'BAD_CELL_COUNT',
+    'BAD_THERMISTOR_COUNT',
+    'BAD_RAIL_VOLTAGE',
+    'UNRELIABLE_COMMUNICATION',
+    'UNRELIABLE_MEASUREMENT',
+    'UNDERVOLTAGE',
+    'OVERVOLTAGE',
+    'UNDERTEMPERATURE',
+    'OVERTEMPERATURE',
+] as const
+export type SegmentErrorFlag = (typeof SEGMENT_ERROR_FLAGS)[number]
+
+/**
+ * One BMS segment's full readings. The rear forwards a different connected
+ * segment in each frame, so these arrive one segment at a time. A reading the
+ * segment doesn't have (an unfitted cell, an open thermistor) is `null`.
+ */
+export interface SegmentReadings {
+    id: number
+    cell_voltages: (number | null)[]
+    temperatures: (number | null)[]
+    degraded_cells: number[]
+    balancing_cells: number[]
+    max_correction: number
+}
+
 export const FUSE_FLAGS = [
     'BMS',
     'IMD',
@@ -183,6 +211,9 @@ export interface TelemetryFrame {
     max_cell_voltage?: number
     min_cell_temperature?: number
     max_cell_temperature?: number
+    /** Every segment slot's errors, indexed by segment id. */
+    segment_error_flags?: SegmentErrorFlag[][]
+    segment?: SegmentReadings
     [key: string]: unknown
 }
 

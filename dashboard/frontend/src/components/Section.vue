@@ -25,6 +25,8 @@ const headingId = useId()
     <section class="section" :aria-labelledby="headingId">
         <div class="header-row">
             <h2 :id="headingId">{{ title }}</h2>
+            <!-- Small indicators that belong beside the heading. -->
+            <slot name="header" />
             <!-- Always present, so assistive tech has a live region to
                  announce into when the banner appears; a `role="status"` that
                  only enters the DOM alongside its own text is unreliable.

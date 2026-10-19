@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 1120 280"><style>
+    .segment { fill: #2a2f36; stroke: #121212; stroke-width: 2; }
+    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #ffffff; }
+    .seg-label { font-size: 20px; font-weight: 700; }
+    .seg-key { font-size: 12px; fill: #c5c9ce; }
+    .seg-value { font-size: 22px; font-weight: 600; }
+  </style>
+  <g id="pack-seg0-group">
+    <rect id="pack-seg0" class="segment" data-segment="0" data-segment-label="A" x="0" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="14" y="30">Segment A</text>
+    <text class="seg-key" x="14" y="100">Max temp</text>
+    <text id="pack-seg0-maxtemp" class="seg-value" data-segment="0" x="14" y="126">--.-°C</text>
+    <text class="seg-key" x="14" y="180">Min cell</text>
+    <text id="pack-seg0-mincell" class="seg-value" data-segment="0" x="14" y="206">-.--- V</text>
+  </g>
+  <g id="pack-seg1-group">
+    <rect id="pack-seg1" class="segment" data-segment="1" data-segment-label="B" x="186" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="200" y="30">Segment B</text>
+    <text class="seg-key" x="200" y="100">Max temp</text>
+    <text id="pack-seg1-maxtemp" class="seg-value" data-segment="1" x="200" y="126">--.-°C</text>
+    <text class="seg-key" x="200" y="180">Min cell</text>
+    <text id="pack-seg1-mincell" class="seg-value" data-segment="1" x="200" y="206">-.--- V</text>
+  </g>
+  <g id="pack-seg2-group">
+    <rect id="pack-seg2" class="segment" data-segment="2" data-segment-label="C" x="372" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="386" y="30">Segment C</text>
+    <text class="seg-key" x="386" y="100">Max temp</text>
+    <text id="pack-seg2-maxtemp" class="seg-value" data-segment="2" x="386" y="126">--.-°C</text>
+    <text class="seg-key" x="386" y="180">Min cell</text>
+    <text id="pack-seg2-mincell" class="seg-value" data-segment="2" x="386" y="206">-.--- V</text>
+  </g>
+  <g id="pack-seg3-group">
+    <rect id="pack-seg3" class="segment" data-segment="3" data-segment-label="D" x="558" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="572" y="30">Segment D</text>
+    <text class="seg-key" x="572" y="100">Max temp</text>
+    <text id="pack-seg3-maxtemp" class="seg-value" data-segment="3" x="572" y="126">--.-°C</text>
+    <text class="seg-key" x="572" y="180">Min cell</text>
+    <text id="pack-seg3-mincell" class="seg-value" data-segment="3" x="572" y="206">-.--- V</text>
+  </g>
+  <g id="pack-seg4-group">
+    <rect id="pack-seg4" class="segment" data-segment="4" data-segment-label="E" x="744" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="758" y="30">Segment E</text>
+    <text class="seg-key" x="758" y="100">Max temp</text>
+    <text id="pack-seg4-maxtemp" class="seg-value" data-segment="4" x="758" y="126">--.-°C</text>
+    <text class="seg-key" x="758" y="180">Min cell</text>
+    <text id="pack-seg4-mincell" class="seg-value" data-segment="4" x="758" y="206">-.--- V</text>
+  </g>
+  <g id="pack-seg5-group">
+    <rect id="pack-seg5" class="segment" data-segment="5" data-segment-label="F" x="930" y="0" width="170" height="260" rx="10"/>
+    <text class="seg-label" x="944" y="30">Segment F</text>
+    <text class="seg-key" x="944" y="100">Max temp</text>
+    <text id="pack-seg5-maxtemp" class="seg-value" data-segment="5" x="944" y="126">--.-°C</text>
+    <text class="seg-key" x="944" y="180">Min cell</text>
+    <text id="pack-seg5-mincell" class="seg-value" data-segment="5" x="944" y="206">-.--- V</text>
+  </g>
+</svg>

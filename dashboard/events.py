@@ -94,6 +94,7 @@ SNAPSHOT_FIELDS = [
     "shutdown_open_causes_seen",
     "blown_fuses_seen",
     "expander_error_count",
+    "segment_error_flags",
 ]
 
 PRECHARGING_STATES = {"PRECHARGE", "PRECHARGE_HOLD"}
@@ -267,6 +268,21 @@ class EventTracker:
             for code in sorted(after - before):
                 events.append(
                     self._flag_event(frame, now, field, category, code, "cleared")
+                )
+
+        # Each BMS segment's errors, named by the segment's letter on the pack (A is
+        # segment 0) so the log says which one.
+        field = "segment_error_flags"
+        for index, (before, after) in enumerate(zip(previous[field], frame[field])):
+            before, after = set(before), set(after)
+            prefix = f"SEGMENT_{chr(ord('A') + index)}_"
+            for code in sorted(after - before):
+                events.append(
+                    self._flag_event(frame, now, field, "bms", prefix + code, "raised")
+                )
+            for code in sorted(before - after):
+                events.append(
+                    self._flag_event(frame, now, field, "bms", prefix + code, "cleared")
                 )
 
         if blips:

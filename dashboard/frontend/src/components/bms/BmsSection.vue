@@ -22,7 +22,7 @@ import BmsErrorList from '@/components/bms/BmsErrorList.vue'
 const { frame } = useTelemetry()
 
 // Formatters and frame selectors, declared here so their identity is stable
-// across the ~10Hz re-renders — same reason as PowertrainSection's.
+// across the ~10Hz re-renders — a stable prop keeps the diff honest.
 // Cell voltages come off the wire at four decimal places, unlike the LV
 // rail's whole volts — the interesting movement is in the millivolts.
 const formatCellVoltage = (volts: number) => formatVolts(volts, 4)

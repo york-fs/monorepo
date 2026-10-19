@@ -9,12 +9,14 @@ import {
     type PrechargeRelay,
     type PrechargeState,
     type RtdPreventionFlag,
+    type SegmentErrorFlag,
     type ShutdownOpenCause,
     type TsPreventionFlag,
 } from '@/telemetry'
 import { BMS_ERROR_META } from '@/domain/bms'
 import { INVERTER_FAULT_EXPLANATIONS, inverterFaultLabel } from '@/domain/powertrain'
 import { PRECHARGE_FLAG_META, PRECHARGE_STATE_LABELS } from '@/domain/precharge'
+import { SEGMENT_ERROR_META, SEGMENT_LETTERS, segmentErrorCodeDescription } from '@/domain/segments'
 import { RTD_PREVENTION_LABELS, TS_PREVENTION_LABELS } from '@/domain/prevention'
 import { SHUTDOWN_OPEN_CAUSE_EXPLANATIONS, shutdownOpenCauseLabel } from '@/domain/shutdown'
 import { titleCaseEnum } from '@/utils/titleCase'
@@ -102,6 +104,8 @@ export interface SnapshotFrame {
     shutdown_open_causes_seen: ShutdownOpenCause[]
     blown_fuses_seen: FuseFlag[]
     expander_error_count: number
+    // Missing from snapshots taken before segments were forwarded.
+    segment_error_flags?: SegmentErrorFlag[][]
 }
 
 export interface LeadUpEntry {
@@ -189,7 +193,10 @@ export function codeDescription(category: EventCategory, code: string): string |
         case 'inverter':
             return INVERTER_FAULT_EXPLANATIONS[code as InverterFaultCode]
         case 'bms':
-            return BMS_ERROR_META[code as BmsMasterErrorFlag]?.description
+            return (
+                BMS_ERROR_META[code as BmsMasterErrorFlag]?.description ??
+                segmentErrorCodeDescription(code)
+            )
         case 'precharge':
             return PRECHARGE_FLAG_META[code as PrechargeErrorFlag]?.description
         case 'ts': {
@@ -294,6 +301,14 @@ export function snapshotProblems(frame: SnapshotFrame): SnapshotGroup[] {
         {
             label: 'BMS errors',
             items: frame.bms_master_error_flags.map((code) => codeLabel('bms', code)),
+        },
+        {
+            label: 'Segment errors',
+            items: SEGMENT_LETTERS.flatMap((letter, id) =>
+                (frame.segment_error_flags?.[id] ?? []).map(
+                    (flag) => `${letter} ${SEGMENT_ERROR_META[flag].label}`,
+                ),
+            ),
         },
         {
             label: `Precharge flags (${stateLabel(frame.precharge_state)})`,

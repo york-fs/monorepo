@@ -44,6 +44,8 @@ withDefaults(
          * TimeSeries.vue's `.chart-wrap`). Block layout only.
          */
         chart?: boolean
+        /** A bigger value, for the readings that need to be legible from arm's length. */
+        large?: boolean
     }>(),
     { title: undefined, value: undefined, level: 3, severity: undefined },
 )
@@ -52,7 +54,12 @@ withDefaults(
 <template>
     <div
         class="tile"
-        :class="{ reading: value !== undefined, accent: accent || value !== undefined, chart }"
+        :class="{
+            reading: value !== undefined,
+            accent: accent || value !== undefined,
+            chart,
+            large,
+        }"
         :data-severity="severity"
     >
         <template v-if="value !== undefined">
@@ -113,6 +120,11 @@ h4.title {
 .value {
     font-size: 1.375rem;
     font-variant-numeric: tabular-nums;
+}
+.tile.large .value {
+    font-size: 2.5rem;
+    font-weight: 600;
+    line-height: 1.1;
 }
 .tile[data-severity='good'] .value {
     color: var(--status-good-text);

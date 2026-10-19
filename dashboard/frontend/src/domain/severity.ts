@@ -9,3 +9,22 @@
  * accepted means "no signal yet" and stays uncoloured.
  */
 export type Severity = 'good' | 'warning' | 'critical'
+
+const RANK: Record<Severity, number> = { good: 0, warning: 1, critical: 2 }
+
+/** The worst of several severities, ignoring any still without a signal. */
+export function worstSeverity(...severities: (Severity | undefined)[]): Severity | undefined {
+    return severities.reduce<Severity | undefined>(
+        (worse, next) =>
+            next === undefined || (worse !== undefined && RANK[worse] >= RANK[next]) ? worse : next,
+        undefined,
+    )
+}
+
+/** The severity of a reading that may not have arrived yet. */
+export function severityOf(
+    value: number | null | undefined,
+    rate: (value: number) => Severity,
+): Severity | undefined {
+    return value === null || value === undefined ? undefined : rate(value)
+}

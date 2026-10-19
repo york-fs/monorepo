@@ -115,12 +115,22 @@ export function rpmSeverity(rpm: number): Severity {
     return 'good'
 }
 
-const WHEEL_DIAMETER = 0.3302 // (13" diameter)
-const GEAR_RATIO = 3
+// 525mm tyres, driven by a 13-tooth motor sprocket on a 40-tooth wheel sprocket.
+const WHEEL_DIAMETER = 0.525 // m
+const GEAR_RATIO = 40 / 13
+
+/** How far the car travels per motor revolution, in metres. */
+export const METRES_PER_MOTOR_REV = (Math.PI * WHEEL_DIAMETER) / GEAR_RATIO
 
 /** Derives car speed in MPH from motor RPM, wheel size, and gear ratio. */
 export function motorRpmToMph(rpm: number): number {
-    const wheelRpm = rpm / GEAR_RATIO
-    const wheelSurfaceSpeed = wheelRpm * Math.PI * WHEEL_DIAMETER
-    return wheelSurfaceSpeed / 26.8224
+    return (rpm * METRES_PER_MOTOR_REV * 60) / 1609.344
 }
+
+/**
+ * The inverter's configured absolute maximum motor current, in amps — the
+ * EMRAX 228 MV's 360A RMS peak rating. Reaching it is flat-out running rather
+ * than a fault, so it's drawn as a gauge with no severity. Keep in step with
+ * `MAX_MOTOR_CURRENT` in dashboard/main.py.
+ */
+export const MOTOR_CURRENT_MAX = 360
