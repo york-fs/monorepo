@@ -63,6 +63,14 @@ constexpr std::uint32_t k_radio_period = 100;
 constexpr std::uint32_t k_mcu_vref = 3300;
 
 /**
+ * @brief The BMS master's segment slot count and per-segment cell and thermistor counts, matching its
+ * k_max_segment_count, k_max_cell_count and k_max_temperature_count.
+ */
+constexpr std::size_t k_bms_segment_count = 10;
+constexpr std::size_t k_bms_cell_count = 16;
+constexpr std::size_t k_bms_temperature_count = 24;
+
+/**
  * @brief I2C address of the GPIO expander.
  */
 constexpr std::uint8_t k_expander_address = 0x20;
@@ -162,6 +170,18 @@ std::atomic<FuseBitset::type_t> s_blown_fuses_seen;
 
 // Total number of failed GPIO expander reads.
 std::atomic<std::uint32_t> s_expander_error_count;
+
+// Latest readings from each BMS segment, which the master sends one segment at a time. Purely for telemetry, like the
+// seen flags above. Written from the CAN receive interrupt, so read in a critical section.
+struct SegmentReadings {
+    bms::SegmentErrorFlags error_flags{bms::SegmentError::Disconnected};
+    std::uint16_t degraded_bitset{};
+    std::uint16_t balance_bitset{};
+    std::uint16_t max_correction{};
+    std::array<std::uint16_t, k_bms_cell_count> cell_voltages{};
+    std::array<std::int8_t, k_bms_temperature_count> temperatures{};
+};
+std::array<SegmentReadings, k_bms_segment_count> s_segments;
 
 // I2C state machine for GPIO expander.
 i2c::StateMachine s_i2c_sm(i2c::Bus::_1, i2c::Speed::_100);
@@ -388,6 +408,39 @@ void control_task(void *) {
         min_cell_temperature.store(message.min_temperature);
         max_cell_temperature.store(message.max_temperature);
     }>(config::k_bms_can_id, 10);
+
+    // Per-segment BMS data, forwarded over the radio. These take the last three filters.
+    for (auto &segment : s_segments) {
+        segment.cell_voltages.fill(std::numeric_limits<std::uint16_t>::max());
+        segment.temperatures.fill(std::numeric_limits<std::int8_t>::min());
+    }
+    hal::can::listen<bms::SegmentSummaryMessage, [](const bms::SegmentSummaryMessage &message) {
+        if (message.segment_id < s_segments.size()) {
+            auto &segment = s_segments[message.segment_id];
+            segment.error_flags = message.segment_flags;
+            segment.degraded_bitset = message.degraded_bitset;
+            segment.balance_bitset = message.balance_bitset;
+            segment.max_correction = message.max_correction;
+        }
+    }>(config::k_bms_can_id, 11);
+    hal::can::listen<bms::SegmentVoltageMessage, [](const bms::SegmentVoltageMessage &message) {
+        const auto offset = std::size_t{message.group_id} * message.voltages.size();
+        if (message.segment_id < s_segments.size() && offset + message.voltages.size() <= k_bms_cell_count) {
+            auto &cell_voltages = s_segments[message.segment_id].cell_voltages;
+            for (std::size_t i = 0; i < message.voltages.size(); i++) {
+                cell_voltages[offset + i] = message.voltages[i];
+            }
+        }
+    }>(config::k_bms_can_id, 12);
+    hal::can::listen<bms::SegmentTemperatureMessage, [](const bms::SegmentTemperatureMessage &message) {
+        const auto offset = std::size_t{message.group_id} * message.temperatures.size();
+        if (message.segment_id < s_segments.size() && offset + message.temperatures.size() <= k_bms_temperature_count) {
+            auto &temperatures = s_segments[message.segment_id].temperatures;
+            for (std::size_t i = 0; i < message.temperatures.size(); i++) {
+                temperatures[offset + i] = message.temperatures[i];
+            }
+        }
+    }>(config::k_bms_can_id, 13);
 
     // Initialise ADC to sample all LVS inputs.
     std::array<volatile std::uint16_t, 10> adc_buffer{};
@@ -728,6 +781,9 @@ void radio_task(void *) {
     // Keep track of the number of transmission windows we've missed.
     std::uint8_t missed_tx_count = 0;
 
+    // The BMS segment whose full readings went in the last frame.
+    std::size_t radio_segment = 0;
+
     // Keep track of latest valid messages received.
     front::ThrottleMessage front_throttle{};
     dti::GeneralData3 inverter_gd3{};
@@ -812,6 +868,36 @@ void radio_task(void *) {
         stream.write_be(s_shutdown_causes_seen.exchange(0));
         stream.write_be(s_blown_fuses_seen.exchange(0));
         stream.write_be(s_expander_error_count.load());
+
+        // Append every BMS segment's error flags, then one segment's full readings. Only connected segments are sent,
+        // in turn, so each one refreshes about every 0.6 s with six fitted.
+        std::array<bms::SegmentErrorFlags, k_bms_segment_count> segment_flags;
+        SegmentReadings segment;
+        freertos::in_critical_section([&] {
+            for (std::size_t i = 0; i < s_segments.size(); i++) {
+                segment_flags[i] = s_segments[i].error_flags;
+            }
+            for (std::size_t i = 0; i < s_segments.size(); i++) {
+                radio_segment = (radio_segment + 1) % s_segments.size();
+                if (segment_flags[radio_segment].is_clear(bms::SegmentError::Disconnected)) {
+                    break;
+                }
+            }
+            segment = s_segments[radio_segment];
+        });
+        for (const auto flags : segment_flags) {
+            stream.write_be(flags.value());
+        }
+        stream.write_byte(static_cast<std::uint8_t>(radio_segment));
+        stream.write_be(segment.degraded_bitset);
+        stream.write_be(segment.balance_bitset);
+        stream.write_be(segment.max_correction);
+        for (const auto voltage : segment.cell_voltages) {
+            stream.write_be(voltage);
+        }
+        for (const auto temperature : segment.temperatures) {
+            stream.write_be(temperature);
+        }
 
         // Append a checksum.
         stream.write_be(freertos::in_critical_section([&] {
