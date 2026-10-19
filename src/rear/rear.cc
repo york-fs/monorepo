@@ -607,9 +607,10 @@ void control_task(void *) {
         }
         s_rtd_prevention_seen.fetch_or(rtd_prevention_flags.value());
 
-        // Always set zero max brake current since no regen support for now.
+        // Allow a small 2 amp max brake current so some energy can flow back when the motor slows down. There is no
+        // proper regen support for now.
         dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
-            .current = 0,
+            .current = 20,
         };
         hal::can::transmit(config::k_dti_can_id, set_max_charge);
 
