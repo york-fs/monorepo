@@ -76,6 +76,7 @@ endfunction()
 # Create an OBJECT library for platform-independent code.
 add_library(shared OBJECT
     src/bms/can_messages.cc
+    src/bms/elcon.cc
     src/charger/can_messages.cc
     src/front/apps.cc
     src/front/can_messages.cc
