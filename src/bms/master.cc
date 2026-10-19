@@ -1,4 +1,6 @@
 #include <bms/can_messages.hh>
+#include <bms/charging.hh>
+#include <bms/elcon.hh>
 #include <bms/error.hh>
 #include <bms/segment_mode.hh>
 #include <config.hh>
@@ -9,7 +11,9 @@
 #include <hal/gpio.hh>
 #include <i2c.hh>
 #include <node_status.hh>
+#include <precharge/can_messages.hh>
 #include <stm32f103xb.h>
+#include <time_tracked.hh>
 #include <util/scope_guard.hh>
 #include <util/stream.hh>
 #include <util/type_traits.hh>
@@ -29,7 +33,6 @@
 
 // TODO: Implement current plausibility checks.
 // TODO: Control LED via DMA.
-// TODO: Charger control.
 // TODO: SoC estimation.
 // TODO: Enable stack overflow detection.
 // TODO: EEPROM page for self test (PCBA).
@@ -301,8 +304,7 @@ class Segment {
     TickType_t m_last_update_time{};
 
 public:
-    void and_balance_bitset(std::uint16_t bitset);
-    void or_balance_bitset(std::uint16_t bitset);
+    void set_balance_bitset(std::uint16_t bitset);
     void update(std::span<std::uint8_t> bytes);
 
     const auto &cell_voltages() const { return m_cell_voltages; }
@@ -327,7 +329,7 @@ Config s_pending_config{};
 std::atomic<bool> s_is_eeprom_bad{false};
 
 // Active control mode.
-std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
+std::variant<std::monostate, StartFullDischargeMessage, StartChargeMessage> s_control_mode;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -353,7 +355,7 @@ i2c::StateMachine s_i2c2_sm(i2c::Bus::_2, i2c::Speed::_100);
 freertos::Task<128> s_supervisor_task;
 freertos::Task<256> s_telemetry_task;
 freertos::Task<256> s_sample_segments_task;
-freertos::Task<128> s_control_task;
+freertos::Task<512> s_control_task;
 freertos::Task<256> s_config_task;
 freertos::Task<128> s_swd_task;
 freertos::Queue<SwdData, 1> s_swd_queue;
@@ -575,7 +577,7 @@ void supervisor_task(void *) {
             // Make sure all balancers are off.
             std::lock_guard segments_lock(s_segments_mutex);
             for (auto &segment : s_segments) {
-                segment.and_balance_bitset(0u);
+                segment.set_balance_bitset(0u);
             }
         }
 
@@ -738,26 +740,105 @@ void control_task(void *) {
     hal::can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
         s_control_mode.emplace<StartFullDischargeMessage>(message);
     }>(config::k_bms_can_id, 0);
+    hal::can::listen<StartChargeMessage, [](const StartChargeMessage &message) {
+        s_control_mode.emplace<StartChargeMessage>(message);
+    }>(config::k_bms_can_id, 1);
+
+    // Listen for elcon status messages.
+    static TimeTracked<elcon::StatusMessage, 2500> elcon_status;
+    hal::can::listen<elcon::StatusMessage, [](const elcon::StatusMessage &message) {
+        elcon_status.receive_isr(message);
+    }>(0xe5, 2);
+
+    // Flattened data.
+    std::array<std::uint16_t, k_max_segment_count * k_max_cell_count> cell_voltages{};
+    std::array<std::uint16_t, k_max_segment_count> balance_bitsets{};
+
+    // Charging run data.
+    bms::charging::Run charging_run;
 
     freertos::PeriodScheduler scheduler;
     while (true) {
         scheduler.delay_until_ms(k_control_period);
         freertos::notify_take(0, true, portMAX_DELAY);
 
-        std::lock_guard segments_lock(s_segments_mutex);
-        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
+        // Copy voltage data into flattened array.
+        s_segments_mutex.with_locked([&] {
+            auto it = cell_voltages.begin();
             for (auto &segment : s_segments) {
-                for (std::size_t cell = 0; cell < segment.cell_voltages().size(); cell++) {
-                    if (const auto voltage = segment.cell_voltages()[cell]) {
-                        if (*voltage > full_discharge->target_voltage + 100) {
-                            segment.or_balance_bitset(1u << cell);
-                        } else if (*voltage < full_discharge->target_voltage + 50) {
-                            segment.and_balance_bitset(~(1u << cell));
-                        }
+                for (const auto voltage : segment.cell_voltages()) {
+                    if (voltage) {
+                        *it = *voltage;
+                    } else {
+                        *it = std::numeric_limits<std::uint16_t>::max();
                     }
+                    ++it;
+                }
+            }
+        });
+
+        auto set_balancer_enabled = [&](std::size_t cell, bool enabled) {
+            const auto bit = 1u << (cell % 16);
+            if (enabled) {
+                balance_bitsets[cell / 16] |= bit;
+            } else {
+                balance_bitsets[cell / 16] &= ~bit;
+            }
+        };
+
+        // Handle full discharge mode.
+        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
+            for (std::size_t cell = 0; cell < cell_voltages.size(); cell++) {
+                if (cell_voltages[cell] == std::numeric_limits<std::uint16_t>::max()) {
+                    set_balancer_enabled(cell, false);
+                    continue;
+                }
+                if (cell_voltages[cell] > full_discharge->target_voltage + 100) {
+                    set_balancer_enabled(cell, true);
+                } else if (cell_voltages[cell] < full_discharge->target_voltage + 50) {
+                    set_balancer_enabled(cell, false);
                 }
             }
         }
+
+        // Handle charge mode.
+        if (std::holds_alternative<StartChargeMessage>(s_control_mode)) {
+            // TODO: Send charge status telemetry message over CAN.
+            bool alive = false;
+            std::uint16_t current = 0;
+            if (const auto status = elcon_status.get()) {
+                // Determine aliveness by checking less flags as we don't want to prevent the charge from starting.
+                auto flags_copy = status->status_flags;
+                flags_copy.clear(elcon::Status::BatteryNotDetected);
+                flags_copy.clear(elcon::Status::CommunicationFault);
+                alive = flags_copy.none_set();
+
+                current = status->output_current;
+            }
+
+            // Update charging run with latest data.
+            const auto control = charging_run.update(cell_voltages, balance_bitsets, current, alive);
+
+            // Send elcon control message.
+            elcon::ControlMessage control_message{
+                .target_voltage = control.target_voltage,
+                .target_current = control.target_current,
+                .disable = !alive || !control.enable,
+            };
+            hal::can::transmit(0xf4, control_message);
+
+            // Send precharge charge heatbeat if charger present and charging not complete yet.
+            if (alive && charging_run.state() != charging::State::Complete) {
+                hal::can::transmit(config::k_precharge_can_id, precharge::ChargeHeartbeatMessage{});
+            }
+        }
+
+        // Set balance bitsets.
+        s_segments_mutex.with_locked([&] {
+            for (std::size_t i = 0; i < k_max_segment_count; i++) {
+                s_segments[i].set_balance_bitset(balance_bitsets[i]);
+            }
+        });
     }
 }
 
@@ -789,12 +870,8 @@ void CurrentSensor::update(float voltage) {
     }
 }
 
-void Segment::and_balance_bitset(std::uint16_t bitset) {
-    m_balance_bitset &= bitset;
-}
-
-void Segment::or_balance_bitset(std::uint16_t bitset) {
-    m_balance_bitset |= bitset;
+void Segment::set_balance_bitset(std::uint16_t bitset) {
+    m_balance_bitset = bitset;
 }
 
 void Segment::update(std::span<std::uint8_t> bytes) {
@@ -1026,20 +1103,20 @@ void config_task(void *) {
     hal::can::listen<WriteConfigMessage, [](const WriteConfigMessage &) {
         freertos::InterruptYielder interrupt_yielder;
         s_config_task.notify_give_isr(1, interrupt_yielder);
-    }>(config::k_bms_can_id, 1);
+    }>(config::k_bms_can_id, 3);
     hal::can::listen<ConfigSegmentMessage, [](const ConfigSegmentMessage &new_config) {
         s_pending_config.segment_start_address = new_config.start_address;
         s_pending_config.segment_count = new_config.segment_count;
         s_pending_config.cell_count = new_config.cell_count;
         s_pending_config.minimum_thermistor_count = new_config.minimum_thermistor_count;
-    }>(config::k_bms_can_id, 2);
+    }>(config::k_bms_can_id, 4);
     hal::can::listen<ConfigThresholdMessage, [](const ConfigThresholdMessage &new_config) {
         s_pending_config.undervoltage_threshold = new_config.undervoltage_threshold;
         s_pending_config.overvoltage_threshold = new_config.overvoltage_threshold;
         s_pending_config.overcurrent_threshold = new_config.overcurrent_threshold;
         s_pending_config.undertemperature_threshold = new_config.undertemperature_threshold;
         s_pending_config.overtemperature_threshold = new_config.overtemperature_threshold;
-    }>(config::k_bms_can_id, 3);
+    }>(config::k_bms_can_id, 5);
 
     while (true) {
         // Wait for a config write request.

@@ -87,6 +87,13 @@ struct StartFullDischargeMessage {
     bool encode(util::Stream &stream) const;
 };
 
+struct StartChargeMessage {
+    static constexpr std::uint32_t packet_id() { return 0x301; }
+    static constexpr std::uint32_t default_priority() { return 6; }
+    static std::optional<StartChargeMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
 struct WriteConfigMessage {
     static constexpr std::uint32_t packet_id() { return 0x350; }
     static constexpr std::uint32_t default_priority() { return 7; }

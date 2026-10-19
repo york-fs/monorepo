@@ -176,6 +176,14 @@ bool StartFullDischargeMessage::encode(util::Stream &stream) const {
     return stream.write_be(target_voltage);
 }
 
+std::optional<StartChargeMessage> StartChargeMessage::decode(util::Stream &) {
+    return StartChargeMessage{};
+}
+
+bool StartChargeMessage::encode(util::Stream &) const {
+    return true;
+}
+
 std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &) {
     return WriteConfigMessage{};
 }
