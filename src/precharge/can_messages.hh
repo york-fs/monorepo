@@ -30,4 +30,11 @@ struct HeartbeatMessage {
     bool encode(util::Stream &stream) const;
 };
 
+struct ChargeHeartbeatMessage {
+    static constexpr std::uint32_t packet_id() { return 0x301; }
+    static constexpr std::uint32_t default_priority() { return 6; }
+    static std::optional<ChargeHeartbeatMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
 } // namespace precharge

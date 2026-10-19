@@ -13,6 +13,7 @@ namespace precharge {
 namespace {
 
 constexpr std::uint32_t k_heartbeat_magic = 0x8d3c4437;
+constexpr std::uint32_t k_charge_heartbeat_magic = 0xa7a125aa;
 
 } // namespace
 
@@ -60,6 +61,18 @@ std::optional<HeartbeatMessage> HeartbeatMessage::decode(util::Stream &stream) {
 
 bool HeartbeatMessage::encode(util::Stream &stream) const {
     return stream.write_be(k_heartbeat_magic);
+}
+
+std::optional<ChargeHeartbeatMessage> ChargeHeartbeatMessage::decode(util::Stream &stream) {
+    const auto magic = stream.read_be<std::uint32_t>();
+    if (!magic || *magic != k_charge_heartbeat_magic) {
+        return std::nullopt;
+    }
+    return ChargeHeartbeatMessage{};
+}
+
+bool ChargeHeartbeatMessage::encode(util::Stream &stream) const {
+    return stream.write_be(k_charge_heartbeat_magic);
 }
 
 } // namespace precharge

@@ -160,6 +160,9 @@ static_assert(config::k_status_period % k_sm_period == 0);
 // CAN heartbeat.
 TimeTracked<std::monostate, k_heartbeat_timeout> s_heartbeat;
 
+// Heartbeat for charge control, i.e. no inverter connected and precharge bypass.
+TimeTracked<std::monostate, 2500> s_charge_heartbeat;
+
 // Tasks.
 freertos::Task<256> s_sm_task;
 freertos::Task<128> s_swd_task;
@@ -375,6 +378,9 @@ void sm_task(void *) {
     hal::can::listen<HeartbeatMessage, [](const HeartbeatMessage &) {
         s_heartbeat.receive_isr({});
     }>(config::k_precharge_can_id, 0);
+    hal::can::listen<ChargeHeartbeatMessage, [](const ChargeHeartbeatMessage &) {
+        s_charge_heartbeat.receive_isr({});
+    }>(config::k_precharge_can_id, 1);
 
     // Configure analog inputs.
     hal::gpio::configure(k_precharge_sample, hal::gpio::InputMode::Analog);
@@ -415,6 +421,7 @@ void sm_task(void *) {
     auto state = State::LedCheck;
     ErrorFlags last_error_flags;
     TickType_t state_epoch_time = xTaskGetTickCount();
+    std::optional<TickType_t> charge_epoch_time;
     std::optional<TickType_t> precharge_close_time;
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -525,6 +532,26 @@ void sm_task(void *) {
         }
         if (error_flags.is_set(Error::AirNegClosed) || error_flags.is_set(Error::AirNegOpen)) {
             output_bits.set(OutputBit::AirNegErrorLed);
+        }
+
+        // Override everything in charge mode.
+        if (s_charge_heartbeat.get() && !s_heartbeat.get()) {
+            if (!charge_epoch_time) {
+                charge_epoch_time.emplace(current_ticks);
+            }
+        } else {
+            charge_epoch_time.reset();
+        }
+        if (charge_epoch_time) {
+            const auto charge_elapsed_ms = pdTICKS_TO_MS(current_ticks - *charge_epoch_time);
+            output_bits.clear_all();
+            output_bits.set(OutputBit::McuShutdown);
+            if (charge_elapsed_ms > k_relay_close_time) {
+                output_bits.set(OutputBit::AirNegCmd);
+            }
+            if (charge_elapsed_ms > k_relay_close_time * 2) {
+                output_bits.set(OutputBit::AirPosCmd);
+            }
         }
 
         // Set bits all at once.
