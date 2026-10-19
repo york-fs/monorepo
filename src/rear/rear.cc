@@ -659,6 +659,10 @@ void control_task(void *) {
 
         // Write to GPIO expander outputs.
         std::uint8_t expander_out = 0;
+        if (precharge_status && precharge_status->state == precharge::State::Active) {
+            // Run the coolant pump whilst the TS is active.
+            expander_out |= 1u << 0;
+        }
         if (brake_pressed) {
             expander_out |= 1u << 4;
         }
