@@ -6,7 +6,8 @@
 
 namespace config {
 
-constexpr auto k_can_speed = hal::can::Speed::_500;
+// Temporarily set to 250 kbps for elcon charger.
+constexpr auto k_can_speed = hal::can::Speed::_250;
 
 constexpr std::uint8_t k_rear_can_id = 0x1;
 constexpr std::uint8_t k_front_can_id = 0x2;

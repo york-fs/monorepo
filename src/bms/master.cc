@@ -1081,6 +1081,22 @@ void config_task(void *) {
         }
     }
 
+    // Temporary charging config.
+    newest_config.emplace(Config{
+        .segment_start_address = 0x40,
+        .segment_count = 6,
+        .cell_count = 14,
+        .minimum_thermistor_count = 10,
+        .undervoltage_threshold = 30000,
+        .overvoltage_threshold = 42500,
+        .overcurrent_threshold = 100,
+        .undertemperature_threshold = 0,
+        .overtemperature_threshold = 100,
+        .magic = k_config_magic,
+        .counter = 0,
+        .crc = 0,
+    });
+
     // Copy EEPROM config to the active and pending configs.
     if (newest_config) {
         freertos::in_critical_section([&] {
