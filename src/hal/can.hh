@@ -64,6 +64,11 @@ enum class Speed {
     _33_3,
 
     /**
+     * @brief 250 kbit/s.
+     */
+    _250,
+
+    /**
      * @brief 500 kbit/s.
      */
     _500,
