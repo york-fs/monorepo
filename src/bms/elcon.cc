@@ -17,7 +17,7 @@ std::optional<StatusMessage> StatusMessage::decode(util::Stream &stream, std::ui
     return StatusMessage{
         .output_voltage = *output_voltage,
         .output_current = *output_current,
-        .status_flags = StatusFlags(*status_flags),
+        .status_flags = StatusFlags(*status_flags & 0b11111u),
     };
 }
 
