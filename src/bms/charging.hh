@@ -6,7 +6,7 @@
 
 namespace bms::charging {
 
-enum class State {
+enum class State : std::uint8_t {
     ConstantCurrent,
     ConstantVoltage,
     Complete,

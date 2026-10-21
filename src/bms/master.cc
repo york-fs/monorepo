@@ -803,7 +803,6 @@ void control_task(void *) {
 
         // Handle charge mode.
         if (std::holds_alternative<StartChargeMessage>(s_control_mode)) {
-            // TODO: Send charge status telemetry message over CAN.
             bool alive = false;
             std::uint16_t current = 0;
             if (const auto status = elcon_status.get()) {
@@ -831,6 +830,12 @@ void control_task(void *) {
             if (alive && charging_run.state() != charging::State::Complete) {
                 hal::can::transmit(config::k_precharge_can_id, precharge::ChargeHeartbeatMessage{});
             }
+
+            // Send charging status message.
+            ChargingStatusMessage charging_status_message{
+                .state = charging_run.state(),
+            };
+            hal::can::transmit(config::k_bms_can_id, charging_status_message);
         }
 
         // Set balance bitsets.
