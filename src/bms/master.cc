@@ -1177,8 +1177,8 @@ void config_task(void *) {
 
     // Temporary charging config.
     newest_config.emplace(Config{
-        .segment_start_address = 0x40,
-        .segment_count = 6,
+        .segment_start_address = 0x41, // segments are jumpered 1-5
+        .segment_count = 5,
         .cell_count = 14,
         .minimum_thermistor_count = 10,
         .undervoltage_threshold = 30000,
