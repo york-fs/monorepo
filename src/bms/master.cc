@@ -127,6 +127,27 @@ constexpr std::uint32_t k_telemetry_period = 50;
 constexpr std::uint32_t k_control_period = 1000;
 
 /**
+ * @brief How long in milliseconds to keep sending charger disable messages after a charge ends. After this the BMS goes
+ * quiet and the charger stays off due to its own communication timeout.
+ */
+constexpr std::uint32_t k_charger_disable_hold_time = 10000;
+
+/**
+ * @brief Elcon charger CAN addresses: the charger's own address, and the address it expects control messages from.
+ */
+constexpr std::uint8_t k_elcon_charger_address = 0xe5;
+constexpr std::uint8_t k_elcon_controller_address = 0xf4;
+
+/**
+ * @brief Charger control message that turns the charger output off.
+ */
+constexpr elcon::ControlMessage k_charger_disable_message{
+    .target_voltage = 0,
+    .target_current = 0,
+    .disable = true,
+};
+
+/**
  * @brief Segment sampling task scheduling period in milliseconds.
  */
 constexpr std::uint32_t k_segment_sample_period = 100;
@@ -329,7 +350,17 @@ Config s_pending_config{};
 std::atomic<bool> s_is_eeprom_bad{false};
 
 // Active control mode.
-std::variant<std::monostate, StartFullDischargeMessage, StartChargeMessage> s_control_mode;
+std::variant<std::monostate, StartFullDischargeMessage> s_control_mode;
+
+// Charge start/stop requests from CAN, handled by the control task.
+std::atomic<bool> s_charge_start_requested{false};
+std::atomic<bool> s_charge_stop_requested{false};
+
+// Whether a charge is running and holding the contactors closed. Written by the control task.
+std::atomic<bool> s_charge_active{false};
+
+// Set by the supervisor when it opens the shutdown circuit during a charge. The control task then ends the charge.
+std::atomic<bool> s_charge_faulted{false};
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -392,6 +423,9 @@ void supervisor_task(void *) {
     std::optional<TickType_t> shutdown_time;
     std::optional<TickType_t> shutdown_request_time;
     std::optional<TickType_t> fault_cleared_time;
+
+    // Number of supervisor periods since the shutdown circuit was opened during a charge.
+    std::optional<std::uint32_t> charge_fault_periods;
 
     // Start with shutdown asserted and set fault_cleared_time such that shutdown will be deasserted after the start
     // delay. If an error is flagged during this window, then fault_cleared_time will be reset.
@@ -581,6 +615,26 @@ void supervisor_task(void *) {
             }
         }
 
+        // If the shutdown circuit opens during a charge, end the charge and tell the charger to stop now rather than
+        // relying on its communication timeout. The control task doesn't run while shutdown is asserted, so the
+        // supervisor sends the disable messages itself. Any start request made during the fault is dropped.
+        if (shutdown_time) {
+            s_charge_start_requested.store(false);
+            if (s_charge_active.exchange(false)) {
+                s_charge_faulted.store(true);
+                charge_fault_periods.emplace(0);
+            }
+        } else {
+            charge_fault_periods.reset();
+        }
+        if (charge_fault_periods) {
+            if (*charge_fault_periods % (k_control_period / k_supervisor_period) == 0 &&
+                *charge_fault_periods < k_charger_disable_hold_time / k_supervisor_period) {
+                hal::can::transmit(k_elcon_controller_address, k_charger_disable_message);
+            }
+            (*charge_fault_periods)++;
+        }
+
         // Send the master status message.
         if (scheduler.ticks() % (config::k_status_period / k_supervisor_period) == 0) {
             MasterStatusMessage master_status_message{
@@ -740,22 +794,28 @@ void control_task(void *) {
     hal::can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
         s_control_mode.emplace<StartFullDischargeMessage>(message);
     }>(config::k_bms_can_id, 0);
-    hal::can::listen<StartChargeMessage, [](const StartChargeMessage &message) {
-        s_control_mode.emplace<StartChargeMessage>(message);
+    hal::can::listen<StartChargeMessage, [](const StartChargeMessage &) {
+        s_charge_start_requested.store(true);
     }>(config::k_bms_can_id, 1);
+    hal::can::listen<StopChargeMessage, [](const StopChargeMessage &) {
+        s_charge_stop_requested.store(true);
+    }>(config::k_bms_can_id, 6);
 
     // Listen for elcon status messages.
     static TimeTracked<elcon::StatusMessage, 2500> elcon_status;
     hal::can::listen<elcon::StatusMessage, [](const elcon::StatusMessage &message) {
         elcon_status.receive_isr(message);
-    }>(0xe5, 2);
+    }>(k_elcon_charger_address, 2);
 
     // Flattened data.
     std::array<std::uint16_t, k_max_segment_count * k_max_cell_count> cell_voltages{};
     std::array<std::uint16_t, k_max_segment_count> balance_bitsets{};
 
-    // Charging run data.
-    bms::charging::Run charging_run;
+    // Charging run data. Empty until the first start or stop request.
+    std::optional<charging::Run> charging_run;
+
+    // Number of control periods charger disable messages have been sent for since the charge ended.
+    std::uint32_t charger_disable_periods = 0;
 
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -786,23 +846,29 @@ void control_task(void *) {
             }
         };
 
-        // Handle full discharge mode.
-        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
-            for (std::size_t cell = 0; cell < cell_voltages.size(); cell++) {
-                if (cell_voltages[cell] == std::numeric_limits<std::uint16_t>::max()) {
-                    set_balancer_enabled(cell, false);
-                    continue;
-                }
-                if (cell_voltages[cell] > full_discharge->target_voltage + 100) {
-                    set_balancer_enabled(cell, true);
-                } else if (cell_voltages[cell] < full_discharge->target_voltage + 50) {
-                    set_balancer_enabled(cell, false);
-                }
+        // Handle charge requests. A stop wins over a start received in the same period, and a start is ignored while a
+        // charge is already running.
+        const bool was_charging = charging_run && charging::is_active(charging_run->state());
+        if (s_charge_start_requested.exchange(false) && !was_charging) {
+            charging_run.emplace();
+            charger_disable_periods = 0;
+            s_charge_faulted.store(false);
+        }
+        if (s_charge_faulted.exchange(false) && charging_run) {
+            charging_run->fault();
+        }
+        if (s_charge_stop_requested.exchange(false)) {
+            if (charging_run && charging::is_active(charging_run->state())) {
+                charging_run->request_stop();
+            } else {
+                // Nothing running, but still send disable messages in case the charger is on for another reason.
+                charging_run.emplace(charging::State::Stopped);
+                charger_disable_periods = 0;
             }
         }
 
         // Handle charge mode.
-        if (std::holds_alternative<StartChargeMessage>(s_control_mode)) {
+        if (charging_run) {
             bool alive = false;
             std::uint16_t current = 0;
             if (const auto status = elcon_status.get()) {
@@ -816,26 +882,54 @@ void control_task(void *) {
             }
 
             // Update charging run with latest data.
-            const auto control = charging_run.update(cell_voltages, balance_bitsets, current, alive);
+            const auto control = charging_run->update(cell_voltages, balance_bitsets, current, alive);
+            const bool active = charging::is_active(charging_run->state());
 
-            // Send elcon control message.
-            elcon::ControlMessage control_message{
-                .target_voltage = control.target_voltage,
-                .target_current = control.target_current,
-                .disable = !alive || !control.enable,
-            };
-            hal::can::transmit(0xf4, control_message);
+            // Command the charger while charging, then keep sending disable messages for a while after it ends.
+            if (active) {
+                charger_disable_periods = 0;
+            }
+            if (active || charger_disable_periods < k_charger_disable_hold_time / k_control_period) {
+                elcon::ControlMessage control_message{
+                    .target_voltage = control.target_voltage,
+                    .target_current = control.target_current,
+                    .disable = !alive || !control.enable,
+                };
+                hal::can::transmit(k_elcon_controller_address, control_message);
+                if (!active) {
+                    charger_disable_periods++;
+                }
+            }
 
-            // Send precharge charge heatbeat if charger present and charging not complete yet.
-            if (alive && charging_run.state() != charging::State::Complete) {
+            // Send precharge charge heartbeat to hold the contactors closed while charging (including while stopping,
+            // so they don't open until the charger current has dropped).
+            if (alive && active) {
                 hal::can::transmit(config::k_precharge_can_id, precharge::ChargeHeartbeatMessage{});
             }
 
             // Send charging status message.
             ChargingStatusMessage charging_status_message{
-                .state = charging_run.state(),
+                .state = charging_run->state(),
             };
             hal::can::transmit(config::k_bms_can_id, charging_status_message);
+        }
+        const bool is_charging = charging_run && charging::is_active(charging_run->state());
+        s_charge_active.store(is_charging);
+
+        // Handle full discharge mode, unless a charge is running.
+        const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode);
+        if (full_discharge != nullptr && !is_charging) {
+            for (std::size_t cell = 0; cell < cell_voltages.size(); cell++) {
+                if (cell_voltages[cell] == std::numeric_limits<std::uint16_t>::max()) {
+                    set_balancer_enabled(cell, false);
+                    continue;
+                }
+                if (cell_voltages[cell] > full_discharge->target_voltage + 100) {
+                    set_balancer_enabled(cell, true);
+                } else if (cell_voltages[cell] < full_discharge->target_voltage + 50) {
+                    set_balancer_enabled(cell, false);
+                }
+            }
         }
 
         // Set balance bitsets.
@@ -1185,8 +1279,8 @@ void sample_segments_task(void *) {
 
         // Set reduced segment sampling period mode if we are in a specific control mode, i.e. charging or balancing is
         // active and we want to sample less frequently.
-        const auto mode = std::holds_alternative<std::monostate>(s_control_mode) ? SegmentMode::Normal
-                                                                                 : SegmentMode::ReducedSampleRate;
+        const bool is_idle = std::holds_alternative<std::monostate>(s_control_mode) && !s_charge_active.load();
+        const auto mode = is_idle ? SegmentMode::Normal : SegmentMode::ReducedSampleRate;
         stream.write_byte(util::to_underlying(mode));
 
         // Write balance bitsets.

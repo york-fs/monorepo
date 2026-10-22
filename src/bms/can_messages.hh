@@ -109,6 +109,17 @@ struct StartChargeMessage {
     bool encode(util::Stream &stream) const;
 };
 
+/**
+ * @brief Stops a charge. The BMS disables the charger, waits for its current to drop, then lets the contactors open.
+ * Always safe to send, even when no charge is running.
+ */
+struct StopChargeMessage {
+    static constexpr std::uint32_t packet_id() { return 0x302; }
+    static constexpr std::uint32_t default_priority() { return 6; }
+    static std::optional<StopChargeMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
 struct WriteConfigMessage {
     static constexpr std::uint32_t packet_id() { return 0x350; }
     static constexpr std::uint32_t default_priority() { return 7; }

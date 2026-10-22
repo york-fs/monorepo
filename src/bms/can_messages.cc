@@ -200,6 +200,14 @@ bool StartChargeMessage::encode(util::Stream &) const {
     return true;
 }
 
+std::optional<StopChargeMessage> StopChargeMessage::decode(util::Stream &) {
+    return StopChargeMessage{};
+}
+
+bool StopChargeMessage::encode(util::Stream &) const {
+    return true;
+}
+
 std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &) {
     return WriteConfigMessage{};
 }

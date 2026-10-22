@@ -12,6 +12,16 @@ namespace {
  */
 constexpr std::uint16_t k_cv_cell_target = 41850;
 
+/**
+ * @brief Charger output current in 100 mA resolution below which a stop is complete.
+ */
+constexpr std::uint16_t k_stopped_current = 5;
+
+/**
+ * @brief Maximum number of updates to wait for the charger current to drop after a stop request.
+ */
+constexpr std::uint32_t k_stopping_timeout = 5;
+
 } // namespace
 
 Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std::uint16_t> balance_bitsets,
@@ -32,10 +42,21 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
         .target_current = static_cast<std::uint16_t>(min_cell_voltage > 30000 ? 80 : 20),
     };
 
-    // If we are done make sure all cell balancers are disabled.
-    if (m_state == State::Complete) {
+    // When stopping, keep the charger disabled until its current has dropped (or the timeout passes), so that the
+    // contactors don't open under load.
+    if (m_state == State::Stopping) {
         std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
-        return control;
+        m_stopping_counter++;
+        if (!running || charger_current <= k_stopped_current || m_stopping_counter >= k_stopping_timeout) {
+            m_state = State::Stopped;
+        }
+        return Control{};
+    }
+
+    // If we are done make sure all cell balancers and the charger are disabled.
+    if (!is_active(m_state)) {
+        std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
+        return Control{};
     }
 
     // Switch over to constant voltage when any cell hits 4.15 volts.
@@ -151,6 +172,19 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
     control.target_voltage = *m_cv_target;
     control.enable = !m_soft_tripped;
     return control;
+}
+
+void Run::request_stop() {
+    if (m_state == State::ConstantCurrent || m_state == State::ConstantVoltage) {
+        m_state = State::Stopping;
+        m_stopping_counter = 0;
+    }
+}
+
+void Run::fault() {
+    if (is_active(m_state)) {
+        m_state = State::Faulted;
+    }
 }
 
 } // namespace bms::charging
