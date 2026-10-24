@@ -574,6 +574,9 @@ void supervisor_task(void *) {
         if (!shutdown_time) {
             s_control_task.notify_give(0);
         } else {
+            // Clear any active control mode.
+            s_control_mode = {};
+
             // Make sure all balancers are off.
             std::lock_guard segments_lock(s_segments_mutex);
             for (auto &segment : s_segments) {
