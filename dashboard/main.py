@@ -17,7 +17,9 @@ import time
 
 
 ERPM_FACTOR = 10
-MAX_MOTOR_CURRENT = 200
+
+# This value should match the configured max AC current in DTI config.
+MAX_MOTOR_CURRENT = 300
 
 
 class OnlineFlags(Flag):
