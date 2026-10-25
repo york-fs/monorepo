@@ -27,16 +27,20 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
         }
     }
 
+    // Disable balancers in all states other than constant voltage.
+    if (m_state != State::ConstantVoltage) {
+        std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
+    }
+
+    // Return empty control struct when complete.
+    if (m_state == State::Complete) {
+        return Control{};
+    }
+
     // Set a fixed 8 amp limit maximum.
     Control control{
         .target_current = static_cast<std::uint16_t>(min_cell_voltage > 30000 ? 80 : 20),
     };
-
-    // If we are done make sure all cell balancers are disabled.
-    if (m_state == State::Complete) {
-        std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
-        return control;
-    }
 
     // Switch over to constant voltage when any cell hits 4.15 volts.
     if (max_cell_voltage >= 41500) {
@@ -57,21 +61,6 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
         // whereas the charger control is in 100 mV steps.
         control.target_voltage = static_cast<std::uint16_t>((pack_voltage + 150000) / 1000);
         control.enable = true;
-
-        // Enable a very basic balancing control in constant current mode to try to counter badly mismatched cells
-        // early.
-        for (std::size_t cell = 0; cell < cell_voltages.size(); cell++) {
-            if (cell_voltages[cell] == std::numeric_limits<std::uint16_t>::max()) {
-                set_balancer_enabled(cell, false);
-                continue;
-            }
-
-            if (cell_voltages[cell] >= min_cell_voltage + 500 && cell_voltages[cell] >= 37000) {
-                set_balancer_enabled(cell, true);
-            } else if (cell_voltages[cell] <= min_cell_voltage + 200) {
-                set_balancer_enabled(cell, false);
-            }
-        }
         return control;
     }
 
