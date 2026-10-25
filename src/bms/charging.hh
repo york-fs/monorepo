@@ -28,7 +28,7 @@ class Run {
 
 public:
     Control update(std::span<const std::uint16_t> cell_voltages, std::span<std::uint16_t> balance_bitsets,
-                   std::uint16_t charger_current, bool running);
+                   std::uint16_t charger_current);
 
     State state() const { return m_state; }
 };

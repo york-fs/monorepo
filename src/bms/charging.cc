@@ -15,7 +15,7 @@ constexpr std::uint16_t k_cv_cell_target = 41850;
 } // namespace
 
 Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std::uint16_t> balance_bitsets,
-                    const std::uint16_t charger_current, const bool running) {
+                    const std::uint16_t charger_current) {
     auto min_cell_voltage = std::numeric_limits<std::uint16_t>::max();
     auto max_cell_voltage = std::numeric_limits<std::uint16_t>::min();
     std::uint32_t pack_voltage = 0;
@@ -102,7 +102,7 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
     }
 
     // Voltage target control.
-    if (running && !m_soft_tripped) {
+    if (!m_soft_tripped) {
         const auto error = static_cast<std::int32_t>(max_cell_voltage) - k_cv_cell_target;
         if (error > 0 && m_holdoff_timer >= 10) {
             // Overshot the target slightly, so pull back the commanded target voltage.
@@ -126,7 +126,7 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
     }
 
     // Complete when all cells within 15 mV of the target and current is below 1.1 amps.
-    if (running && min_cell_voltage >= k_cv_cell_target - 150 && charger_current <= 11) {
+    if (min_cell_voltage >= k_cv_cell_target - 150 && charger_current <= 11) {
         m_complete_timer++;
     } else {
         m_complete_timer = 0;

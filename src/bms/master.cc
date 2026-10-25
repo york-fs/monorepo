@@ -27,6 +27,7 @@
 #include <bit>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -748,7 +749,7 @@ void control_task(void *) {
     }>(config::k_bms_can_id, 1);
 
     // Listen for elcon status messages.
-    static TimeTracked<elcon::StatusMessage, 2500> elcon_status;
+    static TimeTracked<elcon::StatusMessage, 5000> elcon_status;
     hal::can::listen<elcon::StatusMessage, [](const elcon::StatusMessage &message) {
         elcon_status.receive_isr(message);
     }>(0xe5, 2);
@@ -758,7 +759,8 @@ void control_task(void *) {
     std::array<std::uint16_t, k_max_segment_count> balance_bitsets{};
 
     // Charging run data.
-    bms::charging::Run charging_run;
+    charging::Run charging_run;
+    std::uint32_t charging_timer = 0;
 
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -779,6 +781,11 @@ void control_task(void *) {
                 }
             }
         });
+
+        // With no active control mode, disable all balancers.
+        if (std::holds_alternative<std::monostate>(s_control_mode)) {
+            std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
+        }
 
         auto set_balancer_enabled = [&](std::size_t cell, bool enabled) {
             const auto bit = 1u << (cell % 16);
@@ -806,32 +813,41 @@ void control_task(void *) {
 
         // Handle charge mode.
         if (std::holds_alternative<StartChargeMessage>(s_control_mode)) {
-            bool alive = false;
+            // Decode Elcon status information. Determine charger presence by checking less flags as we don't want to
+            // prevent the charge starting.
+            bool elcon_present = false;
             std::uint16_t current = 0;
             if (const auto status = elcon_status.get()) {
-                // Determine aliveness by checking less flags as we don't want to prevent the charge from starting.
-                auto flags_copy = status->status_flags;
-                flags_copy.clear(elcon::Status::BatteryNotDetected);
-                flags_copy.clear(elcon::Status::CommunicationFault);
-                alive = flags_copy.none_set();
+                auto flags = status->status_flags;
+                flags.clear(elcon::Status::BatteryNotDetected);
+                flags.clear(elcon::Status::CommunicationFault);
+                elcon_present = flags.none_set();
 
                 current = status->output_current;
             }
 
-            // Update charging run with latest data.
-            const auto control = charging_run.update(cell_voltages, balance_bitsets, current, alive);
+            charging_timer++;
+            if (elcon_present) {
+                // Update charging run with latest data.
+                const auto control = charging_run.update(cell_voltages, balance_bitsets, current);
 
-            // Send elcon control message.
-            elcon::ControlMessage control_message{
-                .target_voltage = control.target_voltage,
-                .target_current = control.target_current,
-                .disable = !alive || !control.enable,
-            };
-            hal::can::transmit(0xf4, control_message);
+                // Start sending control messages to the Elcon after 10 seconds.
+                if (charging_timer >= 10) {
+                    elcon::ControlMessage control_message{
+                        .target_voltage = control.target_voltage,
+                        .target_current = control.target_current,
+                        .disable = !control.enable,
+                    };
+                    hal::can::transmit(0xf4, control_message);
+                }
 
-            // Send precharge charge heatbeat if charger present and charging not complete yet.
-            if (alive && charging_run.state() != charging::State::Complete) {
-                hal::can::transmit(config::k_precharge_can_id, precharge::ChargeHeartbeatMessage{});
+                // Close AIRs after 5 seconds. Open them once charging is complete.
+                if (charging_timer >= 5 && charging_run.state() != charging::State::Complete) {
+                    hal::can::transmit(config::k_precharge_can_id, precharge::ChargeHeartbeatMessage{});
+                }
+            } else if (charging_timer >= 3) {
+                // End charging run if charger not present after 3 seconds.
+                s_control_mode = {};
             }
 
             // Send charging status message.
@@ -839,6 +855,11 @@ void control_task(void *) {
                 .state = charging_run.state(),
             };
             hal::can::transmit(config::k_bms_can_id, charging_status_message);
+        } else {
+            // GCC emits a false positive warning if we try to reinitialise the charging_run struct normally.
+            std::destroy_at(&charging_run);
+            std::construct_at(&charging_run);
+            charging_timer = 0;
         }
 
         // Set balance bitsets.
