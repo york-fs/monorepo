@@ -56,10 +56,18 @@ constexpr std::uint16_t k_cell_degraded_threshold = 10;
 constexpr std::uint16_t k_cell_open_threshold = 1000;
 
 /**
- * @brief Voltage threshold from the absolute endpoints (0 and Vref) in 1 mV resolution from when to consider a
-thermistor as being either open or short circuit.
-*/
-constexpr std::uint32_t k_thermistor_range_threshold = 100;
+ * @brief Voltage threshold from the absolute endpoint above 0 volts in 1 mV resolution.
+ *
+ * A thermistor voltage reading below this threshold will be considered out of range.
+ */
+constexpr std::uint32_t k_thermistor_low_range_threshold = 500;
+
+/**
+ * @brief Voltage threshold from the absolute endpoint below Vref in 1 mV resolution.
+ *
+ * A thermistor voltage reading above Vref - this threshold will be considered out of range.
+ */
+constexpr std::uint32_t k_thermistor_high_range_threshold = 100;
 
 /**
  * @brief Product and die version bits for the MAX14921 AFE.
@@ -344,7 +352,7 @@ void sample_voltages_task(void *) {
 
 std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std::uint16_t voltage, float beta) {
     // Check if the voltage measurement is viable.
-    if (voltage < k_thermistor_range_threshold || voltage > (rail_voltage - k_thermistor_range_threshold)) {
+    if (voltage < k_thermistor_low_range_threshold || voltage > (rail_voltage - k_thermistor_high_range_threshold)) {
         return std::nullopt;
     }
 
