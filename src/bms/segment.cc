@@ -309,7 +309,7 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 }
 
 void sample_voltages_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
         sample_voltages_raw(samples, false);
@@ -346,7 +346,7 @@ void sample_voltages_task(void *) {
         });
 
         const auto period = s_is_reduced_sample_rate ? 2000 : 100;
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
+        scheduler.delay_until_ms(period);
     }
 }
 
@@ -396,10 +396,10 @@ void sample_temperatures_task(void *) {
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
     hal::irq_enable(DMA1_Channel1_IRQn, 7);
 
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
+        scheduler.delay_until_ms(period);
 
         // Enable the thermistors and MUX outputs.
         hal::gpio::reset(k_mux_en);
@@ -622,7 +622,7 @@ void cmd_task(void *) {
 }
 
 void swd_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Mode: %s\n", s_is_reduced_sample_rate ? "reduced rate" : "normal");
@@ -649,7 +649,7 @@ void swd_task(void *) {
         hal::swd_printf("T[11, 20]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[14], s_temperatures[15],
                         s_temperatures[16], s_temperatures[17], s_temperatures[18], s_temperatures[19],
                         s_temperatures[20], s_temperatures[21], s_temperatures[22], s_temperatures[23]);
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+        scheduler.delay_until_ms(1000);
     }
 }
 
