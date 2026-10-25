@@ -26,6 +26,16 @@ using namespace bms;
 namespace {
 
 /**
+ * @brief Default cell voltage and thermistor sampling period in milliseconds.
+ */
+constexpr std::uint32_t k_default_sample_period = 100;
+
+/**
+ * @brief Cell voltage and thermistor sampling period in reduced sample rate mode in milliseconds.
+ */
+constexpr std::uint32_t k_reduced_sample_period = 2000;
+
+/**
  * @brief The high bits of the I2C address.
  */
 constexpr std::uint8_t k_i2c_address_base = 0x40u;
@@ -345,8 +355,7 @@ void sample_voltages_task(void *) {
             std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
         });
 
-        const auto period = s_is_reduced_sample_rate ? 2000 : 100;
-        scheduler.delay_until_ms(period);
+        scheduler.delay_until_ms(s_is_reduced_sample_rate ? k_reduced_sample_period : k_default_sample_period);
     }
 }
 
@@ -401,8 +410,7 @@ void sample_temperatures_task(void *) {
 
     freertos::PeriodScheduler scheduler;
     while (true) {
-        const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
-        scheduler.delay_until_ms(period);
+        scheduler.delay_until_ms(s_is_reduced_sample_rate ? k_reduced_sample_period : k_default_sample_period);
 
         std::uint32_t thermistor_bitset = 0;
         std::array<std::int8_t, k_thermistor_count> temperatures{};
