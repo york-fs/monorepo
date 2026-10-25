@@ -361,7 +361,7 @@ std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std:
     const auto resistance = (rail_voltage * 1000) / voltage - 1000;
     const float t0 = 1.0f / 298.15f;
     const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 1000.0f)) - 273.15f;
-    return static_cast<std::int8_t>(temperature);
+    return static_cast<std::int8_t>(std::clamp(temperature, -128.0f, 127.0f));
 }
 
 void sample_temperatures_task(void *) {
