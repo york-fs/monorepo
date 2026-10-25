@@ -1076,8 +1076,8 @@ bool eeprom_write(std::uint16_t page_index, const T &object) {
 }
 
 bool read_config(std::uint16_t page_index, Config &config) {
-    // TODO: EEPROM failure should trigger a different error.
     if (!eeprom_read(page_index, config)) {
+        s_is_eeprom_bad.store(true);
         return false;
     }
     if (config.magic != k_config_magic) {
