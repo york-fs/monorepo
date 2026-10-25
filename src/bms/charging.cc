@@ -104,16 +104,16 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
     // Voltage target control.
     if (running && !m_soft_tripped) {
         const auto error = static_cast<std::int32_t>(max_cell_voltage) - k_cv_cell_target;
-        if (error > 0 && m_holdoff_counter >= 10) {
+        if (error > 0 && m_holdoff_timer >= 10) {
             // Overshot the target slightly, so pull back the commanded target voltage.
-            m_holdoff_counter = 0;
+            m_holdoff_timer = 0;
             *m_cv_target -= static_cast<std::uint16_t>(std::clamp<std::int32_t>(error / 20, 1, 10));
-        } else if (error < -50 && m_holdoff_counter >= 30) {
+        } else if (error < -50 && m_holdoff_timer >= 30) {
             // Below target by 5 mV still, so step up the voltage slowly.
-            m_holdoff_counter = 0;
+            m_holdoff_timer = 0;
             (*m_cv_target)++;
         }
-        m_holdoff_counter++;
+        m_holdoff_timer++;
 
         // Keep the target close to the pack voltage (3% window). This avoids our target voltage drifting a lot in
         // case of the charger still being current limited, or if a high cell is taking a while to passively balance
@@ -127,11 +127,11 @@ Control Run::update(std::span<const std::uint16_t> cell_voltages, std::span<std:
 
     // Complete when all cells within 15 mV of the target and current is below 1.1 amps.
     if (running && min_cell_voltage >= k_cv_cell_target - 150 && charger_current <= 11) {
-        m_complete_counter++;
+        m_complete_timer++;
     } else {
-        m_complete_counter = 0;
+        m_complete_timer = 0;
     }
-    if (m_complete_counter >= 300) {
+    if (m_complete_timer >= 300) {
         m_state = State::Complete;
         std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
         return Control{};
