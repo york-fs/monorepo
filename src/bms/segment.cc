@@ -1,3 +1,4 @@
+#include <bms/common.hh>
 #include <bms/segment_mode.hh>
 #include <config.hh>
 #include <freertos.hh>
@@ -85,16 +86,6 @@ constexpr std::uint32_t k_thermistor_high_range_threshold = 100;
 constexpr std::uint8_t k_afe_version_bits = 0b0010u;
 
 /**
- * @brief Maximum connected cell count.
- */
-constexpr std::uint32_t k_cell_count = 16;
-
-/**
- * @brief Maximum connected thermistor count, including the on-board ones.
- */
-constexpr std::uint32_t k_thermistor_count = 24;
-
-/**
  * @brief Thermistor MUX mapping array.
  */
 constexpr std::array<std::array<std::uint32_t, 3>, 8> k_thermistor_mapping{{
@@ -170,9 +161,9 @@ std::atomic<bool> s_is_reduced_sample_rate{false};
 std::atomic<std::uint16_t> s_balance_bitset{0};
 
 // Sampled data.
-std::array<std::uint16_t, k_cell_count> s_correction_table{};
-std::array<std::uint16_t, k_cell_count> s_voltages{};
-std::array<std::int8_t, k_thermistor_count> s_temperatures{};
+std::array<std::uint16_t, bms::k_cell_count> s_correction_table{};
+std::array<std::uint16_t, bms::k_cell_count> s_voltages{};
+std::array<std::int8_t, bms::k_thermistor_count> s_temperatures{};
 std::uint16_t s_max_correction = 0;
 std::uint16_t s_cell_tap_bitset = 0;
 std::uint16_t s_degraded_bitset = 0;
@@ -291,12 +282,12 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Sample all cells in order of most potential to least potential (w.r.t. segment ground).
-    for (std::size_t cell = k_cell_count; cell > 0; cell--) {
+    for (std::size_t cell = bms::k_cell_count; cell > 0; cell--) {
         const auto index = static_cast<std::uint8_t>(cell - 1);
 
         // Select the cell for output on AOUT in hold mode. The level shift and AOUT settle delay should pass before
         // the first ADC acquisition occurs.
-        constexpr std::array<std::uint8_t, k_cell_count> index_table{
+        constexpr std::array<std::uint8_t, bms::k_cell_count> index_table{
             0b10000000, 0b11000000, 0b10100000, 0b11100000, 0b10010000, 0b11010000, 0b10110000, 0b11110000,
             0b10001000, 0b11001000, 0b10101000, 0b11101000, 0b10011000, 0b11011000, 0b10111000, 0b11111000,
         };
@@ -321,12 +312,12 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 void sample_voltages_task(void *) {
     freertos::PeriodScheduler scheduler;
     while (true) {
-        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
+        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, bms::k_cell_count> samples;
         sample_voltages_raw(samples, false);
 
         std::uint16_t cell_tap_bitset = 0;
         std::uint16_t degraded_bitset = 0;
-        std::array<std::uint16_t, k_cell_count> voltages{};
+        std::array<std::uint16_t, bms::k_cell_count> voltages{};
         for (std::size_t index = 0; index < voltages.size(); index++) {
             if (const auto sample = samples[index]) {
                 const auto [voltage, adc_range] = *samples[index];
@@ -413,7 +404,7 @@ void sample_temperatures_task(void *) {
         scheduler.delay_until_ms(s_is_reduced_sample_rate ? k_reduced_sample_period : k_default_sample_period);
 
         std::uint32_t thermistor_bitset = 0;
-        std::array<std::int8_t, k_thermistor_count> temperatures{};
+        std::array<std::int8_t, bms::k_thermistor_count> temperatures{};
         for (std::uint32_t selection = 0; selection < 8; selection++) {
             // Set A, B, and C MUX selection outputs.
             hal::gpio::write(k_mux_control[0], (selection & 0b1u) != 0u);
@@ -559,9 +550,9 @@ void cmd_task(void *) {
     vTaskDelay(pdMS_TO_TICKS(250));
 
     // Perform a parasitic capacitance calibration.
-    std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
+    std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, bms::k_cell_count> samples;
     sample_voltages_raw(samples, true);
-    for (std::size_t i = 0; i < k_cell_count; i++) {
+    for (std::size_t i = 0; i < samples.size(); i++) {
         if (const auto sample = samples[i]) {
             s_correction_table[i] = (sample->first + 127) / 128;
         }

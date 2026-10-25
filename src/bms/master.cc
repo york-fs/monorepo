@@ -1,5 +1,6 @@
 #include <bms/can_messages.hh>
 #include <bms/charging.hh>
+#include <bms/common.hh>
 #include <bms/elcon.hh>
 #include <bms/error.hh>
 #include <bms/segment_mode.hh>
@@ -61,16 +62,6 @@ constexpr std::size_t k_segment_response_size = 74;
  * @brief The maximum number of connected segments.
  */
 constexpr std::size_t k_max_segment_count = 10;
-
-/**
- * @brief The maximum number of cells per segment.
- */
-constexpr std::size_t k_max_cell_count = 16;
-
-/**
- * @brief The maximum number of temperature sensors per segment.
- */
-constexpr std::size_t k_max_temperature_count = 24;
 
 /**
  * @brief The minimum allowed value for the undervoltage threshold in 100 uV resolution.
@@ -294,8 +285,8 @@ public:
 };
 
 class Segment {
-    std::array<std::optional<std::uint16_t>, k_max_cell_count> m_cell_voltages;
-    std::array<std::optional<std::int8_t>, k_max_temperature_count> m_temperatures;
+    std::array<std::optional<std::uint16_t>, bms::k_cell_count> m_cell_voltages;
+    std::array<std::optional<std::int8_t>, bms::k_thermistor_count> m_temperatures;
     std::uint32_t m_master_error_count{};
     std::uint32_t m_slave_error_count{};
     std::uint16_t m_degraded_bitset{};
@@ -717,13 +708,13 @@ void telemetry_task(void *) {
             segment_summary_message.max_correction = segment.max_correction();
 
             // Copy voltages.
-            for (std::size_t i = 0; i < k_max_cell_count; i++) {
+            for (std::size_t i = 0; i < bms::k_cell_count; i++) {
                 const auto value = segment.cell_voltages()[i].value_or(std::numeric_limits<std::uint16_t>::max());
                 segment_voltage_messages[i / 4].voltages[i % 4] = value;
             }
 
             // Copy temperatures.
-            for (std::size_t i = 0; i < k_max_temperature_count; i++) {
+            for (std::size_t i = 0; i < bms::k_thermistor_count; i++) {
                 const auto value = segment.temperatures()[i].value_or(std::numeric_limits<std::int8_t>::min());
                 segment_temperature_messages[i / 8].temperatures[i % 8] = value;
             }
@@ -764,7 +755,7 @@ void control_task(void *) {
     ControlMode control_mode;
 
     // Flattened data.
-    std::array<std::uint16_t, k_max_segment_count * k_max_cell_count> cell_voltages{};
+    std::array<std::uint16_t, k_max_segment_count * bms::k_cell_count> cell_voltages{};
     std::array<std::uint16_t, k_max_segment_count> balance_bitsets{};
 
     // Charging run data.
@@ -930,12 +921,12 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     const auto degraded_bitset = *stream.read_be<std::uint16_t>();
     const auto max_correction = *stream.read_be<std::uint16_t>();
 
-    std::array<std::uint16_t, k_max_cell_count> cell_voltages{};
+    decltype(m_cell_voltages) cell_voltages{};
     for (auto &voltage : cell_voltages) {
         voltage = *stream.read_be<std::uint16_t>();
     }
 
-    std::array<std::int8_t, k_max_temperature_count> temperatures{};
+    decltype(m_temperatures) temperatures{};
     for (auto &temperature : temperatures) {
         temperature = *stream.read_byte();
     }
@@ -951,14 +942,14 @@ void Segment::update(std::span<std::uint8_t> bytes) {
     }
 
     // Update all data in one go once we know it's valid in terms of checksum and length validity.
-    for (std::size_t i = 0; i < k_max_cell_count; i++) {
+    for (std::size_t i = 0; i < cell_voltages.size(); i++) {
         if ((cell_tap_bitset & (1u << i)) != 0) {
             m_cell_voltages[i] = cell_voltages[i];
         } else {
             m_cell_voltages[i].reset();
         }
     }
-    for (std::size_t i = 0; i < k_max_temperature_count; i++) {
+    for (std::size_t i = 0; i < temperatures.size(); i++) {
         if ((thermistor_bitset & (1u << i)) != 0) {
             m_temperatures[i] = temperatures[i];
         } else {
