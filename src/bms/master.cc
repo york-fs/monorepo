@@ -85,7 +85,7 @@ constexpr std::uint16_t k_overvoltage_threshold_limit = 42500;
 /**
  * @brief The minimum allowed value for the undertemperature threshold in whole degrees.
  */
-constexpr std::int8_t k_undertemperature_threshold_limit = -20;
+constexpr std::int8_t k_undertemperature_threshold_limit = -5;
 
 /**
  * @brief The maximum allowed value for the overtemperature threshold in whole degrees.
