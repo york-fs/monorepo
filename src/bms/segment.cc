@@ -396,16 +396,13 @@ void sample_temperatures_task(void *) {
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
     hal::irq_enable(DMA1_Channel1_IRQn, 7);
 
+    // Always keep the thermistors and MUX outputs enabled.
+    hal::gpio::reset(k_mux_en);
+
     freertos::PeriodScheduler scheduler;
     while (true) {
         const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
         scheduler.delay_until_ms(period);
-
-        // Enable the thermistors and MUX outputs.
-        hal::gpio::reset(k_mux_en);
-
-        // Give some time for the MOSFET to turn on, the thermistors and rail voltage to settle.
-        vTaskDelay(pdMS_TO_TICKS(50));
 
         std::uint32_t thermistor_bitset = 0;
         std::array<std::int8_t, k_thermistor_count> temperatures{};
@@ -435,9 +432,6 @@ void sample_temperatures_task(void *) {
                 }
             }
         }
-
-        // Disable the thermistors.
-        hal::gpio::set(k_mux_en);
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         freertos::in_critical_section([&] {
