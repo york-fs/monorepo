@@ -421,7 +421,7 @@ void sample_temperatures_task(void *) {
             const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
             for (std::uint32_t mux = 0; mux < 3; mux++) {
                 const auto index = k_thermistor_mapping[selection][mux];
-                const auto beta = 1.0f / (index < 4 ? 3350.0f : 3950.0f);
+                const auto beta = 1.0f / (index < bms::k_balance_thermistor_count ? 3350.0f : 3950.0f);
                 const auto voltage = (k_mcu_vref * adc_buffer[mux + 1]) >> 12;
                 const auto temperature = calculate_thermistor(rail_voltage, voltage, beta);
                 if (temperature) {

@@ -84,6 +84,11 @@ constexpr std::int8_t k_undertemperature_threshold_limit = -5;
 constexpr std::int8_t k_overtemperature_threshold_limit = 100;
 
 /**
+ * @brief The maximum allowed passive balancer temperature in whole degrees.
+ */
+constexpr std::int8_t k_balance_overtemperature_threshold = 125;
+
+/**
  * @brief The maximum allowed MCU temperature in whole degrees.
  */
 constexpr std::int8_t k_mcu_overtemperature_threshold = 80;
@@ -1000,8 +1005,16 @@ void Segment::update(std::span<std::uint8_t> bytes) {
         std::max(s_config.undertemperature_threshold, k_undertemperature_threshold_limit);
     const auto overtemperature_threshold =
         std::min(s_config.overtemperature_threshold, k_overtemperature_threshold_limit);
-    for (const auto temperature : m_temperatures) {
-        if (temperature) {
+    for (std::size_t i = 0; i < m_temperatures.size(); i++) {
+        const auto temperature = m_temperatures[i];
+        if (!temperature) {
+            continue;
+        }
+        if (i < bms::k_balance_thermistor_count) {
+            if (*temperature > k_balance_overtemperature_threshold) {
+                m_error_flags.set(SegmentError::BalancerOvertemperature);
+            }
+        } else {
             if (*temperature < undertemperature_threshold) {
                 m_error_flags.set(SegmentError::Undertemperature);
             }
