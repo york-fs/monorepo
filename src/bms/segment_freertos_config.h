@@ -2,7 +2,7 @@
 
 // Scheduler configuration.
 #define configCPU_CLOCK_HZ 8000000
-#define configTICK_RATE_HZ 100
+#define configTICK_RATE_HZ 1000
 #define configUSE_PREEMPTION 1
 #define configUSE_IDLE_HOOK 1
 #define configUSE_TICK_HOOK 0
