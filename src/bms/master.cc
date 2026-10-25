@@ -324,13 +324,16 @@ struct SwdData {
     std::optional<std::uint32_t> shutdown_duration{};
 };
 
+using ControlMode = std::variant<std::monostate, StartFullDischargeMessage, StartChargeMessage>;
+
 // Active config management. The pending config is written by CAN messages.
 Config s_config{};
 Config s_pending_config{};
 std::atomic<bool> s_is_eeprom_bad{false};
 
 // Active control mode.
-std::variant<std::monostate, StartFullDischargeMessage, StartChargeMessage> s_control_mode;
+freertos::Queue<ControlMode, 1> s_control_queue;
+std::atomic<SegmentMode> s_desired_segment_mode;
 
 // Global array of segments with associated mutex.
 std::array<Segment, k_max_segment_count> s_segments;
@@ -576,7 +579,8 @@ void supervisor_task(void *) {
             s_control_task.notify_give(0);
         } else {
             // Clear any active control mode.
-            s_control_mode = {};
+            s_control_queue.overwrite(std::monostate{});
+            s_desired_segment_mode.store(SegmentMode::Normal);
 
             // Make sure all balancers are off.
             std::lock_guard segments_lock(s_segments_mutex);
@@ -742,10 +746,12 @@ void telemetry_task(void *) {
 void control_task(void *) {
     // Install control listeners.
     hal::can::listen<StartFullDischargeMessage, [](const StartFullDischargeMessage &message) {
-        s_control_mode.emplace<StartFullDischargeMessage>(message);
+        freertos::InterruptYielder interrupt_yielder;
+        s_control_queue.overwrite_isr(message, interrupt_yielder);
     }>(config::k_bms_can_id, 0);
     hal::can::listen<StartChargeMessage, [](const StartChargeMessage &message) {
-        s_control_mode.emplace<StartChargeMessage>(message);
+        freertos::InterruptYielder interrupt_yielder;
+        s_control_queue.overwrite_isr(message, interrupt_yielder);
     }>(config::k_bms_can_id, 1);
 
     // Listen for elcon status messages.
@@ -753,6 +759,9 @@ void control_task(void *) {
     hal::can::listen<elcon::StatusMessage, [](const elcon::StatusMessage &message) {
         elcon_status.receive_isr(message);
     }>(0xe5, 2);
+
+    // Active control mode.
+    ControlMode control_mode;
 
     // Flattened data.
     std::array<std::uint16_t, k_max_segment_count * k_max_cell_count> cell_voltages{};
@@ -766,6 +775,11 @@ void control_task(void *) {
     while (true) {
         scheduler.delay_until_ms(k_control_period);
         freertos::notify_take(0, true, portMAX_DELAY);
+
+        // Handle control mode change requests.
+        if (const auto mode = s_control_queue.receive(0)) {
+            control_mode = *mode;
+        }
 
         // Copy voltage data into flattened array.
         s_segments_mutex.with_locked([&] {
@@ -783,8 +797,12 @@ void control_task(void *) {
         });
 
         // With no active control mode, disable all balancers.
-        if (std::holds_alternative<std::monostate>(s_control_mode)) {
+        if (std::holds_alternative<std::monostate>(control_mode)) {
             std::fill(balance_bitsets.begin(), balance_bitsets.end(), 0u);
+            s_desired_segment_mode.store(SegmentMode::Normal);
+        } else {
+            // Set reduced sampling rate mode when in a control mode.
+            s_desired_segment_mode.store(SegmentMode::ReducedSampleRate);
         }
 
         auto set_balancer_enabled = [&](std::size_t cell, bool enabled) {
@@ -797,7 +815,7 @@ void control_task(void *) {
         };
 
         // Handle full discharge mode.
-        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&s_control_mode)) {
+        if (const auto *full_discharge = std::get_if<StartFullDischargeMessage>(&control_mode)) {
             for (std::size_t cell = 0; cell < cell_voltages.size(); cell++) {
                 if (cell_voltages[cell] == std::numeric_limits<std::uint16_t>::max()) {
                     set_balancer_enabled(cell, false);
@@ -812,7 +830,7 @@ void control_task(void *) {
         }
 
         // Handle charge mode.
-        if (std::holds_alternative<StartChargeMessage>(s_control_mode)) {
+        if (std::holds_alternative<StartChargeMessage>(control_mode)) {
             // Decode Elcon status information. Determine charger presence by checking less flags as we don't want to
             // prevent the charge starting.
             bool elcon_present = false;
@@ -847,7 +865,7 @@ void control_task(void *) {
                 }
             } else if (charging_timer >= 3) {
                 // End charging run if charger not present after 3 seconds.
-                s_control_mode = {};
+                control_mode = {};
             }
 
             // Send charging status message.
@@ -1193,9 +1211,7 @@ void sample_segments_task(void *) {
 
         // Set reduced segment sampling period mode if we are in a specific control mode, i.e. charging or balancing is
         // active and we want to sample less frequently.
-        const auto mode = std::holds_alternative<std::monostate>(s_control_mode) ? SegmentMode::Normal
-                                                                                 : SegmentMode::ReducedSampleRate;
-        stream.write_byte(util::to_underlying(mode));
+        stream.write_byte(util::to_underlying(s_desired_segment_mode.load()));
 
         // Write balance bitsets.
         s_segments_mutex.with_locked([&stream] {
@@ -1446,6 +1462,8 @@ void app_main() {
     TIM1->EGR = TIM_EGR_UG;
     TIM1->CR1 = TIM_CR1_CEN;
 
+    s_desired_segment_mode.store(SegmentMode::Normal);
+    s_control_queue.init();
     s_segments_mutex.init();
 
     // Initialise all tasks.
