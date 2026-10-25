@@ -300,6 +300,20 @@ bool expander_write(ExpanderRegister reg, std::uint8_t value) {
     return expander_wait();
 }
 
+std::uint16_t preload_floor(std::int32_t erpm) {
+    // 15% preload below 100 RPM. Linearly decrease up to 300 RPM.
+    constexpr std::int32_t full_erpm = 1000;
+    constexpr std::int32_t zero_erpm = 3000;
+    constexpr std::uint16_t preload_percentage = 150;
+    if (erpm <= full_erpm) {
+        return preload_percentage;
+    }
+    if (erpm >= zero_erpm) {
+        return 0;
+    }
+    return static_cast<std::uint16_t>(preload_percentage * (zero_erpm - erpm) / (zero_erpm - full_erpm));
+}
+
 /**
  * @brief The control task is the main coordination task of the rear distribution, and therefore of the whole car.
  *
@@ -637,8 +651,14 @@ void control_task(void *) {
         // Always send a throttle to the inverter to avoid it coasting. If RTD flags are present (including if TS is
         // off), we send zero absolute current. If the brake is pressed, we avoid powering the motor briefly.
         if (rtd_latched && front_throttle && !brake_pressed) {
+            // Apply a current preload at low motor RPM. The front handles deadzone so a non-zero desired throttle
+            // indicates the driver wants to move.
+            auto desired_throttle = front_throttle->desired_throttle;
+            if (desired_throttle > 0) {
+                desired_throttle = std::max<std::uint16_t>(desired_throttle, preload_floor(motor_erpm.load()));
+            }
             dti::SetRelativeCurrentMessage set_relative_current{
-                .percentage = util::clamp(static_cast<std::int16_t>(front_throttle->desired_throttle), 0, 1000),
+                .percentage = util::clamp(static_cast<std::int16_t>(desired_throttle), 0, 1000),
             };
             hal::can::transmit(config::k_dti_can_id, set_relative_current);
         } else {
