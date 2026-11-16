@@ -12,6 +12,13 @@ export const SEGMENT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'] as const
 /** Cells fitted per segment, as drawn in assets/bms/segment-sides.svg. */
 export const FITTED_CELL_COUNT = 14
 
+/**
+ * The first thermistors a segment reports are on its board, around the passive
+ * balancing circuitry, rather than on the cells. Matches
+ * `k_balance_thermistor_count` in bms/common.hh.
+ */
+export const BALANCER_THERMISTOR_COUNT = 4
+
 export const SEGMENT_ERROR_META: Record<SegmentErrorFlag, { label: string; description: string }> =
     {
         DISCONNECTED: {
@@ -73,10 +80,10 @@ function present(values: readonly (number | null)[]): number[] {
     return values.filter((value): value is number => value !== null)
 }
 
-/** Extremes across a segment's fitted cells and connected thermistors. */
+/** Extremes across a segment's fitted cells and connected cell thermistors. */
 export function segmentStats(readings: SegmentReadings | undefined): SegmentStats {
     const cells = present(readings?.cell_voltages.slice(0, FITTED_CELL_COUNT) ?? [])
-    const temperatures = present(readings?.temperatures ?? [])
+    const temperatures = present(readings?.temperatures.slice(BALANCER_THERMISTOR_COUNT) ?? [])
     return {
         minCellVoltage: cells.length > 0 ? Math.min(...cells) : undefined,
         maxCellVoltage: cells.length > 0 ? Math.max(...cells) : undefined,
@@ -99,8 +106,8 @@ export function segmentSeverity(
 }
 
 /**
- * Which BMS thermistor index (0–23, in the order the segment reports them) is
- * each thermistor on the segment drawing.
+ * Which BMS thermistor index (4–23, in the order the segment reports them,
+ * after the balancer ones) is each thermistor on the segment drawing.
  *
  * PROVISIONAL: the firmware only knows MUX positions (see `k_thermistor_mapping`
  * in bms/segment.cc), not the physical labels, so this is a placeholder
@@ -108,20 +115,20 @@ export function segmentSeverity(
  * watching which index moves, then set `THERMISTOR_MAPPING_CONFIRMED`.
  */
 export const THERMISTOR_INDEX: Record<string, number> = {
-    'A-T1': 0,
-    'A-T2': 1,
-    'A-T3': 2,
-    'A-T4': 3,
-    'A-T5': 4,
-    'A-T6': 5,
-    'A-T7': 6,
-    'B-T1': 7,
-    'B-T2': 8,
-    'B-T3': 9,
-    'B-T4': 10,
-    'B-T5': 11,
-    'B-T6': 12,
-    'B-T7': 13,
+    'A-T1': 4,
+    'A-T2': 5,
+    'A-T3': 6,
+    'A-T4': 7,
+    'A-T5': 8,
+    'A-T6': 9,
+    'A-T7': 10,
+    'B-T1': 11,
+    'B-T2': 12,
+    'B-T3': 13,
+    'B-T4': 14,
+    'B-T5': 15,
+    'B-T6': 16,
+    'B-T7': 17,
 }
 export const THERMISTOR_MAPPING_CONFIRMED = false
 

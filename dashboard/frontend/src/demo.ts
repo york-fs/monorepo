@@ -356,7 +356,7 @@ function demoSegment(state: DemoState, now: number): SegmentReadings {
                 : null,
         ),
         temperatures: Array.from({ length: 24 }, (_, index) =>
-            index < 14 && index !== openThermistor
+            index < 18 && index !== openThermistor
                 ? Math.round(randomBetween(state.minCellTemperature, state.maxCellTemperature))
                 : null,
         ),

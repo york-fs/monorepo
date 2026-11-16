@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useSegments } from '@/composables/useSegments'
 import { cellTemperatureSeverity, cellVoltageSeverity } from '@/domain/bms'
+import { BALANCER_THERMISTOR_COUNT } from '@/domain/segments'
 import { severityOf } from '@/domain/severity'
 import { formatCelsius } from '@/utils/formatCelsius'
 import { formatVolts } from '@/utils/formatVolts'
@@ -28,7 +29,11 @@ const temperatureRows = computed(() =>
     (segment.value?.temperatures ?? []).map((celsius, index) => ({
         name: `T${index}`,
         value: formatCelsius(celsius ?? undefined),
-        severity: severityOf(celsius, cellTemperatureSeverity),
+        // The balancer thermistors run hotter than a cell is allowed to.
+        severity:
+            index < BALANCER_THERMISTOR_COUNT
+                ? undefined
+                : severityOf(celsius, cellTemperatureSeverity),
     })),
 )
 </script>
