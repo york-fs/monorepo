@@ -124,6 +124,11 @@ enum class SegmentError : std::uint16_t {
      * @brief Specifies that one or more cells is in an overtemperature condition.
      */
     Overtemperature,
+
+    /**
+     * @brief Specifies that the segment passive balancing circuitry is in an overtemperature condition.
+     */
+    BalancerOvertemperature,
 };
 
 using SegmentErrorFlags = util::FlagBitset<SegmentError>;

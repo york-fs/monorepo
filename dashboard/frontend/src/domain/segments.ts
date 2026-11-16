@@ -49,6 +49,10 @@ export const SEGMENT_ERROR_META: Record<SegmentErrorFlag, { label: string; descr
             label: 'Overtemperature',
             description: 'One or more cells is overtemperature',
         },
+        BALANCER_OVERTEMPERATURE: {
+            label: 'Balancer Overtemperature',
+            description: "The segment's passive balancing circuitry is overtemperature",
+        },
     }
 
 /** Any raised segment error is critical, the same as the master's errors. */

@@ -22,9 +22,10 @@ ERPM_FACTOR = 10
 SEGMENT_COUNT = 10
 SEGMENT_CELL_COUNT = 16
 SEGMENT_TEMPERATURE_COUNT = 24
-# The inverter's max motor current, which the pedal's demand is relative to. Matches
-# the frontend's MOTOR_CURRENT_MAX.
-MAX_MOTOR_CURRENT = 360
+
+# This value should match the configured max AC current in DTI config, and the
+# frontend's MOTOR_CURRENT_MAX.
+MAX_MOTOR_CURRENT = 300
 
 
 class OnlineFlags(Flag):
@@ -166,6 +167,7 @@ class SegmentErrorFlags(Flag):
     OVERVOLTAGE = enum.auto()
     UNDERTEMPERATURE = enum.auto()
     OVERTEMPERATURE = enum.auto()
+    BALANCER_OVERTEMPERATURE = enum.auto()
 
 
 @attrs.define

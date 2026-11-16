@@ -128,9 +128,8 @@ export function motorRpmToMph(rpm: number): number {
 }
 
 /**
- * The inverter's configured absolute maximum motor current, in amps — the
- * EMRAX 228 MV's 360A RMS peak rating. Reaching it is flat-out running rather
- * than a fault, so it's drawn as a gauge with no severity. Keep in step with
- * `MAX_MOTOR_CURRENT` in dashboard/main.py.
+ * The inverter's configured maximum AC motor current, in amps. Reaching it is
+ * flat-out running rather than a fault, so it's drawn as a gauge with no
+ * severity. Keep in step with `MAX_MOTOR_CURRENT` in dashboard/main.py.
  */
-export const MOTOR_CURRENT_MAX = 360
+export const MOTOR_CURRENT_MAX = 300

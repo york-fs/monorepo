@@ -302,7 +302,6 @@ void throttle_task(void *) {
         // Read the first sensor, normalise it to a throttle map index, and calculate a travel percentage between the
         // range of [0, 1000].
         // TODO: Look at both sensors.
-        // TODO: Current preload.
         const auto normalised = sensors[0].normalise(s_adc_buffer[7]).value_or(0);
         const auto percentage = ThrottleMap::to_percentage(normalised);
 

@@ -1,7 +1,9 @@
 #include <bms/can_messages.hh>
 
 #include <bms/error.hh>
+#include <type_traits>
 #include <util/stream.hh>
+#include <util/type_traits.hh>
 
 #include <array>
 #include <concepts>
@@ -75,6 +77,20 @@ bool MasterSummaryMessage::encode(util::Stream &stream) const {
         return false;
     }
     return stream.write_be(max_temperature);
+}
+
+std::optional<ChargingStatusMessage> ChargingStatusMessage::decode(util::Stream &stream) {
+    const auto state = stream.read_be<std::underlying_type_t<charging::State>>();
+    if (!state) {
+        return std::nullopt;
+    }
+    return ChargingStatusMessage{
+        .state = charging::State(*state),
+    };
+}
+
+bool ChargingStatusMessage::encode(util::Stream &stream) const {
+    return stream.write_be(util::to_underlying(state));
 }
 
 static SegmentMessage decode_segment_sub_id(std::uint8_t sub_id) {
@@ -174,6 +190,14 @@ std::optional<StartFullDischargeMessage> StartFullDischargeMessage::decode(util:
 
 bool StartFullDischargeMessage::encode(util::Stream &stream) const {
     return stream.write_be(target_voltage);
+}
+
+std::optional<StartChargeMessage> StartChargeMessage::decode(util::Stream &) {
+    return StartChargeMessage{};
+}
+
+bool StartChargeMessage::encode(util::Stream &) const {
+    return true;
 }
 
 std::optional<WriteConfigMessage> WriteConfigMessage::decode(util::Stream &) {

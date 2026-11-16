@@ -143,6 +143,7 @@ export const SEGMENT_ERROR_FLAGS = [
     'OVERVOLTAGE',
     'UNDERTEMPERATURE',
     'OVERTEMPERATURE',
+    'BALANCER_OVERTEMPERATURE',
 ] as const
 export type SegmentErrorFlag = (typeof SEGMENT_ERROR_FLAGS)[number]
 

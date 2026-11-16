@@ -7,6 +7,12 @@
 #include <cstdint>
 #include <optional>
 
+namespace bms::charging {
+
+enum class State : std::uint8_t;
+
+} // namespace bms::charging
+
 namespace bms {
 
 struct MasterStatusMessage {
@@ -38,6 +44,15 @@ struct MasterSummaryMessage {
     static constexpr std::uint32_t packet_id() { return 0x202; }
     static constexpr std::uint32_t default_priority() { return 4; }
     static std::optional<MasterSummaryMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
+struct ChargingStatusMessage {
+    charging::State state;
+
+    static constexpr std::uint32_t packet_id() { return 0x203; }
+    static constexpr std::uint32_t default_priority() { return 5; }
+    static std::optional<ChargingStatusMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
 
@@ -84,6 +99,13 @@ struct StartFullDischargeMessage {
     static constexpr std::uint32_t packet_id() { return 0x300; }
     static constexpr std::uint32_t default_priority() { return 6; }
     static std::optional<StartFullDischargeMessage> decode(util::Stream &stream);
+    bool encode(util::Stream &stream) const;
+};
+
+struct StartChargeMessage {
+    static constexpr std::uint32_t packet_id() { return 0x301; }
+    static constexpr std::uint32_t default_priority() { return 6; }
+    static std::optional<StartChargeMessage> decode(util::Stream &stream);
     bool encode(util::Stream &stream) const;
 };
 

@@ -63,6 +63,10 @@ bool reinit(Speed speed) {
         // 33.333 kbit/s sets 12+2+3 (seg1+seg2+sync) time quanta per bit with a prescaler of 56.
         CAN1->BTR = 0x001b0037;
         break;
+    case Speed::_250:
+        // 250 kbit/s sets 13+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 7.
+        CAN1->BTR = 0x001c0006;
+        break;
     case Speed::_500:
         // 500 kbit/s sets 11+2+1 (seg1+seg2+sync) time quanta per bit with a prescaler of 4.
         CAN1->BTR = 0x001a0003;

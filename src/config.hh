@@ -6,7 +6,11 @@
 
 namespace config {
 
-constexpr auto k_can_speed = hal::can::Speed::_500;
+/**
+ * @brief CAN bus speed for each node on the car. 500 kbps would be optimal but the Elcon charger is 250 kbps, so we use
+ * that everywhere for simplicity for now.
+ */
+constexpr auto k_can_speed = hal::can::Speed::_250;
 
 constexpr std::uint8_t k_rear_can_id = 0x1;
 constexpr std::uint8_t k_front_can_id = 0x2;

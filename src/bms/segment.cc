@@ -1,3 +1,4 @@
+#include <bms/common.hh>
 #include <bms/segment_mode.hh>
 #include <config.hh>
 #include <freertos.hh>
@@ -24,6 +25,16 @@
 using namespace bms;
 
 namespace {
+
+/**
+ * @brief Default cell voltage and thermistor sampling period in milliseconds.
+ */
+constexpr std::uint32_t k_default_sample_period = 100;
+
+/**
+ * @brief Cell voltage and thermistor sampling period in reduced sample rate mode in milliseconds.
+ */
+constexpr std::uint32_t k_reduced_sample_period = 2000;
 
 /**
  * @brief The high bits of the I2C address.
@@ -56,25 +67,23 @@ constexpr std::uint16_t k_cell_degraded_threshold = 10;
 constexpr std::uint16_t k_cell_open_threshold = 1000;
 
 /**
- * @brief Voltage threshold from the absolute endpoints (0 and Vref) in 1 mV resolution from when to consider a
-thermistor as being either open or short circuit.
-*/
-constexpr std::uint32_t k_thermistor_range_threshold = 100;
+ * @brief Voltage threshold from the absolute endpoint above 0 volts in 1 mV resolution.
+ *
+ * A thermistor voltage reading below this threshold will be considered out of range.
+ */
+constexpr std::uint32_t k_thermistor_low_range_threshold = 500;
+
+/**
+ * @brief Voltage threshold from the absolute endpoint below Vref in 1 mV resolution.
+ *
+ * A thermistor voltage reading above Vref - this threshold will be considered out of range.
+ */
+constexpr std::uint32_t k_thermistor_high_range_threshold = 100;
 
 /**
  * @brief Product and die version bits for the MAX14921 AFE.
  */
 constexpr std::uint8_t k_afe_version_bits = 0b0010u;
-
-/**
- * @brief Maximum connected cell count.
- */
-constexpr std::uint32_t k_cell_count = 16;
-
-/**
- * @brief Maximum connected thermistor count, including the on-board ones.
- */
-constexpr std::uint32_t k_thermistor_count = 24;
 
 /**
  * @brief Thermistor MUX mapping array.
@@ -152,9 +161,9 @@ std::atomic<bool> s_is_reduced_sample_rate{false};
 std::atomic<std::uint16_t> s_balance_bitset{0};
 
 // Sampled data.
-std::array<std::uint16_t, k_cell_count> s_correction_table{};
-std::array<std::uint16_t, k_cell_count> s_voltages{};
-std::array<std::int8_t, k_thermistor_count> s_temperatures{};
+std::array<std::uint16_t, bms::k_cell_count> s_correction_table{};
+std::array<std::uint16_t, bms::k_cell_count> s_voltages{};
+std::array<std::int8_t, bms::k_thermistor_count> s_temperatures{};
 std::uint16_t s_max_correction = 0;
 std::uint16_t s_cell_tap_bitset = 0;
 std::uint16_t s_degraded_bitset = 0;
@@ -273,12 +282,12 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
     }
 
     // Sample all cells in order of most potential to least potential (w.r.t. segment ground).
-    for (std::size_t cell = k_cell_count; cell > 0; cell--) {
+    for (std::size_t cell = bms::k_cell_count; cell > 0; cell--) {
         const auto index = static_cast<std::uint8_t>(cell - 1);
 
         // Select the cell for output on AOUT in hold mode. The level shift and AOUT settle delay should pass before
         // the first ADC acquisition occurs.
-        constexpr std::array<std::uint8_t, k_cell_count> index_table{
+        constexpr std::array<std::uint8_t, bms::k_cell_count> index_table{
             0b10000000, 0b11000000, 0b10100000, 0b11100000, 0b10010000, 0b11010000, 0b10110000, 0b11110000,
             0b10001000, 0b11001000, 0b10101000, 0b11101000, 0b10011000, 0b11011000, 0b10111000, 0b11111000,
         };
@@ -301,14 +310,14 @@ void sample_voltages_raw(std::span<std::optional<std::pair<std::uint16_t, std::u
 }
 
 void sample_voltages_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
-        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
+        std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, bms::k_cell_count> samples;
         sample_voltages_raw(samples, false);
 
         std::uint16_t cell_tap_bitset = 0;
         std::uint16_t degraded_bitset = 0;
-        std::array<std::uint16_t, k_cell_count> voltages{};
+        std::array<std::uint16_t, bms::k_cell_count> voltages{};
         for (std::size_t index = 0; index < voltages.size(); index++) {
             if (const auto sample = samples[index]) {
                 const auto [voltage, adc_range] = *samples[index];
@@ -337,14 +346,13 @@ void sample_voltages_task(void *) {
             std::copy(voltages.begin(), voltages.end(), s_voltages.begin());
         });
 
-        const auto period = s_is_reduced_sample_rate ? 2000 : 100;
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
+        scheduler.delay_until_ms(s_is_reduced_sample_rate ? k_reduced_sample_period : k_default_sample_period);
     }
 }
 
 std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std::uint16_t voltage, float beta) {
     // Check if the voltage measurement is viable.
-    if (voltage < k_thermistor_range_threshold || voltage > (rail_voltage - k_thermistor_range_threshold)) {
+    if (voltage < k_thermistor_low_range_threshold || voltage > (rail_voltage - k_thermistor_high_range_threshold)) {
         return std::nullopt;
     }
 
@@ -353,7 +361,7 @@ std::optional<std::int8_t> calculate_thermistor(std::uint16_t rail_voltage, std:
     const auto resistance = (rail_voltage * 1000) / voltage - 1000;
     const float t0 = 1.0f / 298.15f;
     const float temperature = 1.0f / (t0 + beta * std::log(static_cast<float>(resistance) / 1000.0f)) - 273.15f;
-    return static_cast<std::int8_t>(temperature);
+    return static_cast<std::int8_t>(std::clamp(temperature, -128.0f, 127.0f));
 }
 
 void sample_temperatures_task(void *) {
@@ -388,19 +396,15 @@ void sample_temperatures_task(void *) {
     DMA1_Channel1->CCR |= DMA_CCR_TCIE;
     hal::irq_enable(DMA1_Channel1_IRQn, 7);
 
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    // Always keep the thermistors and MUX outputs enabled.
+    hal::gpio::reset(k_mux_en);
+
+    freertos::PeriodScheduler scheduler;
     while (true) {
-        const auto period = s_is_reduced_sample_rate ? 2000 : 1000;
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(period));
-
-        // Enable the thermistors and MUX outputs.
-        hal::gpio::reset(k_mux_en);
-
-        // Give some time for the MOSFET to turn on, the thermistors and rail voltage to settle.
-        vTaskDelay(pdMS_TO_TICKS(50));
+        scheduler.delay_until_ms(s_is_reduced_sample_rate ? k_reduced_sample_period : k_default_sample_period);
 
         std::uint32_t thermistor_bitset = 0;
-        std::array<std::int8_t, k_thermistor_count> temperatures{};
+        std::array<std::int8_t, bms::k_thermistor_count> temperatures{};
         for (std::uint32_t selection = 0; selection < 8; selection++) {
             // Set A, B, and C MUX selection outputs.
             hal::gpio::write(k_mux_control[0], (selection & 0b1u) != 0u);
@@ -417,7 +421,7 @@ void sample_temperatures_task(void *) {
             const auto rail_voltage = (k_mcu_vref * adc_buffer[0]) >> 12;
             for (std::uint32_t mux = 0; mux < 3; mux++) {
                 const auto index = k_thermistor_mapping[selection][mux];
-                const auto beta = 1.0f / (index < 4 ? 3350.0f : 3950.0f);
+                const auto beta = 1.0f / (index < bms::k_balance_thermistor_count ? 3350.0f : 3950.0f);
                 const auto voltage = (k_mcu_vref * adc_buffer[mux + 1]) >> 12;
                 const auto temperature = calculate_thermistor(rail_voltage, voltage, beta);
                 if (temperature) {
@@ -427,9 +431,6 @@ void sample_temperatures_task(void *) {
                 }
             }
         }
-
-        // Disable the thermistors.
-        hal::gpio::set(k_mux_en);
 
         // Copy the data in a critical section to make sure the copy is atomic and the data is self-consistent.
         freertos::in_critical_section([&] {
@@ -549,9 +550,9 @@ void cmd_task(void *) {
     vTaskDelay(pdMS_TO_TICKS(250));
 
     // Perform a parasitic capacitance calibration.
-    std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, k_cell_count> samples;
+    std::array<std::optional<std::pair<std::uint16_t, std::uint16_t>>, bms::k_cell_count> samples;
     sample_voltages_raw(samples, true);
-    for (std::size_t i = 0; i < k_cell_count; i++) {
+    for (std::size_t i = 0; i < samples.size(); i++) {
         if (const auto sample = samples[i]) {
             s_correction_table[i] = (sample->first + 127) / 128;
         }
@@ -614,7 +615,7 @@ void cmd_task(void *) {
 }
 
 void swd_task(void *) {
-    TickType_t last_schedule_time = xTaskGetTickCount();
+    freertos::PeriodScheduler scheduler;
     while (true) {
         hal::swd_printf("--------------------------------\n");
         hal::swd_printf("Mode: %s\n", s_is_reduced_sample_rate ? "reduced rate" : "normal");
@@ -641,7 +642,7 @@ void swd_task(void *) {
         hal::swd_printf("T[11, 20]: [%d, %d, %d, %d, %d, %d, %d, %d, %d, %d]\n", s_temperatures[14], s_temperatures[15],
                         s_temperatures[16], s_temperatures[17], s_temperatures[18], s_temperatures[19],
                         s_temperatures[20], s_temperatures[21], s_temperatures[22], s_temperatures[23]);
-        vTaskDelayUntil(&last_schedule_time, pdMS_TO_TICKS(1000));
+        scheduler.delay_until_ms(1000);
     }
 }
 
