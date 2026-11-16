@@ -65,6 +65,8 @@ export type EventKind =
     | 'connected'
     | 'gap'
     | 'reboot'
+    /** A note added by hand from the event log. */
+    | 'marker'
 
 /**
  * `fault` — something went wrong; `ok` — a problem cleared or something
@@ -248,6 +250,8 @@ export function eventTitle(event: LogEvent): string {
             return `No telemetry for ${event.detail ?? '?'} s`
         case 'reboot':
             return 'Rear distribution rebooted'
+        case 'marker':
+            return event.detail ? `Marker: ${event.detail}` : 'Marker'
     }
 }
 

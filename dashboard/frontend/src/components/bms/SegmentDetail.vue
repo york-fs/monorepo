@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSegments } from '@/composables/useSegments'
-import { cellTemperatureSeverity, cellVoltageSeverity } from '@/domain/bms'
+import {
+    balancerTemperatureSeverity,
+    cellTemperatureSeverity,
+    cellVoltageSeverity,
+} from '@/domain/bms'
 import { severityOf } from '@/domain/severity'
 import {
     SEGMENT_ERROR_META,
@@ -76,6 +80,11 @@ const balancing = computed(() => {
                 title="Max temperature"
                 :value="formatCelsius(stats.maxTemperature)"
                 :severity="severityOf(stats.maxTemperature, cellTemperatureSeverity)"
+            />
+            <Tile
+                title="Balancer temperature"
+                :value="formatCelsius(stats.maxBalancerTemperature)"
+                :severity="severityOf(stats.maxBalancerTemperature, balancerTemperatureSeverity)"
             />
             <Tile title="Balancing" :value="balancing" />
             <Tile

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useTelemetry } from '@/composables/useTelemetry'
+import { computed, onUnmounted, ref } from 'vue'
+import { onTelemetryFrame, useTelemetry } from '@/composables/useTelemetry'
 import { shutdownOpenCauseLabel, shutdownOpenCauseSeverity } from '@/domain/shutdown'
 import type { Severity } from '@/domain/severity'
 
@@ -41,15 +41,39 @@ const shutdownItem = computed<StripItem>(() => {
     }
 })
 
+// Frames received over the last second. The rear sends ten, so fewer means
+// the radio is dropping them.
+const GOOD_FRAME_RATE = 8
+const frameRate = ref(0)
+let frameCount = 0
+const stopCounting = onTelemetryFrame(() => frameCount++)
+const rateTimer = setInterval(() => {
+    frameRate.value = frameCount
+    frameCount = 0
+}, 1000)
+onUnmounted(() => {
+    stopCounting()
+    clearInterval(rateTimer)
+})
+
 const linkItem = computed<StripItem>(() =>
     status.value === 'online'
-        ? { name: 'Link', value: 'Online', severity: 'good' }
+        ? {
+              name: 'Link',
+              value: `${frameRate.value} Hz`,
+              severity: frameRate.value >= GOOD_FRAME_RATE ? 'good' : 'warning',
+          }
         : { name: 'Link', value: 'Offline', severity: 'critical' },
 )
 
+const missedItem = computed<StripItem>(() => ({
+    name: 'Missed TX',
+    value: frame.missed_tx_count === undefined ? '—' : String(frame.missed_tx_count),
+}))
+
 // Everything but the link item is the car's last word, so it dims once the
 // link goes quiet, same as a `Section`.
-const carItems = computed(() => [tsItem.value, rtdItem.value, shutdownItem.value])
+const carItems = computed(() => [missedItem.value, tsItem.value, rtdItem.value, shutdownItem.value])
 </script>
 
 <template>

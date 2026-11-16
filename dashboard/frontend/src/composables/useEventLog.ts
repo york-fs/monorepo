@@ -43,6 +43,15 @@ async function clearHistory() {
     if (response.ok) events.value = []
 }
 
+// The marker comes back over the stream like any other event.
+async function addMarker(note: string) {
+    await fetch('/api/events/marker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+    })
+}
+
 function start() {
     if (started || !available.value) return
     started = true
@@ -74,5 +83,6 @@ export function useEventLog() {
         available: readonly(available),
         loadError: readonly(loadError),
         clearHistory,
+        addMarker,
     }
 }

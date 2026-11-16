@@ -156,6 +156,9 @@ struct RadioData {
     std::uint16_t max_cell_voltage;
     std::int8_t min_cell_temperature;
     std::int8_t max_cell_temperature;
+
+    // Brake switch.
+    bool brake_pressed;
 };
 
 // Single-entry queue for consistent radio data.
@@ -765,6 +768,7 @@ void control_task(void *) {
             .max_cell_voltage = max_cell_voltage,
             .min_cell_temperature = min_cell_temperature,
             .max_cell_temperature = max_cell_temperature,
+            .brake_pressed = brake_pressed,
         });
     }
 }
@@ -889,6 +893,9 @@ void radio_task(void *) {
         stream.write_be(s_shutdown_causes_seen.exchange(0));
         stream.write_be(s_blown_fuses_seen.exchange(0));
         stream.write_be(s_expander_error_count.load());
+
+        // Append brake switch state.
+        stream.write_byte(data.brake_pressed ? 1 : 0);
 
         // Append every BMS segment's error flags, then one segment's full readings. Only connected segments are sent,
         // in turn, so each one refreshes about every 0.6 s with six fitted.

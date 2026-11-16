@@ -17,7 +17,7 @@ import { formatUptimeWithMs } from '@/utils/formatUptime'
 // always available through the download link.
 const MAX_ROWS = 500
 
-const { events, clearHistory } = useEventLog()
+const { events, clearHistory, addMarker } = useEventLog()
 
 const hidden = ref(new Set<EventCategory>())
 const showRoutine = ref(false)
@@ -38,6 +38,12 @@ const matching = computed(() =>
 
 // Newest first: the thing you're usually debugging just happened.
 const rows = computed(() => matching.value.slice(-MAX_ROWS).reverse())
+
+// For finding a run, or anything else worth noting, in the log afterwards.
+async function mark() {
+    const note = window.prompt('Marker note, such as the run or what just happened')
+    if (note !== null) await addMarker(note)
+}
 
 async function clear() {
     if (window.confirm('Clear the event log? The current log file is archived, not deleted.')) {
@@ -66,6 +72,7 @@ async function clear() {
                     <input v-model="showRoutine" type="checkbox" />
                     Show routine
                 </label>
+                <button type="button" class="action" @click="mark">Add marker</button>
                 <a class="action" href="/api/events/download" download>Download</a>
                 <button type="button" class="action" @click="clear">Clear</button>
             </div>

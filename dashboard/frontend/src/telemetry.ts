@@ -184,6 +184,8 @@ export type FuseFlag = (typeof FUSE_FLAGS)[number]
 
 export interface TelemetryFrame {
     uptime?: number
+    /** Radio windows the rear skipped because the radio was busy. Wraps at 256. */
+    missed_tx_count?: number
     precharge_state?: PrechargeState
     precharge_error_flags?: PrechargeErrorFlag[]
     precharge_relay_states?: PrechargeRelay[]
@@ -215,6 +217,7 @@ export interface TelemetryFrame {
     /** Every segment slot's errors, indexed by segment id. */
     segment_error_flags?: SegmentErrorFlag[][]
     segment?: SegmentReadings
+    brake_pressed?: boolean
     [key: string]: unknown
 }
 

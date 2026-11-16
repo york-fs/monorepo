@@ -41,7 +41,8 @@ Files:
   cleared in between. "segment_error_flags" lists each BMS segment slot's errors (A is
   slot 0); "segment" carries one segment's full readings per frame, in turn.
 - events.jsonl: the dashboard's event log over the same span, one change per line,
-  with a snapshot and lead-up on TS and RTD deactivations.
+  with a snapshot and lead-up on TS and RTD deactivations. "marker" events are notes
+  added by hand, such as the start of a run.
 - summary.json: headline figures worked out from the frames.
 
 Units: voltages V, currents A, temperatures degC, motor_rpm rpm. positive_current and
@@ -175,6 +176,11 @@ def _summarise(session_id: str, frames: list[dict], events: list[dict]) -> dict:
             for event in events
             if event.get("category") == "ts"
             and event.get("kind") in ("deactivated", "aborted")
+        ],
+        "markers": [
+            {"time": wall_clock(event["time"]), "note": event.get("detail", "")}
+            for event in events
+            if event.get("kind") == "marker"
         ],
         "battery_energy_wh": round(energy_wh, 1),
         "peak": {

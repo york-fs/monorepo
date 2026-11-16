@@ -371,6 +371,8 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
 
     return {
         uptime: now - state.startedAt,
+        missed_tx_count: 0,
+        brake_pressed: state.pedalTravel < 1,
         precharge_state: state.prechargeState,
         precharge_error_flags: state.prechargeErrorFlags,
         precharge_relay_states: RELAYS_BY_STATE[state.prechargeState],

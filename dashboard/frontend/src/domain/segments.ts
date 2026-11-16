@@ -74,6 +74,7 @@ export interface SegmentStats {
     minCellVoltage?: number
     maxCellVoltage?: number
     maxTemperature?: number
+    maxBalancerTemperature?: number
 }
 
 function present(values: readonly (number | null)[]): number[] {
@@ -84,11 +85,34 @@ function present(values: readonly (number | null)[]): number[] {
 export function segmentStats(readings: SegmentReadings | undefined): SegmentStats {
     const cells = present(readings?.cell_voltages.slice(0, FITTED_CELL_COUNT) ?? [])
     const temperatures = present(readings?.temperatures.slice(BALANCER_THERMISTOR_COUNT) ?? [])
+    const balancer = present(readings?.temperatures.slice(0, BALANCER_THERMISTOR_COUNT) ?? [])
     return {
         minCellVoltage: cells.length > 0 ? Math.min(...cells) : undefined,
         maxCellVoltage: cells.length > 0 ? Math.max(...cells) : undefined,
         maxTemperature: temperatures.length > 0 ? Math.max(...temperatures) : undefined,
+        maxBalancerTemperature: balancer.length > 0 ? Math.max(...balancer) : undefined,
     }
+}
+
+export interface PackCellStats {
+    lowest?: { segment: number; cell: number; volts: number }
+    highest?: number
+}
+
+/** The lowest fitted cell, and the highest voltage, across the fitted segments. */
+export function packCellStats(readings: ReadonlyMap<number, SegmentReadings>): PackCellStats {
+    const stats: PackCellStats = {}
+    for (const [segment, { cell_voltages }] of readings) {
+        if (segment >= SEGMENT_LETTERS.length) continue
+        cell_voltages.slice(0, FITTED_CELL_COUNT).forEach((volts, cell) => {
+            if (volts === null) return
+            if (stats.lowest === undefined || volts < stats.lowest.volts) {
+                stats.lowest = { segment, cell, volts }
+            }
+            stats.highest = Math.max(stats.highest ?? volts, volts)
+        })
+    }
+    return stats
 }
 
 /** A segment's overall state: its own errors and its worst reading. */

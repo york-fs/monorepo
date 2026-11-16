@@ -33,6 +33,7 @@ import MetricTile from '@/components/MetricTile.vue'
 import ExplanationSub from '@/components/ExplanationSub.vue'
 import BarTile from '@/components/drive/BarTile.vue'
 import TotalTile from '@/components/drive/TotalTile.vue'
+import BrakeIndicator from '@/components/drive/BrakeIndicator.vue'
 import PumpIndicator from '@/components/drive/PumpIndicator.vue'
 import InverterFaultTile from '@/components/powertrain/InverterFaultTile.vue'
 import RpmChart from '@/components/powertrain/RpmChart.vue'
@@ -126,6 +127,7 @@ const online = computed<boolean | undefined>(() => {
     <Section :online="online" title="Drive">
         <template #header>
             <PumpIndicator />
+            <BrakeIndicator />
         </template>
         <AutoGrid min="14rem">
             <MetricTile

@@ -2,7 +2,7 @@ from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
 from enum import Enum, Flag
 from events import EventLog, EventTracker, FrameRecorder
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import Body, FastAPI, HTTPException, Request, Depends
 from fastapi.responses import FileResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pathlib import Path
@@ -245,6 +245,7 @@ class TelemetryFrame:
     )
     blown_fuses_seen: FuseFlags = attrs.field(converter=FuseFlags)
     expander_error_count: int
+    brake_pressed: bool
 
     # Every BMS segment's error flags, and one segment's full readings. The rear sends
     # the connected segments' readings in turn, one per frame.
@@ -264,7 +265,7 @@ class TelemetryFrame:
         return attrs.asdict(self, value_serializer=self.serialize)
 
 
-FRAME_BASE = struct.Struct(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHII")
+FRAME_BASE = struct.Struct(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHII?")
 FRAME_SEGMENTS = struct.Struct(
     f">{SEGMENT_COUNT}HBHHH{SEGMENT_CELL_COUNT}H{SEGMENT_TEMPERATURE_COUNT}b"
 )
@@ -353,6 +354,11 @@ class SerialManager:
             for event in events:
                 queue.put_nowait(ServerSentEvent(data=event, event="log"))
 
+    def mark(self, note: str):
+        event = self.event_tracker.mark(note, time.time())
+        for queue in self.subscribers:
+            queue.put_nowait(ServerSentEvent(data=event, event="log"))
+
 
 class SerialReaderProtocol(asyncio.Protocol):
     manager: SerialManager
@@ -429,6 +435,14 @@ async def get_events(
 @app.post("/api/events/clear")
 async def clear_events(manager: SerialManager = Depends(get_serial_manager)):
     manager.event_log.clear()
+
+
+@app.post("/api/events/marker")
+async def add_marker(
+    note: str = Body("", embed=True),
+    manager: SerialManager = Depends(get_serial_manager),
+):
+    manager.mark(note)
 
 
 @app.get("/api/events/download")

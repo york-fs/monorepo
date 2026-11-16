@@ -205,6 +205,11 @@ class EventTracker:
         events.extend(self._diff_activation(previous, frame, now))
         return events
 
+    def mark(self, note: str, now: float) -> dict:
+        # A note added by hand, such as the start of a run, to find it in the log later.
+        frame = self.previous or {"uptime": 0}
+        return self._log(frame, now, "system", "marker", "ok", detail=note or None)
+
     def _log(
         self, frame: dict, now: float, category: str, kind: str, severity: str, **extra
     ) -> dict:

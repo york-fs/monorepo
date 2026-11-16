@@ -168,6 +168,18 @@ export function cellTemperatureSeverity(celsius: number): Severity {
 }
 
 /**
+ * The BMS's limit for the thermistors around a segment's balancing circuitry,
+ * `k_balance_overtemperature_threshold` in bms/master.cc.
+ */
+export const BALANCER_TEMPERATURE_MAX = 125
+
+export function balancerTemperatureSeverity(celsius: number): Severity {
+    if (celsius >= BALANCER_TEMPERATURE_MAX - CELL_TEMPERATURE_CRITICAL_MARGIN) return 'critical'
+    if (celsius >= BALANCER_TEMPERATURE_MAX - CELL_TEMPERATURE_WARNING_MARGIN) return 'warning'
+    return 'good'
+}
+
+/**
  * Pack current limit, applied to the magnitude — both sensors read positive
  * while driving and negative while charging or regenerating, and 200A the
  * wrong way is as far out of spec as 200A the right way.
