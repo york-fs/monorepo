@@ -19,7 +19,7 @@ std::uint16_t abs_distance(std::uint16_t lhs, std::uint16_t rhs) {
 
 ThrottleMap ThrottleMap::create_default() {
     const auto sigmoid = [](float x) {
-        return 1.0f / (1.0f + std::exp(-12.0f * (x - 0.45f)));
+        return 1.0f / (1.0f + std::exp(-8.0f * (x - 0.43f)));
     };
     const auto sigmoid_zero = sigmoid(0.0f);
     const auto sigmoid_one = sigmoid(1.0f);
