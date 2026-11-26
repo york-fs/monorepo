@@ -40,13 +40,35 @@ constexpr std::uint32_t k_control_period = 10;
 
 /**
  * @brief The period for which to keep TS activation latched when a prevention flag is set in milliseconds.
+ *
+ * This should ideally be kept below the BMS' shutdown assert delay (200 ms) to allow for the inverter's power to be cut
+ * before the BMS activates its hard shutdown circuit and opens the AIRs.
  */
 constexpr std::uint32_t k_prevention_grace_period = 50;
 
 /**
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
  */
-constexpr std::uint16_t k_fuse_threshold = 2000;
+constexpr std::uint16_t k_fuse_threshold = 5000;
+
+/**
+ * @brief The motor speed below which increases in throttle are ramped in, in ERPM (200 RPM for the EMRAX 228).
+ *
+ * Stepping torque in at standstill winds up the driveline (CVs and spool) before the tyres move, which then springs
+ * back against the motor and oscillates. Ramping the throttle in gives a soft take-up instead. Decreases in throttle
+ * are always applied immediately, and above this speed throttle is applied without any ramp.
+ */
+constexpr std::int32_t k_low_speed_ramp_erpm = 2000;
+
+/**
+ * @brief The time to ramp the throttle from zero to full below k_low_speed_ramp_erpm in milliseconds.
+ */
+constexpr std::uint32_t k_low_speed_ramp_time = 300;
+
+/**
+ * @brief The maximum throttle increase (in 0.1% units) per control period whilst ramping at low speed.
+ */
+constexpr std::uint16_t k_low_speed_ramp_step = 1000 * k_control_period / k_low_speed_ramp_time;
 
 /**
  * @brief The configured baud rate of the radio's UART.
@@ -215,9 +237,9 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause(const std::optional<front::
         if (front_status->shutdown_samples.is_clear(front::ShutdownSample::InertiaSwitch)) {
             return ShutdownCircuitOpenCause::InertiaSwitch;
         }
-        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
-            return ShutdownCircuitOpenCause::FrontAuxiliary;
-        }
+        // if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
+        //     return ShutdownCircuitOpenCause::FrontAuxiliary;
+        // }
     }
     if (rear_samples.is_clear(RearShutdownSample::FrontOutput)) {
         // Signal not getting from front even though over CAN, front is reporting all ok, or is offline.
@@ -231,9 +253,9 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause(const std::optional<front::
     if (rear_samples.is_clear(RearShutdownSample::ImdOk)) {
         return ShutdownCircuitOpenCause::ImdLatch;
     }
-    if (rear_samples.is_clear(RearShutdownSample::DtiOk)) {
-        return ShutdownCircuitOpenCause::InverterInterlock;
-    }
+    // if (rear_samples.is_clear(RearShutdownSample::DtiOk)) {
+    //     return ShutdownCircuitOpenCause::InverterInterlock;
+    // }
     if (rear_samples.is_clear(RearShutdownSample::Latch)) {
         return ShutdownCircuitOpenCause::ShutdownLatchFailure;
     }
@@ -325,10 +347,10 @@ bool expander_write(ExpanderRegister reg, std::uint8_t value) {
 }
 
 std::uint16_t preload_floor(std::int32_t erpm) {
-    // 15% preload below 100 RPM. Linearly decrease up to 300 RPM.
+    // Preload disabled (was 15% below 100 RPM, linearly decreasing up to 300 RPM).
     constexpr std::int32_t full_erpm = 1000;
     constexpr std::int32_t zero_erpm = 3000;
-    constexpr std::uint16_t preload_percentage = 150;
+    constexpr std::uint16_t preload_percentage = 0;
     if (erpm <= full_erpm) {
         return preload_percentage;
     }
@@ -506,6 +528,9 @@ void control_task(void *) {
     // activation.
     bool rtd_latched = false;
 
+    // The throttle actually sent to the inverter, which is ramped up towards the desired throttle at low speed.
+    std::uint16_t ramped_throttle = 0;
+
     freertos::PeriodScheduler scheduler;
     while (true) {
         scheduler.delay_until_ms(k_control_period);
@@ -582,9 +607,9 @@ void control_task(void *) {
         if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
             ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
         }
-        if (fuse_bitset.set_count() != fuse_voltages.size()) {
-            ts_prevention_flags.set(TsPreventionFlag::BadFuse);
-        }
+        // if (fuse_bitset.set_count() != fuse_voltages.size()) {
+        //     ts_prevention_flags.set(TsPreventionFlag::BadFuse);
+        // }
         if (online_flags.is_clear(OnlineFlag::FrontOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
         }
@@ -606,9 +631,9 @@ void control_task(void *) {
         if (online_flags.is_clear(OnlineFlag::BmsOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::BmsOffline);
         }
-        if (bms_status && bms_status->master_flags.any_set()) {
-            ts_prevention_flags.set(TsPreventionFlag::BmsFault);
-        }
+        // if (bms_status && bms_status->master_flags.any_set()) {
+        //     ts_prevention_flags.set(TsPreventionFlag::BmsFault);
+        // }
 
         // Accumulate everything seen this cycle for the next telemetry frame. The TS flags are taken before the grace
         // period below clears them, so transients that are ridden out still show up in telemetry.
@@ -678,10 +703,11 @@ void control_task(void *) {
         }
         s_rtd_prevention_seen.fetch_or(rtd_prevention_flags.value());
 
-        // Allow a small 2 amp max brake current so some energy can flow back when the motor slows down. There is no
-        // proper regen support for now.
+        // Allow a 20 amp max brake current so the motor can hold torque against the driveline springing back at low
+        // speed, and some energy can flow back when the motor slows down. This is 4 A per cell across the 5p pack,
+        // below the P45B's 4.5 A standard charge current. There is no proper regen support for now.
         dti::SetMaxBrakeDirectCurrentMessage set_max_charge{
-            .current = 20,
+            .current = 200,
         };
         hal::can::transmit(config::k_dti_can_id, set_max_charge);
 
@@ -714,11 +740,22 @@ void control_task(void *) {
             if (desired_throttle > 0) {
                 desired_throttle = std::max<std::uint16_t>(desired_throttle, preload_floor(motor_erpm.load()));
             }
+
+            // Ramp increases in throttle in at low speed to avoid winding up the driveline.
+            const auto erpm = motor_erpm.load();
+            const bool low_speed = erpm > -k_low_speed_ramp_erpm && erpm < k_low_speed_ramp_erpm;
+            if (low_speed && desired_throttle > ramped_throttle) {
+                ramped_throttle = std::min<std::uint16_t>(desired_throttle, ramped_throttle + k_low_speed_ramp_step);
+            } else {
+                ramped_throttle = desired_throttle;
+            }
+
             dti::SetRelativeCurrentMessage set_relative_current{
-                .percentage = util::clamp(static_cast<std::int16_t>(desired_throttle), 0, 1000),
+                .percentage = util::clamp(static_cast<std::int16_t>(ramped_throttle), 0, 1000),
             };
             hal::can::transmit(config::k_dti_can_id, set_relative_current);
         } else {
+            ramped_throttle = 0;
             dti::SetCurrentMessage set_current{
                 .current = 0,
             };

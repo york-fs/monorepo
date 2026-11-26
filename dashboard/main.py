@@ -27,6 +27,13 @@ SEGMENT_TEMPERATURE_COUNT = 24
 # frontend's MOTOR_CURRENT_MAX.
 MAX_MOTOR_CURRENT = 300
 
+# Seconds between attempts to reopen the radio's serial port after it drops.
+SERIAL_RETRY_SECONDS = 1.0
+# Undelimited bytes kept before giving up on them as noise.
+MAX_BUFFER_SIZE = 64 * 1024
+# Frames and events queued per browser before newer ones are dropped.
+SUBSCRIBER_QUEUE_SIZE = 1000
+
 
 class OnlineFlags(Flag):
     FRONT_ONLINE = enum.auto()
@@ -337,7 +344,9 @@ class SerialManager:
         self.frame_recorder = FrameRecorder(log_directory)
 
     def subscribe(self) -> asyncio.Queue:
-        queue = asyncio.Queue()
+        # Bounded, so a browser that went away without its stream closing can't make
+        # the server hoard every frame since.
+        queue = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
         self.subscribers.add(queue)
         return queue
 
@@ -349,15 +358,19 @@ class SerialManager:
         data = frame.to_dict()
         self.frame_recorder.record(data, now)
         events = self.event_tracker.process(data, now)
-        for queue in self.subscribers:
-            queue.put_nowait(data)
-            for event in events:
-                queue.put_nowait(ServerSentEvent(data=event, event="log"))
+        self._send(data, *(ServerSentEvent(data=event, event="log") for event in events))
 
     def mark(self, note: str):
         event = self.event_tracker.mark(note, time.time())
+        self._send(ServerSentEvent(data=event, event="log"))
+
+    def _send(self, *items):
         for queue in self.subscribers:
-            queue.put_nowait(ServerSentEvent(data=event, event="log"))
+            for item in items:
+                try:
+                    queue.put_nowait(item)
+                except asyncio.QueueFull:
+                    pass
 
 
 class SerialReaderProtocol(asyncio.Protocol):
@@ -367,9 +380,14 @@ class SerialReaderProtocol(asyncio.Protocol):
     def __init__(self, manager: SerialManager):
         self.manager = manager
         self.buffer = bytearray()
+        self.closed = asyncio.get_running_loop().create_future()
 
     def connection_made(self, transport):
         self.manager.transport = transport
+
+    def connection_lost(self, exc):
+        if not self.closed.done():
+            self.closed.set_result(exc)
 
     def _pop_frame(self):
         # Extract up to the frame delimiter.
@@ -377,15 +395,59 @@ class SerialReaderProtocol(asyncio.Protocol):
         self.buffer = bytearray(rest)
 
         unstuffed = cobs_unstuff(frame)
-        if stm_crc(pad_data(unstuffed)) == 0:
-            self.manager.publish(parse_frame(unstuffed))
-        else:
+        if stm_crc(pad_data(unstuffed)) != 0:
             print("Bad CRC!")
+            return
+        # Garbage while the car powers up or down, or a radio dropping out, must not
+        # take the reader down with it: drop the frame and carry on.
+        try:
+            parsed = parse_frame(unstuffed)
+        except (struct.error, ValueError) as error:
+            print(f"Dropped unparseable frame: {error!r}")
+            return
+        try:
+            self.manager.publish(parsed)
+        except Exception as error:
+            print(f"Failed to publish frame: {error!r}")
 
     def data_received(self, data: bytes):
         self.buffer.extend(data)
         while 0x0 in self.buffer:
             self._pop_frame()
+        # Noise with no frame delimiter would otherwise pile up forever.
+        if len(self.buffer) > MAX_BUFFER_SIZE:
+            self.buffer.clear()
+
+
+async def keep_serial_open(manager: SerialManager, port: str):
+    """Open the radio's serial port and reopen it whenever it drops.
+
+    The port goes away when the USB adapter resets (a radio dropout, the car powering
+    on or off, an ST-Link being plugged in beside it). Without reopening, the server
+    keeps running but no telemetry ever arrives again until it is restarted.
+    """
+    loop = asyncio.get_running_loop()
+    reported = False
+    while True:
+        try:
+            transport, protocol = await serial_asyncio.create_serial_connection(
+                loop, lambda: SerialReaderProtocol(manager), port, baudrate=115200
+            )
+        except Exception as error:
+            if not reported:
+                print(f"Can't open serial port {port} ({error}), retrying...")
+                reported = True
+            await asyncio.sleep(SERIAL_RETRY_SECONDS)
+            continue
+        if reported:
+            print(f"Serial port {port} open again.")
+        reported = False
+        try:
+            exc = await protocol.closed
+        finally:
+            transport.close()
+        print(f"Serial port {port} closed ({exc}), reopening...")
+        await asyncio.sleep(SERIAL_RETRY_SECONDS)
 
 
 @asynccontextmanager
@@ -393,15 +455,9 @@ async def lifespan(app: FastAPI):
     manager = SerialManager(Path(os.environ.get("DASHBOARD_LOG_DIR", "logs")))
     app.state.serial_manager = manager
 
-    loop = asyncio.get_running_loop()
-    transport, protocol = await serial_asyncio.create_serial_connection(
-        loop,
-        lambda: SerialReaderProtocol(manager),
-        "/dev/ttyUSB0",
-        baudrate=115200,
-    )
+    serial_task = asyncio.create_task(keep_serial_open(manager, "/dev/ttyUSB0"))
     yield
-    transport.close()
+    serial_task.cancel()
     manager.frame_recorder.close()
 
 
