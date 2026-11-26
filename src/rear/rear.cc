@@ -40,7 +40,7 @@ constexpr std::uint32_t k_control_period = 10;
 /**
  * @brief The period for which to keep TS activation latched when a prevention flag is set in milliseconds.
  */
-constexpr std::uint32_t k_prevention_grace_period = 300;
+constexpr std::uint32_t k_prevention_grace_period = 50;
 
 /**
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
