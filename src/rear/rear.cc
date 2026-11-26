@@ -39,6 +39,9 @@ constexpr std::uint32_t k_control_period = 10;
 
 /**
  * @brief The period for which to keep TS activation latched when a prevention flag is set in milliseconds.
+ *
+ * This should ideally be kept below the BMS' shutdown assert delay (200 ms) to allow for the inverter's power to be cut
+ * before the BMS activates its hard shutdown circuit and opens the AIRs.
  */
 constexpr std::uint32_t k_prevention_grace_period = 50;
 
