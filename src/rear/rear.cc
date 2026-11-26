@@ -48,7 +48,7 @@ constexpr std::uint32_t k_prevention_grace_period = 50;
 /**
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
  */
-constexpr std::uint16_t k_fuse_threshold = 2000;
+constexpr std::uint16_t k_fuse_threshold = 5000;
 
 /**
  * @brief The configured baud rate of the radio's UART.
