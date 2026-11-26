@@ -38,7 +38,8 @@ std::atomic<bool> s_online = false;
 
 Identifier decode_identifier(std::uint32_t rir) {
     if ((rir & CAN_RI0R_IDE_Msk) != 0u) {
-        return ExtendedIdentifier((rir & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos);
+        // The 29-bit extended identifier spans both the STID and EXID fields.
+        return ExtendedIdentifier(rir >> CAN_RI0R_EXID_Pos);
     }
     return StandardIdentifier((rir & CAN_RI0R_STID_Msk) >> CAN_RI0R_STID_Pos);
 }
