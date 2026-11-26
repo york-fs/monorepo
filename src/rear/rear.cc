@@ -194,9 +194,9 @@ ShutdownCircuitOpenCause compute_shutdown_open_cause(const std::optional<front::
         if (front_status->shutdown_samples.is_clear(front::ShutdownSample::InertiaSwitch)) {
             return ShutdownCircuitOpenCause::InertiaSwitch;
         }
-        if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
-            return ShutdownCircuitOpenCause::FrontAuxiliary;
-        }
+        // if (front_status->shutdown_samples.is_clear(front::ShutdownSample::Auxiliary)) {
+        //     return ShutdownCircuitOpenCause::FrontAuxiliary;
+        // }
     }
     if (rear_samples.is_clear(RearShutdownSample::FrontOutput)) {
         // Signal not getting from front even though over CAN, front is reporting all ok, or is offline.
@@ -528,9 +528,9 @@ void control_task(void *) {
         if (shutdown_open_cause != ShutdownCircuitOpenCause::None) {
             ts_prevention_flags.set(TsPreventionFlag::ShutdownOpen);
         }
-        if (fuse_bitset.set_count() != fuse_voltages.size()) {
-            ts_prevention_flags.set(TsPreventionFlag::BadFuse);
-        }
+        // if (fuse_bitset.set_count() != fuse_voltages.size()) {
+        //     ts_prevention_flags.set(TsPreventionFlag::BadFuse);
+        // }
         if (online_flags.is_clear(OnlineFlag::FrontOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::FrontOffline);
         }
@@ -552,9 +552,9 @@ void control_task(void *) {
         if (online_flags.is_clear(OnlineFlag::BmsOnline)) {
             ts_prevention_flags.set(TsPreventionFlag::BmsOffline);
         }
-        if (bms_status && bms_status->master_flags.any_set()) {
-            ts_prevention_flags.set(TsPreventionFlag::BmsFault);
-        }
+        // if (bms_status && bms_status->master_flags.any_set()) {
+        //     ts_prevention_flags.set(TsPreventionFlag::BmsFault);
+        // }
 
         // Accumulate everything seen this cycle for the next telemetry frame. The TS flags are taken before the grace
         // period below clears them, so transients that are ridden out still show up in telemetry.
