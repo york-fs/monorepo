@@ -5,6 +5,7 @@ import { useTelemetryHistory } from '@/composables/useTelemetryHistory'
 
 const { points, version } = useTelemetryHistory({
     desired: (f) => f.desired_motor_current,
+    commanded: (f) => f.commanded_motor_current,
     actual: (f) => f.motor_current,
 })
 
@@ -15,14 +16,21 @@ const { points, version } = useTelemetryHistory({
 const series = computed(() => {
     void version.value
     return [
-        { label: 'Desired (APPS)', color: 'series1' as const, data: points.desired },
+        // The pedal's demand, then what the rear sent once its launch soft start
+        // had limited it, then what the motor drew.
+        { label: 'Pedal demand', color: 'series3' as const, data: points.desired },
+        { label: 'Commanded (rear)', color: 'series1' as const, data: points.commanded },
         { label: 'Actual (motor)', color: 'series2' as const, data: points.actual },
     ]
 })
 
 const isEmpty = computed(() => {
     void version.value
-    return points.desired.length === 0 && points.actual.length === 0
+    return (
+        points.desired.length === 0 &&
+        points.commanded.length === 0 &&
+        points.actual.length === 0
+    )
 })
 </script>
 

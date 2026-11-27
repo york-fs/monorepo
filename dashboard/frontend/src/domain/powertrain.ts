@@ -132,4 +132,4 @@ export function motorRpmToMph(rpm: number): number {
  * flat-out running rather than a fault, so it's drawn as a gauge with no
  * severity. Keep in step with `MAX_MOTOR_CURRENT` in dashboard/main.py.
  */
-export const MOTOR_CURRENT_MAX = 300
+export const MOTOR_CURRENT_MAX = 540

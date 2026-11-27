@@ -34,6 +34,14 @@ function resetStaleTimer() {
 function applyFrame(parsed: TelemetryFrame) {
     const receivedAt = Date.now()
 
+    // The backend sends null for a reading it doesn't have (its component is
+    // offline, or the BMS has no cell readings). Everything here treats
+    // undefined as "no signal", so null becomes that, and assigning it below
+    // clears the previous value rather than leaving it frozen on screen.
+    for (const key of Object.keys(parsed)) {
+        if (parsed[key] === null) parsed[key] = undefined
+    }
+
     Object.assign(frame, parsed)
     lastUpdated.value = receivedAt
     resetStaleTimer()

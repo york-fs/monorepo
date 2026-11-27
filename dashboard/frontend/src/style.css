@@ -32,6 +32,7 @@
     /* Categorical slots for charts with 2+ series (e.g. two voltage traces). */
     --series-1: light-dark(hsl(213, 68%, 50%), hsl(213, 77%, 56%));
     --series-2: light-dark(hsl(17, 82%, 56%), hsl(17, 70%, 50%));
+    --series-3: light-dark(hsl(150, 55%, 36%), hsl(150, 50%, 50%));
 
     /* Translucent white overlays for the fuse glyph's glossy highlight and
        link-wire, drawn on top of its own good/critical background rather

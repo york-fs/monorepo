@@ -395,6 +395,8 @@ function buildFrame(state: DemoState, now: number): TelemetryFrame {
         motor_current: Number(state.motorCurrent.toFixed(1)),
         pedal_travel: Number(state.pedalTravel.toFixed(1)),
         desired_motor_current: Number(state.desiredMotorCurrent.toFixed(1)),
+        // The demo has no soft start, so the rear commands what the pedal asks.
+        commanded_motor_current: Number(state.desiredMotorCurrent.toFixed(1)),
         bms_master_error_flags: state.bmsErrorFlags,
         bms_i2c_error_count: state.i2cErrorCount,
         // Two sensors reading the same bus current, so the same figure plus

@@ -206,6 +206,13 @@ export interface TelemetryFrame {
     motor_rpm?: number
     pedal_travel?: number
     desired_motor_current?: number
+    /**
+     * What the rear actually commanded the inverter, after its preload, soft
+     * start cap and rise limit, in percent and as amps. Zero while the brake is
+     * pressed or RTD is off.
+     */
+    commanded_throttle?: number
+    commanded_motor_current?: number
     bms_master_error_flags?: BmsMasterErrorFlag[]
     bms_i2c_error_count?: number
     positive_current?: number

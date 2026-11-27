@@ -23,9 +23,9 @@ SEGMENT_COUNT = 10
 SEGMENT_CELL_COUNT = 16
 SEGMENT_TEMPERATURE_COUNT = 24
 
-# This value should match the configured max AC current in DTI config, and the
-# frontend's MOTOR_CURRENT_MAX.
-MAX_MOTOR_CURRENT = 300
+# The DTI's absolute max current, which the relative current command is scaled
+# against. Must match the frontend's MOTOR_CURRENT_MAX.
+MAX_MOTOR_CURRENT = 540
 
 # Seconds between attempts to reopen the radio's serial port after it drops.
 SERIAL_RETRY_SECONDS = 1.0
@@ -199,7 +199,8 @@ class TelemetryFrame:
     motor_temperature: float = attrs.field(converter=lambda T: T / 10)
     inverter_input_voltage: int
     motor_current: float = attrs.field(converter=lambda I: I / 10)
-    motor_rpm: int = attrs.field(converter=lambda R: R // ERPM_FACTOR)
+    # Truncated towards zero, so -1 ERPM reads as 0 rpm rather than -1.
+    motor_rpm: int = attrs.field(converter=lambda R: int(R / ERPM_FACTOR))
 
     # APPS.
     desired_throttle: float = attrs.field(converter=lambda P: P / 10)
@@ -230,10 +231,20 @@ class TelemetryFrame:
     bms_i2c_error_count: int
     positive_current: float = attrs.field(converter=lambda I: I / 1000)
     negative_current: float = attrs.field(converter=lambda I: I / 1000)
-    min_cell_voltage: float = attrs.field(converter=lambda V: V / 10000)
-    max_cell_voltage: float = attrs.field(converter=lambda V: V / 10000)
-    min_cell_temperature: int
-    max_cell_temperature: int
+    # With no cell readings at all, the BMS sends its search's starting values, which
+    # aren't readings: 0xffff and 0 for the voltages, 127 and -128 for temperatures.
+    min_cell_voltage: float | None = attrs.field(
+        converter=lambda V: None if V == 0xFFFF else V / 10000
+    )
+    max_cell_voltage: float | None = attrs.field(
+        converter=lambda V: None if V == 0 else V / 10000
+    )
+    min_cell_temperature: int | None = attrs.field(
+        converter=lambda T: None if T == 127 else T
+    )
+    max_cell_temperature: int | None = attrs.field(
+        converter=lambda T: None if T == -128 else T
+    )
 
     # Everything the rear distribution saw since its previous frame, so that flags set
     # for less than a radio period still show up.
@@ -254,6 +265,22 @@ class TelemetryFrame:
     expander_error_count: int
     brake_pressed: bool
 
+    # The relative current the rear actually commanded the inverter, after the preload,
+    # soft start cap and rise limit, and as amps at the configured max motor current.
+    # None from rear firmware older than the field.
+    commanded_throttle: float | None = attrs.field(
+        converter=lambda P: None if P is None else P / 10
+    )
+    commanded_motor_current: float | None = attrs.field(
+        init=False,
+        default=attrs.Factory(
+            lambda self: None
+            if self.commanded_throttle is None
+            else self.commanded_throttle * MAX_MOTOR_CURRENT / 100,
+            takes_self=True,
+        ),
+    )
+
     # Every BMS segment's error flags, and one segment's full readings. The rear sends
     # the connected segments' readings in turn, one per frame.
     segment_error_flags: list[SegmentErrorFlags]
@@ -269,10 +296,49 @@ class TelemetryFrame:
         return value
 
     def to_dict(self):
-        return attrs.asdict(self, value_serializer=self.serialize)
+        data = attrs.asdict(self, value_serializer=self.serialize)
+        # The rear keeps sending a component's last readings after it goes offline,
+        # so blank them rather than show frozen values as live. Flags, states and
+        # fault codes are kept: the event log follows them, and the online flags
+        # already say they're old.
+        online = data["online_flags"]
+        for flag, fields in OFFLINE_BLANKED_FIELDS.items():
+            if flag not in online:
+                for field in fields:
+                    data[field] = None
+        return data
 
 
-FRAME_BASE = struct.Struct(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHII?")
+# The readings each component supplies, blanked while it is offline.
+OFFLINE_BLANKED_FIELDS = {
+    "FRONT_ONLINE": ["desired_throttle", "pedal_travel", "desired_motor_current"],
+    "INVERTER_ONLINE": [
+        "inverter_temperature",
+        "motor_temperature",
+        "inverter_input_voltage",
+        "motor_current",
+        "motor_rpm",
+    ],
+    "PRECHARGE_ONLINE": ["precharge_prchg_voltage", "precharge_ts_voltage"],
+    "BMS_ONLINE": [
+        "positive_current",
+        "negative_current",
+        "min_cell_voltage",
+        "max_cell_voltage",
+        "min_cell_temperature",
+        "max_cell_temperature",
+        # The rear resends each segment's last readings. Without new ones, the BMS
+        # page marks the segments stale.
+        "segment",
+    ],
+}
+
+
+FRAME_BASE = struct.Struct(">IBBIHHBHBBhhhhiHHBHHHBHIiiHHbbHBHII?H")
+# The same without the commanded throttle, as sent by rear firmware from before it.
+# Still accepted so that a rear which hasn't been reflashed doesn't blank the
+# dashboard.
+FRAME_BASE_WITHOUT_COMMANDED = struct.Struct(FRAME_BASE.format[:-1])
 FRAME_SEGMENTS = struct.Struct(
     f">{SEGMENT_COUNT}HBHHH{SEGMENT_CELL_COUNT}H{SEGMENT_TEMPERATURE_COUNT}b"
 )
@@ -299,9 +365,20 @@ def parse_segment(fields: tuple) -> tuple[list[SegmentErrorFlags], dict]:
 
 
 def parse_frame(data: bytes):
-    base = FRAME_BASE.unpack_from(data)
-    segment_fields = FRAME_SEGMENTS.unpack_from(data, FRAME_BASE.size)
-    (crc,) = FRAME_CRC.unpack_from(data, FRAME_BASE.size + FRAME_SEGMENTS.size)
+    for base_struct in (FRAME_BASE, FRAME_BASE_WITHOUT_COMMANDED):
+        if len(data) == base_struct.size + FRAME_SEGMENTS.size + FRAME_CRC.size:
+            break
+    else:
+        expected = FRAME_BASE.size + FRAME_SEGMENTS.size + FRAME_CRC.size
+        raise ValueError(
+            f"frame is {len(data)} bytes, expected {expected}: the rear firmware "
+            "and dashboard/main.py don't match"
+        )
+    base = base_struct.unpack_from(data)
+    if base_struct is FRAME_BASE_WITHOUT_COMMANDED:
+        base += (None,)
+    segment_fields = FRAME_SEGMENTS.unpack_from(data, base_struct.size)
+    (crc,) = FRAME_CRC.unpack_from(data, base_struct.size + FRAME_SEGMENTS.size)
     flags, segment = parse_segment(segment_fields)
     return TelemetryFrame(*base, flags, segment, crc)
 

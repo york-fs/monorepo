@@ -85,19 +85,21 @@ export interface SnapshotFrame {
     precharge_state: PrechargeState
     precharge_error_flags: PrechargeErrorFlag[]
     precharge_relay_states: PrechargeRelay[]
-    precharge_prchg_voltage: number
-    precharge_ts_voltage: number
+    precharge_prchg_voltage: number | null
+    precharge_ts_voltage: number | null
+    // Readings are null while the component supplying them is offline, or (cell
+    // readings) when the BMS has none.
     bms_master_error_flags: BmsMasterErrorFlag[]
     bms_i2c_error_count: number
     inverter_fault: InverterFaultCode
-    inverter_input_voltage: number
-    motor_current: number
-    motor_rpm: number
-    positive_current: number
-    negative_current: number
-    min_cell_voltage: number
-    max_cell_voltage: number
-    max_cell_temperature: number
+    inverter_input_voltage: number | null
+    motor_current: number | null
+    motor_rpm: number | null
+    positive_current: number | null
+    negative_current: number | null
+    min_cell_voltage: number | null
+    max_cell_voltage: number | null
+    max_cell_temperature: number | null
     lvs_min_voltage: number
     // Everything seen since the previous frame, as the rear samples at 100 Hz
     // but transmits at 10 Hz.
@@ -363,7 +365,15 @@ export interface SnapshotReading {
     value: string
 }
 
-function reading(label: string, value: number, unit: string, digits = 0): SnapshotReading {
+function reading(
+    label: string,
+    value: number | null | undefined,
+    unit: string,
+    digits = 0,
+): SnapshotReading {
+    // null while the component supplying it was offline, undefined in snapshots
+    // recorded before the field existed.
+    if (value === null || value === undefined) return { label, value: '—' }
     return { label, value: `${value.toFixed(digits)} ${unit}` }
 }
 

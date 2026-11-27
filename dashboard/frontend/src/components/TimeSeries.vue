@@ -26,8 +26,8 @@ applyChartFont()
 
 export interface TimeSeriesLine {
     label: string
-    /** Which theme colour slot (`--series-1`/`--series-2`) this line uses. */
-    color: 'series1' | 'series2'
+    /** Which theme colour slot (`--series-1` to `--series-3`) this line uses. */
+    color: 'series1' | 'series2' | 'series3'
     data: { x: number; y: number }[]
     /** e.g. precharge's rail/TS-bus traces, which hold between samples. */
     stepped?: boolean
@@ -59,6 +59,7 @@ function readThemeColors() {
     return {
         series1: readCssVar('--series-1'),
         series2: readCssVar('--series-2'),
+        series3: readCssVar('--series-3'),
         grid: readCssVar('--border'),
         text: readCssVar('--ink-muted'),
     }
@@ -251,6 +252,9 @@ const chartOptions = computed(() => ({
 }
 .swatch.series2 {
     background: var(--series-2);
+}
+.swatch.series3 {
+    background: var(--series-3);
 }
 
 .reset-zoom {

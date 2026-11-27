@@ -23,7 +23,9 @@
 #include <util/type_traits.hh>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -50,25 +52,6 @@ constexpr std::uint32_t k_prevention_grace_period = 50;
  * @brief The voltage threshold to consider a fuse working relative to the maximum measured LVS voltage in millivolts.
  */
 constexpr std::uint16_t k_fuse_threshold = 5000;
-
-/**
- * @brief The motor speed below which increases in throttle are ramped in, in ERPM (200 RPM for the EMRAX 228).
- *
- * Stepping torque in at standstill winds up the driveline (CVs and spool) before the tyres move, which then springs
- * back against the motor and oscillates. Ramping the throttle in gives a soft take-up instead. Decreases in throttle
- * are always applied immediately, and above this speed throttle is applied without any ramp.
- */
-constexpr std::int32_t k_low_speed_ramp_erpm = 2000;
-
-/**
- * @brief The time to ramp the throttle from zero to full below k_low_speed_ramp_erpm in milliseconds.
- */
-constexpr std::uint32_t k_low_speed_ramp_time = 300;
-
-/**
- * @brief The maximum throttle increase (in 0.1% units) per control period whilst ramping at low speed.
- */
-constexpr std::uint16_t k_low_speed_ramp_step = 1000 * k_control_period / k_low_speed_ramp_time;
 
 /**
  * @brief The configured baud rate of the radio's UART.
@@ -181,6 +164,10 @@ struct RadioData {
 
     // Brake switch.
     bool brake_pressed;
+
+    // Relative current actually commanded to the inverter in tenths of a percent, after the preload, soft start cap and
+    // rise limit. Zero whenever the inverter is being sent zero current.
+    std::uint16_t commanded_throttle;
 };
 
 // Single-entry queue for consistent radio data.
@@ -347,10 +334,11 @@ bool expander_write(ExpanderRegister reg, std::uint8_t value) {
 }
 
 std::uint16_t preload_floor(std::int32_t erpm) {
-    // Preload disabled (was 15% below 100 RPM, linearly decreasing up to 300 RPM).
+    // 5% preload (27 A of 540 A) below 1000 ERPM (100 RPM). Linearly decrease up to 3000 ERPM (300 RPM). Kept below
+    // the soft start cap at 0 ERPM so that it only takes up driveline slack gently.
     constexpr std::int32_t full_erpm = 1000;
     constexpr std::int32_t zero_erpm = 3000;
-    constexpr std::uint16_t preload_percentage = 0;
+    constexpr std::uint16_t preload_percentage = 50;
     if (erpm <= full_erpm) {
         return preload_percentage;
     }
@@ -359,6 +347,41 @@ std::uint16_t preload_floor(std::int32_t erpm) {
     }
     return static_cast<std::uint16_t>(preload_percentage * (zero_erpm - erpm) / (zero_erpm - full_erpm));
 }
+
+/**
+ * @brief The motor speed in ERPM (200 RPM for the EMRAX 228) from which the soft start cap allows full current and the
+ * rise limit stops applying.
+ *
+ * Commanding current over CAN bypasses the inverter's own ERPM/current map and throttle ramp. Stepping torque in at
+ * standstill winds up the driveline (chain, CVs and tyres) before the car moves, which then springs back against the
+ * motor and oscillates (launch judder, seen as ERPM going - / +). Once the car is rolling the slack is taken up, so
+ * above this speed the driver gets the throttle unfiltered.
+ */
+constexpr std::int32_t k_soft_start_erpm = 2000;
+
+/**
+ * @brief Maximum relative current (tenths of a percent of the inverter's max current, 540 A) allowed at a given motor
+ * speed. Limits torque until the driveline slack is taken up and the car is moving, preventing launch judder.
+ */
+std::uint16_t soft_start_cap(std::int32_t erpm) {
+    constexpr std::array<std::int32_t, 6> k_erpm{0, 200, 500, 800, 1200, k_soft_start_erpm};
+    constexpr std::array<std::int32_t, 6> k_cap{125, 188, 333, 542, 750, 1000}; // 68, 102, 180, 293, 405, 540 A
+    erpm = erpm < 0 ? -erpm : erpm;
+    for (std::size_t i = 0; i + 1 < k_erpm.size(); i++) {
+        if (erpm < k_erpm[i + 1]) {
+            return static_cast<std::uint16_t>(k_cap[i] + (k_cap[i + 1] - k_cap[i]) * (erpm - k_erpm[i]) /
+                                                             (k_erpm[i + 1] - k_erpm[i]));
+        }
+    }
+    return static_cast<std::uint16_t>(k_cap.back());
+}
+
+/**
+ * @brief Maximum increase in relative current per control period below k_soft_start_erpm. 31 tenths of a percent of
+ * 540 A per 10 ms is roughly 1700 A/s, so 0 to full current in about 0.32 s. Decreases are never limited so that lifting
+ * off the throttle always cuts torque immediately.
+ */
+constexpr std::uint16_t k_max_rise_per_tick = 31;
 
 /**
  * @brief The control task is the main coordination task of the rear distribution, and therefore of the whole car.
@@ -528,8 +551,11 @@ void control_task(void *) {
     // activation.
     bool rtd_latched = false;
 
-    // The throttle actually sent to the inverter, which is ramped up towards the desired throttle at low speed.
-    std::uint16_t ramped_throttle = 0;
+    // The last relative current sent to the inverter, used to rate limit increases at low speed.
+    std::uint16_t last_relative_current = 0;
+
+    // The relative current sent to the inverter this cycle, for telemetry.
+    std::uint16_t commanded_throttle = 0;
 
     freertos::PeriodScheduler scheduler;
     while (true) {
@@ -736,26 +762,31 @@ void control_task(void *) {
         if (rtd_latched && front_throttle && !brake_pressed) {
             // Apply a current preload at low motor RPM. The front handles deadzone so a non-zero desired throttle
             // indicates the driver wants to move.
+            // ERPM is read once so that the preload, cap and rise limit all use the same value. The order matters: the
+            // preload comes first so that it can never push past the cap.
+            const auto erpm = motor_erpm.load();
             auto desired_throttle = front_throttle->desired_throttle;
             if (desired_throttle > 0) {
-                desired_throttle = std::max<std::uint16_t>(desired_throttle, preload_floor(motor_erpm.load()));
+                desired_throttle = std::max<std::uint16_t>(desired_throttle, preload_floor(erpm));
+                desired_throttle = std::min<std::uint16_t>(desired_throttle, soft_start_cap(erpm));
             }
 
-            // Ramp increases in throttle in at low speed to avoid winding up the driveline.
-            const auto erpm = motor_erpm.load();
-            const bool low_speed = erpm > -k_low_speed_ramp_erpm && erpm < k_low_speed_ramp_erpm;
-            if (low_speed && desired_throttle > ramped_throttle) {
-                ramped_throttle = std::min<std::uint16_t>(desired_throttle, ramped_throttle + k_low_speed_ramp_step);
-            } else {
-                ramped_throttle = desired_throttle;
+            // Rate limit increases at low speed only. Decreases always pass straight through.
+            const bool low_speed = erpm > -k_soft_start_erpm && erpm < k_soft_start_erpm;
+            if (low_speed && desired_throttle > last_relative_current + k_max_rise_per_tick) {
+                desired_throttle = last_relative_current + k_max_rise_per_tick;
             }
+            last_relative_current = desired_throttle;
+            commanded_throttle = desired_throttle;
 
             dti::SetRelativeCurrentMessage set_relative_current{
-                .percentage = util::clamp(static_cast<std::int16_t>(ramped_throttle), 0, 1000),
+                .percentage = util::clamp(static_cast<std::int16_t>(desired_throttle), 0, 1000),
             };
             hal::can::transmit(config::k_dti_can_id, set_relative_current);
         } else {
-            ramped_throttle = 0;
+            // Restart the ramp from zero on the next launch.
+            last_relative_current = 0;
+            commanded_throttle = 0;
             dti::SetCurrentMessage set_current{
                 .current = 0,
             };
@@ -806,6 +837,7 @@ void control_task(void *) {
             .min_cell_temperature = min_cell_temperature,
             .max_cell_temperature = max_cell_temperature,
             .brake_pressed = brake_pressed,
+            .commanded_throttle = commanded_throttle,
         });
     }
 }
@@ -933,6 +965,9 @@ void radio_task(void *) {
 
         // Append brake switch state.
         stream.write_byte(data.brake_pressed ? 1 : 0);
+
+        // Append the relative current actually commanded to the inverter.
+        stream.write_be(data.commanded_throttle);
 
         // Append every BMS segment's error flags, then one segment's full readings. Only connected segments are sent,
         // in turn, so each one refreshes about every 0.6 s with six fitted.

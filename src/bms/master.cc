@@ -665,10 +665,13 @@ void telemetry_task(void *) {
                         max_voltage = std::max(max_voltage, *voltage);
                     }
                 }
-                for (const auto temperature : segment.temperatures()) {
-                    if (temperature) {
-                        min_temperature = std::min(min_temperature, *temperature);
-                        max_temperature = std::max(max_temperature, *temperature);
+                // Cell temperatures only. The first thermistors are around the passive balancers, which have their own
+                // much higher limit, so including them would report balancer heat as a hot cell.
+                const auto temperatures = segment.temperatures();
+                for (std::size_t i = bms::k_balance_thermistor_count; i < temperatures.size(); i++) {
+                    if (temperatures[i]) {
+                        min_temperature = std::min(min_temperature, *temperatures[i]);
+                        max_temperature = std::max(max_temperature, *temperatures[i]);
                     }
                 }
             }
